@@ -1,0 +1,106 @@
+{
+  "id": "dol",
+  "title": "Department of Labor Open Data API (OSHA, WHD, ETA unemployment claims, MSHA)",
+  "agency": "U.S. Department of Labor",
+  "depth": "standard",
+  "domains": [
+    "workplace safety",
+    "labor enforcement",
+    "unemployment insurance",
+    "labor"
+  ],
+  "keywords": [
+    "osha",
+    "workplace safety",
+    "inspections",
+    "violations",
+    "penalties",
+    "workplace injuries",
+    "fatalities",
+    "accidents",
+    "wage theft",
+    "back wages",
+    "wage and hour",
+    "whd",
+    "flsa",
+    "overtime",
+    "minimum wage",
+    "child labor",
+    "fmla",
+    "davis-bacon",
+    "unemployment insurance",
+    "ui claims",
+    "initial claims",
+    "continued claims",
+    "jobless claims",
+    "weekly claims",
+    "insured unemployment",
+    "msha",
+    "mine safety",
+    "mines",
+    "apprenticeship",
+    "trade adjustment assistance"
+  ],
+  "questions": [
+    "OSHA inspections and penalties for a company",
+    "serious OSHA violations in a state",
+    "back wages recovered by the Wage and Hour Division in an industry",
+    "weekly initial unemployment claims trend",
+    "continued claims by state",
+    "workplace fatality investigations in construction"
+  ],
+  "homepage": "https://dataportal.dol.gov/",
+  "terms_url": "https://www.dol.gov/general/aboutdol/copyright",
+  "auth": {
+    "env": "DOL_API_KEY",
+    "required": "optional",
+    "placement": "query",
+    "param": "X-API-KEY",
+    "prefix": "",
+    "home": "dol",
+    "signup_url": "https://dataportal.dol.gov/registration",
+    "echoes_key": false,
+    "key_only": [
+      "every data query (only the dataset catalog and field dictionaries are keyless)"
+    ]
+  },
+  "limits": {
+    "rps": 3,
+    "burst": 6,
+    "max_rows": 100000
+  },
+  "routes": {
+    "api": {
+      "base": "https://apiprod.dol.gov/v4",
+      "probe": "https://apiprod.dol.gov/v4/datasets",
+      "hosts": [
+        "apiprod.dol.gov"
+      ]
+    },
+    "manual": {
+      "how": "Open each link in manual_download/INSTRUCTIONS.md in a browser after replacing {API_KEY} with your own DOL API key (free: register at https://dataportal.dol.gov/registration, then copy a key from https://dataportal.dol.gov/api-keys), or run download_data.sh / download_data.ps1 (one command; asks for the key with hidden input); save each JSON file under the name shown, upload them, then --ingest. Without the bundle: open the dataset in the Data Catalog (https://dataportal.dol.gov/datasets), use the API Query Builder at the bottom of the page (signed in) to set filters and download the response, or use the agency's own downloads (OSHA: https://www.osha.gov/data; WHD: https://enforcedata.dol.gov; weekly claims: https://oui.doleta.gov/unemploy/claims.asp); upload the file and say which it is."
+    }
+  },
+  "cache": {
+    "mode": "run_only",
+    "ttl_hours": null,
+    "why": "Enforcement datasets are reloaded daily to quarterly and claims weekly; data/ is reused only within a run."
+  },
+  "redistribution": {
+    "mode": "allowed",
+    "why": "DOL data are U.S. government works in the public domain (17 U.S.C. 105). Enforcement records name employers (public records); the DOL API terms forbid sharing API keys, not data."
+  },
+  "notices": [],
+  "retention": null,
+  "citation": "U.S. Department of Labor, {dataset}, DOL Open Data API (apiprod.dol.gov/v4), retrieved {retrieved_long}.",
+  "audit_hooks": [],
+  "clarify": [
+    "Seasonally adjusted or not seasonally adjusted claims? The weekly national table has both (c5/c7 adjusted, c4/c6 not); state tables are not seasonally adjusted.",
+    "Enforcement counts measure enforcement activity, not violations in the economy: report them as inspections or cases found, by the date field used (open date, issuance date, findings end date)."
+  ],
+  "formats": [
+    "json",
+    "csv",
+    "xml"
+  ]
+}

@@ -1,0 +1,12 @@
+{
+ "GET https://www2.census.gov/geo/docs/reference/codes2020/cou/st24_md_cou2020.txt": "st24_md_cou2020.txt",
+ "GET https://www2.census.gov/geo/docs/reference/codes2020/place/st24_md_place2020.txt": "st24_md_place2020.txt",
+ "GET https://api.census.gov/data/2025/acs/acs5.json": {
+  "file": "not_found_2025_acs5.html",
+  "status": 404
+ },
+ "GET https://api.census.gov/data/2024/acs/acs5.json": "discovery_2024_acs5.json",
+ "GET https://api.census.gov/data/2024/acs/acs5?get=NAME%2CB19013_001E%2CB19013_001M&for=county%3A%2A&in=state%3A24": "missing_key.html",
+ "GET https://api.census.gov/data/2020/dec/pl/variables.json": "variables_2020_dec_pl.json",
+ "GET https://api.census.gov/data/2019/acs/acs1?get=NAME%2CB02015_009E%2CB02015_009M&for=state%3A%2A": "doc_acs1_2019_hmong.json"
+}

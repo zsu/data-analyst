@@ -1,0 +1,11 @@
+{
+  "name": "data-analyst",
+  "version": "1.0.0",
+  "description": "Answer questions with official U.S. government data (BEA, BLS, FRED, Census, Treasury, OPM, USAspending, CDC, Congress.gov, EPA and 35+ more): CSV data plus an audited short answer, or an audited HTML report.",
+  "author": {
+    "name": "zsu"
+  },
+  "homepage": "https://github.com/zsu/data-analyst",
+  "repository": "https://github.com/zsu/data-analyst",
+  "keywords": ["government-data", "economics", "bls", "bea", "fred", "census", "treasury", "data-analysis"]
+}

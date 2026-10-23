@@ -1,0 +1,6 @@
+# Normalize text files in the repository; check out with the platform's line endings ...
+* text=auto
+# ... except shell scripts, which bash runs only with LF endings (also when zipped from a Windows checkout)
+*.sh text eol=lf
+# Test fixtures are recorded responses replayed byte for byte: never convert them
+tests/sources/**/fixtures/** -text

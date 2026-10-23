@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-marketplace.json",
+  "name": "zsu",
+  "description": "Plugins by zsu",
+  "owner": {
+    "name": "zsu"
+  },
+  "plugins": [
+    {
+      "name": "data-analyst",
+      "source": "./plugins/data-analyst",
+      "description": "Official U.S. government data (BEA, BLS, FRED, Census, Treasury, OPM, USAspending, CDC, Congress.gov, EPA and more) as CSV plus an audited short answer or HTML report.",
+      "category": "data",
+      "tags": ["government-data", "economics", "statistics"]
+    }
+  ]
+}

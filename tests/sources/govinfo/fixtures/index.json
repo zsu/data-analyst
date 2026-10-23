@@ -1,0 +1,8 @@
+{
+ "POST https://api.govinfo.gov/search 62660e8c00ba": "r001.json",
+ "POST https://api.govinfo.gov/search 19b711f9f9d8": "r002.json",
+ "POST https://api.govinfo.gov/search 65af407bf72a": "r003.json",
+ "POST https://api.govinfo.gov/search 214a0d9b40c2": "r004.json",
+ "GET https://api.govinfo.gov/packages/PLAW-118publ201/summary": "r005.json",
+ "GET https://api.govinfo.gov/packages/PLAW-118publ201/htm": "r006.bin"
+}

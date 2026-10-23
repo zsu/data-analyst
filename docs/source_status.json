@@ -1,0 +1,310 @@
+{
+ "bea": {
+  "last_checked": "2026-10-23",
+  "status": "key_absent",
+  "last_fixed": "2026-10-22",
+  "note": "ToS notice wording"
+ },
+ "bls": {
+  "last_checked": "2026-10-23",
+  "status": "ok",
+  "last_ok": "2026-10-23",
+  "last_fixed": "2026-10-22",
+  "note": "OEWS top-code claim corrected; productivity example"
+ },
+ "bts": {
+  "last_checked": "2026-10-23",
+  "status": "ok",
+  "last_ok": "2026-10-23",
+  "last_fixed": "2026-10-22",
+  "note": "136 columns; grouped SoQL queries work (core)"
+ },
+ "cdc": {
+  "last_checked": "2026-10-23",
+  "status": "ok",
+  "last_ok": "2026-10-23",
+  "last_fixed": "2026-10-22",
+  "note": "weekly_deaths granularity; places_city -> PLACES 2025 (eav7-hnsx); grouped queries (core)"
+ },
+ "census": {
+  "last_checked": "2026-10-23",
+  "status": "key_absent",
+  "last_fixed": "2026-10-22",
+  "note": "PEP vintages; county population via FRED regional without a key"
+ },
+ "cfpb": {
+  "last_checked": "2026-10-23",
+  "status": "ok",
+  "last_ok": "2026-10-23",
+  "last_fixed": "2026-10-22",
+  "note": "field enum; sub_product/sub_issue folded into product/issue; ignored filters refused; narratives ended 2026-08-14"
+ },
+ "clinical-trials": {
+  "last_checked": "2026-10-23",
+  "status": "value_changed",
+  "last_ok": "2026-10-23",
+  "last_fixed": null,
+  "note": ""
+ },
+ "cms": {
+  "last_checked": "2026-10-23",
+  "status": "ok",
+  "last_ok": "2026-10-23",
+  "last_fixed": "2026-10-22",
+  "note": "suppressed '*' cells flagged"
+ },
+ "college-scorecard": {
+  "last_checked": "2026-10-23",
+  "status": "ok",
+  "last_ok": "2026-10-23",
+  "last_fixed": "2026-10-22",
+  "note": "7-year earnings alias; zero admission rates"
+ },
+ "congress": {
+  "last_checked": "2026-10-23",
+  "status": "ok",
+  "last_ok": "2026-10-23",
+  "last_fixed": "2026-10-22",
+  "note": "house votes from the 115th; introducedDate sort; committee bills by congress; sort '+' sent as space"
+ },
+ "doj-news": {
+  "last_checked": "2026-10-23",
+  "status": "ok",
+  "last_ok": "2026-10-23",
+  "last_fixed": "2026-10-22",
+  "note": "created/changed from <time> markup; HTML entities unescaped"
+ },
+ "dol": {
+  "last_checked": "2026-10-23",
+  "status": "key_absent",
+  "last_fixed": "2026-10-22",
+  "note": "OSHA insp_type legend from DOL dictionary"
+ },
+ "eia": {
+  "last_checked": "2026-10-23",
+  "status": "ok",
+  "last_ok": "2026-10-23",
+  "last_fixed": "2026-10-22",
+  "note": "msn facet named per route; bare-year start/end widened for sub-annual data"
+ },
+ "epa": {
+  "last_checked": "2026-10-23",
+  "status": "ok",
+  "last_ok": "2026-10-23",
+  "last_fixed": "2026-10-22",
+  "note": "ECHO case params p_milestone_fy / p_civil_criminal_indicator; p_ncs; p_fips; ignored params refused"
+ },
+ "epa-aqs": {
+  "last_checked": "2026-10-23",
+  "status": "key_absent",
+  "last_fixed": "2026-10-22",
+  "note": "list/durations removed"
+ },
+ "fbi": {
+  "last_checked": "2026-10-23",
+  "status": "ok",
+  "last_ok": "2026-10-23",
+  "last_fixed": "2026-10-22",
+  "note": "DEMO_KEY 50/day; NIBRS estimation endpoints noted"
+ },
+ "fda": {
+  "last_checked": "2026-10-23",
+  "status": "ok",
+  "last_ok": "2026-10-23",
+  "last_fixed": "2026-10-22",
+  "note": "keyless count limit 999; shortages count fields and dates; enforcement from 2012-06-20"
+ },
+ "fdic": {
+  "last_checked": "2026-10-23",
+  "status": "ok",
+  "last_ok": "2026-10-23",
+  "last_fixed": "2026-10-22",
+  "note": "agg params declared"
+ },
+ "fec": {
+  "last_checked": "2026-10-23",
+  "status": "ok",
+  "last_ok": "2026-10-23",
+  "last_fixed": "2026-10-22",
+  "note": "documented vs observed key limits"
+ },
+ "federal-register": {
+  "last_checked": "2026-10-23",
+  "status": "ok",
+  "last_ok": "2026-10-23",
+  "last_fixed": "2026-10-22",
+  "note": "oldest-order paging deduplicated"
+ },
+ "fema": {
+  "last_checked": "2026-10-23",
+  "status": "ok",
+  "last_ok": "2026-10-23",
+  "last_fixed": "2026-10-22",
+  "note": "CSV-capable query example; booleans 0/1 in CSV"
+ },
+ "fred": {
+  "last_checked": "2026-10-23",
+  "status": "ok",
+  "last_ok": "2026-10-23",
+  "last_fixed": null,
+  "note": ""
+ },
+ "govinfo": {
+  "last_checked": "2026-10-23",
+  "status": "ok",
+  "last_ok": "2026-10-23",
+  "last_fixed": "2026-10-22",
+  "note": "GAOREPORTS 1989-2008; backslash note"
+ },
+ "gsa-calc": {
+  "last_checked": "2026-10-23",
+  "status": "value_changed",
+  "last_ok": "2026-10-23",
+  "last_fixed": "2026-10-22",
+  "note": "empty export is no rows; unknown filter/search fields refused; 406 explained"
+ },
+ "hud": {
+  "last_checked": "2026-10-23",
+  "status": "key_absent",
+  "last_fixed": "2026-10-22",
+  "note": "income-limit effective dates"
+ },
+ "ipums": {
+  "last_checked": "2026-10-23",
+  "status": "ok",
+  "last_ok": "2026-10-23",
+  "last_fixed": "2026-10-22",
+  "note": "rps 1.5 (100/min); WTFINL not in ASEC; DHS approval"
+ },
+ "naep": {
+  "last_checked": "2026-10-23",
+  "status": "ok",
+  "last_ok": "2026-10-23",
+  "last_fixed": "2026-10-22",
+  "note": "2024 variables malformed JSON repaired; percentiles; grade 12 2024; NR through 2013"
+ },
+ "nhtsa": {
+  "last_checked": "2026-10-23",
+  "status": "ok",
+  "last_ok": "2026-10-23",
+  "last_fixed": "2026-10-22",
+  "note": "removed lat/long station search (API ignores the point); model-year 9999; recall model names"
+ },
+ "nih": {
+  "last_checked": "2026-10-23",
+  "status": "ok",
+  "last_ok": "2026-10-23",
+  "last_fixed": "2026-10-22",
+  "note": "publications cap 10,000; include_fields names; P01 numbers"
+ },
+ "noaa": {
+  "last_checked": "2026-10-23",
+  "status": "ok",
+  "last_ok": "2026-10-23",
+  "last_fixed": "2026-10-22",
+  "note": "station_search stations param; YYYY-MM dates padded; missing data types fail; cdo without key is key_missing"
+ },
+ "nrel": {
+  "last_checked": "2026-10-23",
+  "status": "value_changed",
+  "last_ok": "2026-10-23",
+  "last_fixed": "2026-10-22",
+  "note": "station defaults now all; location/address removed; PVWatts hourly rows; open_date history"
+ },
+ "nws": {
+  "last_checked": "2026-10-23",
+  "status": "value_changed",
+  "last_ok": "2026-10-23",
+  "last_fixed": "2026-10-22",
+  "note": "QC codes; 7-day alert window"
+ },
+ "open-payments": {
+  "last_checked": "2026-10-23",
+  "status": "ok",
+  "last_ok": "2026-10-23",
+  "last_fixed": "2026-10-22",
+  "note": "placeholder-NPI example allow_empty; CONTAINS/STARTS WITH; ALL rollup rows"
+ },
+ "opm": {
+  "last_checked": "2026-10-23",
+  "status": "value_changed",
+  "last_ok": "2026-10-23",
+  "last_fixed": "2026-10-22",
+  "note": "employment monthly from June 2011"
+ },
+ "regulations": {
+  "last_checked": "2026-10-23",
+  "status": "ok",
+  "last_ok": "2026-10-23",
+  "last_fixed": "2026-10-22",
+  "note": "page size at least 5 (core min_size)"
+ },
+ "sec": {
+  "last_checked": "2026-10-23",
+  "status": "ok",
+  "last_ok": "2026-10-23",
+  "last_fixed": "2026-10-22",
+  "note": "per-share unit spelling mapped per endpoint"
+ },
+ "senate-lobbying": {
+  "last_checked": "2026-10-23",
+  "status": "ok",
+  "last_ok": "2026-10-23",
+  "last_fixed": "2026-10-22",
+  "note": "client_state / id filters; search syntax"
+ },
+ "treasury": {
+  "last_checked": "2026-10-23",
+  "status": "ok",
+  "last_ok": "2026-10-23",
+  "last_fixed": "2026-10-22",
+  "note": "parentheses in eq filters work"
+ },
+ "treasury-yields": {
+  "last_checked": "2026-10-23",
+  "status": "ok",
+  "last_ok": "2026-10-23",
+  "last_fixed": "2026-10-22",
+  "note": "published zeros; 2021-12-06 method change"
+ },
+ "usaspending": {
+  "last_checked": "2026-10-23",
+  "status": "ok",
+  "last_ok": "2026-10-23",
+  "last_fixed": null,
+  "note": ""
+ },
+ "usda-fooddata": {
+  "last_checked": "2026-10-23",
+  "status": "ok",
+  "last_ok": "2026-10-23",
+  "last_fixed": "2026-10-22",
+  "note": "/foods 20 documented, 50 live"
+ },
+ "usda-nass": {
+  "last_checked": "2026-10-23",
+  "status": "key_absent",
+  "last_fixed": "2026-10-22",
+  "note": "no-endorsement notice; __LT/__GT"
+ },
+ "usgs": {
+  "last_checked": "2026-10-23",
+  "status": "ok",
+  "last_ok": "2026-10-23",
+  "last_fixed": "2026-10-22",
+  "note": "monitoring-locations site filter sent as id; eventid single Feature parsed; new collections listed"
+ },
+ "uspto": {
+  "last_checked": "2026-10-23",
+  "status": "key_absent",
+  "last_fixed": null,
+  "note": ""
+ },
+ "world-bank": {
+  "last_checked": "2026-10-23",
+  "status": "ok",
+  "last_ok": "2026-10-23",
+  "last_fixed": "2026-10-22",
+  "note": "indicator lists; unknown-country message; dataset terms URL"
+ }
+}
