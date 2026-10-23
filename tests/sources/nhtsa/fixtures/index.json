@@ -1,0 +1,6 @@
+{
+ "GET https://api.nhtsa.gov/recalls/recallsByVehicle?make=honda&model=civic&modelYear=2019": "r001.json",
+ "GET https://api.nhtsa.gov/SafetyRatings/VehicleId/14009": "r002.json",
+ "GET https://vpic.nhtsa.dot.gov/api/vehicles/DecodeVinValues/1HGCM82633A123456?format=json": "r003.json",
+ "GET https://api.nhtsa.gov/complaints/odinumber?odinumber=11675912": "r004.json"
+}
