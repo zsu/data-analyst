@@ -1,6 +1,7 @@
-"""The repo installs as a Claude plugin from GitHub: marketplace.json -> plugins/data-analyst/ (plugin.json) ->
-skills/data-analyst/SKILL.md, and as a Codex plugin through .agents/plugins/marketplace.json and .codex-plugin/.
-Also guards against the old project-skill path creeping back in."""
+"""The repo is a plugin, not a marketplace: the `zsu` catalog in zsu/agent-plugins installs
+plugins/data-analyst/ from GitHub (git-subdir) for Claude (.claude-plugin/plugin.json) and Codex
+(.codex-plugin/plugin.json), both pointing at skills/data-analyst/SKILL.md. Also guards against the old
+project-skill path creeping back in."""
 import importlib.util
 import json
 import os
@@ -14,8 +15,7 @@ import testkit
 
 ROOT = testkit.ROOT
 KEBAB = re.compile(r"[a-z0-9]+(-[a-z0-9]+)*")
-RESERVED_PREFIXES = ("claude-", "anthropic-")
-RESERVED_MARKETPLACES = {"claude-plugins-official", "claude-code-plugins", "anthropic-plugins", "anthropic-marketplace"}
+RESERVED_PREFIXES = ("claude-", "anthropic-", "openai-")
 OLD_PATH = ".claude/skills/data-analyst"
 
 
@@ -25,31 +25,20 @@ def _json(*parts):
 
 
 class TestManifests(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls):
-        cls.market = _json(".claude-plugin", "marketplace.json")
+    def test_no_marketplace_in_this_repo(self):
+        """The catalog lives in zsu/agent-plugins; a second `zsu` marketplace here would clash with it."""
+        self.assertFalse(os.path.exists(os.path.join(ROOT, ".claude-plugin", "marketplace.json")))
+        self.assertFalse(os.path.exists(os.path.join(ROOT, ".agents", "plugins", "marketplace.json")))
 
-    def test_marketplace_identity(self):
-        m = self.market
-        self.assertRegex(m["name"], KEBAB)
-        self.assertNotIn(m["name"], RESERVED_MARKETPLACES)
-        self.assertTrue(m["owner"]["name"])
-        self.assertTrue(m["plugins"])
-
-    def test_every_listed_plugin_resolves(self):
-        names = [p["name"] for p in self.market["plugins"]]
-        self.assertEqual(len(names), len(set(names)), "duplicate plugin names")
-        for entry in self.market["plugins"]:
-            self.assertRegex(entry["name"], KEBAB)
-            self.assertFalse(entry["name"].startswith(RESERVED_PREFIXES), entry["name"])
-            self.assertTrue(entry["source"].startswith("./"), "relative sources start with ./")
-            pdir = os.path.join(ROOT, entry["source"])
-            plugin = _json(entry["source"], ".claude-plugin", "plugin.json")
-            self.assertEqual(plugin["name"], entry["name"])
-            self.assertRegex(plugin["version"], r"\d+\.\d+\.\d+")
-            self.assertNotIn("version", entry, "keep the version in plugin.json only, so the two cannot drift")
-            self.assertTrue(plugin["description"])
-            self.assertTrue(os.path.isdir(os.path.join(pdir, "skills")))
+    def test_claude_plugin_manifest(self):
+        pdir = os.path.join(ROOT, "plugins", "data-analyst")
+        plugin = _json("plugins", "data-analyst", ".claude-plugin", "plugin.json")
+        self.assertEqual(plugin["name"], "data-analyst")
+        self.assertRegex(plugin["name"], KEBAB)
+        self.assertFalse(plugin["name"].startswith(RESERVED_PREFIXES))
+        self.assertRegex(plugin["version"], r"\d+\.\d+\.\d+")
+        self.assertTrue(plugin["description"])
+        self.assertTrue(os.path.isdir(os.path.join(pdir, "skills")))
 
     def test_codex_manifest_matches_claude(self):
         """Codex reads the same skills/ folder through its own manifest; the two versions cannot drift."""
@@ -61,17 +50,6 @@ class TestManifests(unittest.TestCase):
         self.assertTrue(codex["skills"].startswith("./"))
         self.assertTrue(os.path.isfile(os.path.join(pdir, codex["skills"], "data-analyst", "SKILL.md")))
         self.assertTrue(codex["interface"]["displayName"])
-
-    def test_codex_marketplace_resolves(self):
-        market = _json(".agents", "plugins", "marketplace.json")
-        self.assertEqual(market["name"], self.market["name"])
-        for entry in market["plugins"]:
-            src = entry["source"]
-            self.assertEqual(src["source"], "local")
-            self.assertTrue(src["path"].startswith("./"), "relative sources start with ./")
-            self.assertEqual(_json(src["path"], ".codex-plugin", "plugin.json")["name"], entry["name"])
-            self.assertNotIn("version", entry)
-            self.assertIn(entry["policy"]["installation"], ("AVAILABLE", "INSTALLED_BY_DEFAULT", "NOT_AVAILABLE"))
 
     def test_skill_matches_directory_and_no_claude_md(self):
         pdir = os.path.join(ROOT, "plugins", "data-analyst")

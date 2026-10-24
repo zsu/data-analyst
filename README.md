@@ -9,19 +9,20 @@ Each source keeps its own rules (IPUMS microdata is never redistributed; FRED fo
 OPM reports disclose redaction coverage; ...). `fetch.py --sources` lists every source.
 
 ## Install
-Install it as a plugin from this GitHub repo. The skill is then `/data-analyst:data-analyst`, and it also
+Install it as a plugin from the `zsu` marketplace in the [zsu/agent-plugins](https://github.com/zsu/agent-plugins)
+catalog, which installs it from this GitHub repo. The skill is then `/data-analyst:data-analyst`, and it also
 triggers on its own when you ask a question about U.S. government data.
 
 - **Claude Code (terminal):**
   ```
-  /plugin marketplace add zsu/data-analyst
+  /plugin marketplace add zsu/agent-plugins
   /plugin install data-analyst@zsu
   ```
-  or from a shell: `claude plugin marketplace add zsu/data-analyst` then
+  or from a shell: `claude plugin marketplace add zsu/agent-plugins`, then
   `claude plugin install data-analyst@zsu`.
-- **Claude Desktop (Code tab):** click **+**, choose **Add plugins**, add the marketplace `zsu/data-analyst`,
-  and install `data-analyst`.
-- **Cowork and claude.ai (web):** Customize > Plugins > Add > Add marketplace, enter `zsu/data-analyst`, then
+- **Claude Desktop (Code tab):** click **+**, choose **Add plugins**, add the marketplace `zsu/agent-plugins`,
+  then install `data-analyst`.
+- **Cowork and claude.ai (web):** Customize > Plugins > Add > Add marketplace, enter `zsu/agent-plugins`, then
   install `data-analyst`. Or run `python tools/package_skill.py --plugin` and use Add > Upload plugin with
   `dist/data-analyst-plugin.zip`. Keyless sources work when the organization's network settings allow their
   hosts; otherwise the skill hands over a manual-download bundle and ingests the uploads.
@@ -31,11 +32,11 @@ triggers on its own when you ask a question about U.S. government data.
   install it when they trust the folder:
   ```json
   {
-    "extraKnownMarketplaces": {"zsu": {"source": {"source": "github", "repo": "zsu/data-analyst"}}},
+    "extraKnownMarketplaces": {"zsu": {"source": {"source": "github", "repo": "zsu/agent-plugins"}}},
     "enabledPlugins": {"data-analyst@zsu": true}
   }
   ```
-- **Codex (CLI and app):** `codex plugin marketplace add zsu/data-analyst`, then install `data-analyst` from the
+- **Codex (CLI and app):** `codex plugin marketplace add zsu/agent-plugins`, then install `data-analyst` from the
   Plugins directory. The skill triggers on its own for U.S. government data questions. Codex's sandbox may block
   network access; the skill says so and how to allow it.
 - **Any other assistant that reads Agent Skills:** copy `plugins/data-analyst/skills/data-analyst/` (or unzip
