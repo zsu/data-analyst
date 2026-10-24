@@ -2,7 +2,7 @@
 
 User-Agent: SEC's fair-access policy asks every automated client to identify itself with a contact
 email ("Sample Company Name AdminContact@<sample company domain>.com") and to stay under 10 requests a
-second. The pack sends SEC_USER_AGENT (environment variable or "env" in Claude Code's settings.json)
+second. The pack sends SEC_USER_AGENT (environment variable, or "env" in keys.json or Claude Code's settings.json)
 when set, else a generic tool name. It never sends the shared default User-Agent, because SEC's
 firewall answers HTTP 403 to User-Agents that contain a GitHub URL (verified 2026-10-20).
 data.sec.gov and efts.sec.gov accept the generic name; www.sec.gov (company_tickers.json, the

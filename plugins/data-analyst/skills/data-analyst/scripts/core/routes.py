@@ -13,7 +13,7 @@ next_command, plus what was probed. Routes, first match wins:
   cloud_secret     a key is needed in a Claude Code cloud session: add it to the environment's secrets
                    (a manual bundle is written as the other option)
   cloud_allowlist  a cloud session cannot reach the host: allow it in the network settings, or use the bundle
-  manual_download  the analysis environment cannot get the data (sandbox, claude.ai with network off or the
+  manual_download  the analysis environment cannot get the data (sandbox, hosted chat with network off or the
                    host not on the organization's allow-list, or a key that cannot be stored here): the user
                    downloads the files with the bundle and uploads them; then --ingest
   fix_spec         the request names an endpoint, parameter or value the source does not have
@@ -30,7 +30,7 @@ import os
 import sys
 
 from core import keys, package
-from core.env import setup_command
+from core.env import network_note, setup_command
 from core.http import reachable
 
 EXIT_OK, EXIT_SPEC, EXIT_UNEXPECTED, EXIT_BLOCKED = 0, 2, 3, 4
@@ -153,7 +153,7 @@ def route_check(pack, spec: dict, spec_path: str, out: str, env: str, force: boo
             path, setup = setup_command(pack.id)
             r.update(setup_script=path, run_command=setup)
             return done("run_setup", lead + need + " The setup script asks for it with hidden input, checks it and "
-                        "stores it in Claude Code's settings.json.",
+                        "stores it in the skill's keys.json (~/.config/data-analyst).",
                         "Give the user run_command to run in their own terminal (never run it for them, never ask for "
                         "the key in chat). Offer any keyless alternative. When they say it is stored, run --check again.",
                         setup)
@@ -162,15 +162,15 @@ def route_check(pack, spec: dict, spec_path: str, out: str, env: str, force: boo
             return done("cloud_secret", lead + need + f" Add {a['env']} to the cloud environment's secrets and restart "
                         "the session" + (f", or download on your own computer with the files in {b}." if b else "."),
                         "Explain both options. If the user downloads by hand: " + SEND_BUNDLE, ingest)
-        return done("manual_download", lead + need + " A key cannot be stored in this environment (claude.ai or another "
-                    "sandbox), so the files must be downloaded where the key is: " +
+        return done("manual_download", lead + need + " A key cannot be stored in this environment (a hosted sandbox "
+                    "such as claude.ai or ChatGPT), so the files must be downloaded where the key is: " +
                     (f"the links and scripts are in {b}." if b else P["routes"]["manual"]["how"]) +
-                    " Alternatively run the request in Claude Code on your own computer.",
+                    " Alternatively run the request in a coding agent on your own computer (Claude Code, Codex).",
                     SEND_BUNDLE, ingest)
 
     if env in ("local", "ssh") and not keys.restricted():
         return done("report_error", f"{P['title']} could not be reached from this computer ({why}). Check the "
-                    "internet connection, VPN and proxy settings (HTTPS_PROXY), then try again.",
+                    "internet connection, VPN and proxy settings (HTTPS_PROXY), then try again." + network_note(),
                     "Tell the user and stop. Do not substitute data from memory.")
     b = bundle(f"{P['title']} cannot be reached from the analysis environment")
     hosts = sorted({h for v in P["routes"].values() if isinstance(v, dict) for h in v.get("hosts", [])})
@@ -180,8 +180,8 @@ def route_check(pack, spec: dict, spec_path: str, out: str, env: str, force: boo
                     "by hand" + (f" with {b}." if b else f": {P['routes']['manual']['how']}"),
                     "Offer both options. For the manual one: " + SEND_BUNDLE,
                     ingest)
-    return done("manual_download", f"This {env} environment cannot reach {P['title']} ({why}). On claude.ai an "
-                f"organization admin can allow {', '.join(hosts) or 'the host'} in the network settings; otherwise "
+    return done("manual_download", f"This {env} environment cannot reach {P['title']} ({why}). In a hosted "
+                f"sandbox (claude.ai, Codex cloud) an admin can allow {', '.join(hosts) or 'the host'} in the network settings; otherwise "
                 + (f"the download links and scripts are in {b}: run one on your own computer and upload the files."
                    if b else P["routes"]["manual"]["how"]),
                 SEND_BUNDLE, ingest)

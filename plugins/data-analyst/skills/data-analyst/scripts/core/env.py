@@ -5,8 +5,8 @@ was actually reached, never from the environment's name):
   local    the user's own computer: they can run the setup script in their terminal
   ssh      a machine the user reaches over SSH: same, in that terminal
   cloud    a Claude Code cloud session: keys go into the environment's secrets; hosts may need allowlisting
-  sandbox  claude.ai code execution, Cowork, or any other container with no terminal of the user's: no setup
-           script, no settings.json; keyless hosts only if the network allows them, otherwise the user
+  sandbox  claude.ai code execution, Cowork, ChatGPT, Codex cloud or any other container with no terminal of
+           the user's: no setup script, no key file; keyless hosts only if the network allows them, otherwise the user
            downloads the files and uploads them
 Detected from environment variables and container markers (no fixed paths); override with --env or
 DATA_ANALYST_ENV when the guess is wrong.
@@ -44,6 +44,15 @@ def detect_environment(override: str | None = None) -> str:
     markers = [os.environ.get("CODESPACES"), os.environ.get("KUBERNETES_SERVICE_HOST"),
                "x" if os.path.exists("/.dockerenv") else "", "x" if os.path.exists("/run/.containerenv") else ""]
     return "sandbox" if any(markers) or not writable(os.path.expanduser("~")) else "local"
+
+
+def network_note() -> str:
+    """A hint for a local run whose network is cut by the assistant's own sandbox (Codex sets
+    CODEX_SANDBOX_NETWORK_DISABLED=1 there); empty otherwise."""
+    if (os.environ.get("CODEX_SANDBOX_NETWORK_DISABLED") or "").lower() in TRUTHY:
+        return (" Codex's sandbox has network access turned off: approve running the command with network access, "
+                "or turn it on in Codex's sandbox settings (sandbox_workspace_write.network_access = true).")
+    return ""
 
 
 def writable(path: str) -> bool:

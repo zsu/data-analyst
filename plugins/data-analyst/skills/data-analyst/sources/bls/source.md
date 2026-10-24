@@ -110,7 +110,7 @@ from unrounded months; a mean that lands exactly on .x5 is a tie whichever way i
 ## Access
 - Key: optional, free at https://data.bls.gov/registrationEngine/ (emailed in minutes; **expires after a
   year**). Stored by the skill's setup script (`setup.ps1 -Source bls` / `setup.sh bls`), read through
-  core.keys from BLS_API_KEY, BLS_API_KEY_FILE, Claude Code settings.json or ~/.bls/api_key.
+  core.keys from BLS_API_KEY, BLS_API_KEY_FILE, keys.json, Claude Code settings.json or ~/.bls/api_key.
 - Limits: v2 with a key 500 queries a day, 50 series and 20 years per query; v1 without a key 25 queries a
   day (per IP), 25 series and 10 years per query; 50 requests per 10 seconds. fetch.py plans the queries,
   counts them in `~/.bls/usage.json` (a temp folder if home is not writable), and `--check` reports

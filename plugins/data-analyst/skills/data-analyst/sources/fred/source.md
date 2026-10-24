@@ -105,8 +105,8 @@ fiscal_year, first/last date, n_obs, n_missing, n_future, source, release, copyr
 ## Access
 - Key: optional, free at https://fredaccount.stlouisfed.org/apikeys (one per user; never share or embed
   one). Stored by the skill's setup script (`setup.ps1 -Source fred` / `setup.sh fred`; keycheck.py: HTTP 400
-  naming api_key = rejected); read through core.keys from FRED_API_KEY, FRED_API_KEY_FILE, Claude Code
-  settings.json or ~/.fred/api_key. v1 takes it as `api_key` (dropped from every recorded URL); v2
+  naming api_key = rejected); read through core.keys from FRED_API_KEY, FRED_API_KEY_FILE, keys.json,
+  Claude Code settings.json or ~/.fred/api_key. v1 takes it as `api_key` (dropped from every recorded URL); v2
   (release observations) as `Authorization: Bearer` (a query key answers HTTP 401).
 - Limits: 120 requests a minute (the client paces at 1.8 a second), 100,000 observations per call (paged).
 - Routes from `--check`: `reuse_existing` (also when only labels, sources or copyright changed: the run

@@ -1,14 +1,17 @@
 <#
 .SYNOPSIS
-Store an API key for one data-analyst source in Claude Code user settings (Windows PowerShell).
+Store an API key for one data-analyst source (Windows PowerShell). Works for any assistant.
 
 .DESCRIPTION
+- If the key variable is already set in your environment, stores nothing (the skill uses it directly);
+  -Force stores a key anyway.
 - Prompts for the key with hidden input. The key is never echoed, logged, or put on a command line.
 - Checks the key with the source's API (one small request) unless -NoVerify.
-- Writes "env": {"<KEY_VARIABLE>": "..."} into %USERPROFILE%\.claude\settings.json (or
-  $env:CLAUDE_CONFIG_DIR\settings.json), keeping every other setting; the previous file is saved as .bak.
-- The skill reads settings.json directly, so the key works at once.
-Not for claude.ai: the web sandbox has no settings file; use the manual-download route there.
+- Writes "env": {"<KEY_VARIABLE>": "..."} into %USERPROFILE%\.config\data-analyst\keys.json (or
+  $env:DATA_ANALYST_CONFIG_DIR\keys.json); -Claude writes Claude Code's settings.json instead. Other entries
+  are kept; the previous file is saved as .bak.
+- The skill reads the file directly under Claude, Codex or any other assistant, so the key works at once.
+Not for hosted chat sandboxes (claude.ai, ChatGPT): use the manual-download route there.
 
 .EXAMPLE
 powershell -NoProfile -ExecutionPolicy Bypass -File .\setup.ps1 -Source fred
@@ -17,12 +20,14 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\setup.ps1 -Source fred
 param(
     [Parameter(Mandatory = $true)][string]$Source,
     [switch]$NoVerify,
+    [switch]$Force,
+    [switch]$Claude,
     [string]$Settings
 )
 $ErrorActionPreference = 'Stop'
 function Fail([string]$Message) { [Console]::Error.WriteLine("ERROR: $Message"); exit 1 }
 
-if (-not $Settings) {
+if ($Claude -and -not $Settings) {
     $cfg = $env:CLAUDE_CONFIG_DIR
     if (-not $cfg) { $cfg = Join-Path $HOME '.claude' }
     $Settings = Join-Path $cfg 'settings.json'
@@ -46,6 +51,11 @@ $infoJson = & $py $helper info $Source
 if ($LASTEXITCODE -ne 0) { Fail "Source '$Source' does not use an API key (or is unknown). Nothing to set up." }
 $info = $infoJson | ConvertFrom-Json
 Write-Host "$($info.title): the key goes in $($info.env). Get a free key at $($info.signup_url)"
+if ($info.env_set) {
+    # a variable this terminal sees is one every assistant started from it sees too: a stored copy adds nothing
+    if (-not $Force) { Write-Host "$($info.env) is already set in your environment; the skill uses it directly. Nothing was stored."; exit 0 }
+    Write-Host "Note: $($info.env) in your environment takes precedence over the stored key until you remove it."
+}
 
 if ([Console]::IsInputRedirected) {
     $plain = [Console]::In.ReadLine()
@@ -85,10 +95,11 @@ try {
             if ($answer -notmatch '^(y|yes)$') { Fail 'Key not saved. Nothing was changed.' }
         }
     }
-    & $py $helper save $Source $Settings | Out-Host
-    if ($LASTEXITCODE -ne 0) { Fail 'Could not update the settings file.' }
+    # no path: the helper writes keys.json
+    if ($Settings) { & $py $helper save $Source $Settings | Out-Host } else { & $py $helper save $Source | Out-Host }
+    if ($LASTEXITCODE -ne 0) { Fail 'Could not update the key file.' }
 } finally {
     Remove-Item Env:\DATA_ANALYST_SETUP_KEY -ErrorAction SilentlyContinue
     Remove-Item Env:\DATA_ANALYST_SETUP_EXTRA -ErrorAction SilentlyContinue
 }
-Write-Host 'Done. Ask Claude to run the request again; the skill reads the key from settings.json at once.'
+Write-Host 'Done. Ask your assistant to run the request again; the skill reads the key at once.'

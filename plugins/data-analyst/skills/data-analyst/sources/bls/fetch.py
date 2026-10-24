@@ -230,8 +230,8 @@ def route_check(s: dict, out: str, env: str, force: bool = False, spec_path: str
                         f"with the files in {b}.",
                         "Offer both options; for the manual one: " + SEND_ACTION, ingest_cmd)
         return done("manual_download",
-                    f"This {env} environment cannot reach api.bls.gov ({why}). On claude.ai an organization admin "
-                    f"can allow api.bls.gov in the network settings; otherwise the request files and the steps are "
+                    f"This {env} environment cannot reach api.bls.gov ({why}). In a hosted sandbox (claude.ai, "
+                    f"Codex cloud) an admin can allow api.bls.gov in the network settings; otherwise the request files and the steps are "
                     f"in {b}: run them on your own computer and upload the JSON responses.",
                     SEND_ACTION, ingest_cmd)
 
@@ -282,8 +282,8 @@ def route_check(s: dict, out: str, env: str, force: bool = False, spec_path: str
         r.update(setup_script=path, run_command=cmd)
         return done("run_setup",
                     need + f" Register for a free key at {REGISTER_URL} (BLS emails it within minutes); the setup "
-                    "script asks for it with hidden input, checks it with BLS and stores it in Claude Code's "
-                    "settings.json.",
+                    "script asks for it with hidden input, checks it with BLS and stores it in "
+                    "the skill's keys.json (~/.config/data-analyst).",
                     "Give the user run_command to run in their own terminal (do not run it for them, and never "
                     "ask for the key in the chat). Offer the alternative of a smaller request (fewer series or "
                     "years) that fits the keyless limits. When the user says the key is stored, run --check again.",
@@ -348,8 +348,8 @@ itself. At the end it prints the full paths of the files to upload.
 
 ## Upload
 
-Upload every `response_*.json` file to the chat (do not edit them). After the upload Claude packages
-the files. A response with `"status": "REQUEST_NOT_PROCESSED"` means BLS refused it (often the daily
+Upload every `response_*.json` file to the chat (do not edit them). After the upload the assistant
+packages the files. A response with `"status": "REQUEST_NOT_PROCESSED"` means BLS refused it (often the daily
 limit); send it anyway: the message says why. One exception for the curl steps: when BLS says the key
 is invalid, its reply repeats the key, so do not upload that file; check the key and run again (the
 download scripts remove the key from the reply themselves).

@@ -60,7 +60,8 @@ def run(args: list[str], fixtures: str | None = None, env: dict | None = None, h
     if fixtures:
         e["DATA_ANALYST_FIXTURES"] = fixtures
     if home:                                     # isolate settings.json and ~/.<x>/api_key lookups
-        e.update(HOME=home, USERPROFILE=home, CLAUDE_CONFIG_DIR=os.path.join(home, ".claude"))
+        e.update(HOME=home, USERPROFILE=home, CLAUDE_CONFIG_DIR=os.path.join(home, ".claude"),
+                 DATA_ANALYST_CONFIG_DIR=os.path.join(home, ".config", "data-analyst"))
     e.update(env or {})
     p = subprocess.run([sys.executable, fetch, *args], capture_output=True, text=True, env=e)
     out = p.stdout.strip()

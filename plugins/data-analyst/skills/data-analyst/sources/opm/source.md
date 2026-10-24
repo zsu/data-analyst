@@ -134,7 +134,7 @@ redaction_coverage(emp, ["period", "department_code"]).to_csv(f"{OUT}/coverage.c
 - Before a manual task, check whether a simple total is on OPM's own pages (Workforce Insights
   dashboards, Table Builder at https://data.opm.gov/explore-data/data/table-builder; JavaScript apps: use
   browser tools). Quote the page, month and definition, and say it was read, not computed.
-- Manual route (sandbox, claude.ai without the host allowed, Parquet unreadable): `<out>/manual_download/opm/`
+- Manual route (sandbox, hosted chat without the host allowed, Parquet unreadable): `<out>/manual_download/opm/`
   holds `INSTRUCTIONS.md`, `spec.json`, `download_opm.sh` / `download_opm.ps1` (the request built in; no
   Python, no key), a runnable copy of the fetcher with the shared `core/` modules and, when the file list was
   reachable, `urls.txt`. Send them as the route JSON says (`download_scripts`, `user_commands`). Option A

@@ -73,7 +73,7 @@ layouts, not a live response; check `data_dictionary.csv` after the first fetch.
 Key required: a free AQS key is emailed after a sign-up request (open
 https://aqs.epa.gov/data/api/signup?email=YOUR_EMAIL with your address). Store the key in `AQS_API_KEY`
 (the setup script) and the registered email in `AQS_EMAIL` (an environment variable or the same
-settings.json "env" block); both are sent as query parameters and never recorded. Limits (AQS terms):
+"env" block of keys.json, where the setup script puts both); both are sent as query parameters and never recorded. Limits (AQS terms):
 no more than 10 requests a minute, a 5-second pause between requests, one request at a time; the pack
 waits 5 seconds between calls, so multi-year requests take a while. Accounts that break the terms may be
 disabled. Manual route without a key: EPA AirData pre-generated files,

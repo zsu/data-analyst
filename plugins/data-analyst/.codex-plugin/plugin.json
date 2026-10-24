@@ -1,0 +1,25 @@
+{
+  "name": "data-analyst",
+  "version": "1.1.0",
+  "description": "Answer questions with official U.S. government data (BEA, BLS, FRED, Census, Treasury, OPM, USAspending, CDC, Congress.gov, EPA and 35+ more): CSV data plus an audited short answer, or an audited HTML report.",
+  "author": {
+    "name": "zsu"
+  },
+  "homepage": "https://github.com/zsu/data-analyst",
+  "repository": "https://github.com/zsu/data-analyst",
+  "keywords": ["government-data", "economics", "bls", "bea", "fred", "census", "treasury", "data-analysis"],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Data Analyst",
+    "shortDescription": "Answers from official U.S. government data, with CSVs and an audit",
+    "longDescription": "Picks the federal sources a question needs (BEA, BLS, FRED, Census, IPUMS, Treasury, OPM, USAspending, CDC, Congress.gov, EPA and more), downloads the data with or without API keys, and returns CSV data plus an audited short answer, or an audited HTML report when asked.",
+    "developerName": "zsu",
+    "category": "Data",
+    "capabilities": ["Interactive", "Read", "Write"],
+    "defaultPrompt": [
+      "How much has federal debt held by the public grown as a share of GDP since 2015?",
+      "Chart real average hourly earnings by industry over the last ten years."
+    ],
+    "websiteURL": "https://github.com/zsu/data-analyst"
+  }
+}

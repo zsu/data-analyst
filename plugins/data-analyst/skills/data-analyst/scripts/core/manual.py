@@ -203,7 +203,7 @@ def write_bundle(out: str, groups: list[tuple], reason: str, specs: dict | None 
         mark += " (optional)" if i.get("optional") else ""
         lines.append(f"- **{i['filename']}** [{i['source']}]{mark}{how}: {i['url']}" + (f"  \n  {i['note']}" if i["note"] else ""))
     lines += ["", "## Upload", "",
-              "Upload every downloaded file (do not rename or edit them). Claude then reads them and continues."]
+              "Upload every downloaded file (do not rename or edit them). The assistant then reads them and continues."]
     with open(os.path.join(d, "INSTRUCTIONS.md"), "w", encoding="utf-8") as f:
         f.write("\n".join(lines) + "\n")
     return {"dir": d, "instructions": os.path.join(d, "INSTRUCTIONS.md"), "scripts": scripts,

@@ -1,5 +1,6 @@
 """The repo installs as a Claude plugin from GitHub: marketplace.json -> plugins/data-analyst/ (plugin.json) ->
-skills/data-analyst/SKILL.md. Also guards against the old project-skill path creeping back in."""
+skills/data-analyst/SKILL.md, and as a Codex plugin through .agents/plugins/marketplace.json and .codex-plugin/.
+Also guards against the old project-skill path creeping back in."""
 import importlib.util
 import json
 import os
@@ -49,6 +50,28 @@ class TestManifests(unittest.TestCase):
             self.assertNotIn("version", entry, "keep the version in plugin.json only, so the two cannot drift")
             self.assertTrue(plugin["description"])
             self.assertTrue(os.path.isdir(os.path.join(pdir, "skills")))
+
+    def test_codex_manifest_matches_claude(self):
+        """Codex reads the same skills/ folder through its own manifest; the two versions cannot drift."""
+        pdir = os.path.join(ROOT, "plugins", "data-analyst")
+        claude = _json("plugins", "data-analyst", ".claude-plugin", "plugin.json")
+        codex = _json("plugins", "data-analyst", ".codex-plugin", "plugin.json")
+        self.assertEqual(codex["name"], claude["name"])
+        self.assertEqual(codex["version"], claude["version"], "bump both plugin.json files together")
+        self.assertTrue(codex["skills"].startswith("./"))
+        self.assertTrue(os.path.isfile(os.path.join(pdir, codex["skills"], "data-analyst", "SKILL.md")))
+        self.assertTrue(codex["interface"]["displayName"])
+
+    def test_codex_marketplace_resolves(self):
+        market = _json(".agents", "plugins", "marketplace.json")
+        self.assertEqual(market["name"], self.market["name"])
+        for entry in market["plugins"]:
+            src = entry["source"]
+            self.assertEqual(src["source"], "local")
+            self.assertTrue(src["path"].startswith("./"), "relative sources start with ./")
+            self.assertEqual(_json(src["path"], ".codex-plugin", "plugin.json")["name"], entry["name"])
+            self.assertNotIn("version", entry)
+            self.assertIn(entry["policy"]["installation"], ("AVAILABLE", "INSTALLED_BY_DEFAULT", "NOT_AVAILABLE"))
 
     def test_skill_matches_directory_and_no_claude_md(self):
         pdir = os.path.join(ROOT, "plugins", "data-analyst")

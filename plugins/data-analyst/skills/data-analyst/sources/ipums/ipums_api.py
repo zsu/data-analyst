@@ -1,7 +1,7 @@
 """Minimal IPUMS API v2 client (standard library only), on the shared core.http.Client.
 
 The key comes from core.keys.find_key("IPUMS_API_KEY", "ipums"): the IPUMS_API_KEY environment variable,
-the file named by IPUMS_API_KEY_FILE, env.IPUMS_API_KEY in Claude Code's settings.json, or
+the file named by IPUMS_API_KEY_FILE, env.IPUMS_API_KEY in keys.json or Claude Code's settings.json, or
 ~/.ipums/api_key, in that order. It is sent only as the Authorization header and never printed; every
 message goes through core.keys.redact.
 
@@ -75,7 +75,7 @@ class IpumsClient:
             raise IpumsError(f"No IPUMS API key found. Looked in: {locs}. Get a key at "
                              "https://account.ipums.org/api_keys, then run the skill's setup script "
                              "(setup.ps1 -Source ipums on Windows, setup.sh ipums on macOS/Linux); it stores the "
-                             "key in settings.json, which is read at once (no restart needed).", kind="key_missing")
+                             "key in keys.json, which is read at once (no restart needed).", kind="key_missing")
         self.timeout = timeout
         self.http = Client(BASE, name="IPUMS", auth=AUTH, key=self.key, rps=1.5, burst=5, retries=4,
                            timeout=timeout, deadline=900, headers={"Content-Type": "application/json"})

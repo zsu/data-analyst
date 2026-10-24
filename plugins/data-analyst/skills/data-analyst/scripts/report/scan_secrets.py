@@ -6,7 +6,7 @@ Usage: python scan_secrets.py <output_dir or file> [more ...] [--sources bls,fre
 Scans every file (large files in streaming chunks, and every member of a .zip such as
 replication_package.zip, decompressed) for:
   - the literal value of every key core.keys can find for any source pack (each policy's auth.env and
-    auth.extra variables: environment, *_FILE, settings.json, ~/.<home>/api_key), in any letter case
+    auth.extra variables: environment, *_FILE, keys.json, settings.json, ~/.<home>/api_key), in any letter case
   - key-shaped assignments and URL parameters: <PACK>_API_KEY=..., "api_key": "...", ?api_key=<20+>,
     registrationkey=<hex>, UserID=<GUID> (BEA), BEA's echoed "ParameterName": "USERID", Authorization: Bearer ...
     (the placeholders {API_KEY}, [REDACTED] and __NAME__ are fine)

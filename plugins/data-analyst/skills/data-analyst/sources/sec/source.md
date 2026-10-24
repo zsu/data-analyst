@@ -79,7 +79,7 @@ Liabilities, StockholdersEquity, EarningsPerShareDiluted, NetCashProvidedByUsedI
 ## Access
 No key. SEC's fair-access policy asks automated tools to declare who they are with a contact email in
 the User-Agent and to stay under 10 requests a second (this pack sends at most 5). Set
-`SEC_USER_AGENT` (environment variable, or "env" in Claude Code's settings.json) to e.g.
+`SEC_USER_AGENT` (environment variable, or "env" in keys.json or Claude Code's settings.json) to e.g.
 `"Jane Analyst jane.analyst@example.org"`; without it the pack sends a generic tool name, which
 data.sec.gov and efts.sec.gov accepted in 2026-10 but SEC may block. The pack never sends a GitHub
 URL (SEC answers 403 to those). Tickers are resolved with EDGAR's company search (efts), because

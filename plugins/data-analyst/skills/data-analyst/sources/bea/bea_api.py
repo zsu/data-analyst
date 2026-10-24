@@ -1,7 +1,7 @@
 """BEA Data API client for the bea pack (standard library only).
 
 Key lookup, redaction, the restricted switch and HTTP all come from the skill's core: the key is found with
-core.keys.find_key("BEA_API_KEY", "bea") (environment, BEA_API_KEY_FILE, Claude Code settings.json,
+core.keys.find_key("BEA_API_KEY", "bea") (environment, BEA_API_KEY_FILE, keys.json, Claude Code settings.json,
 ~/.bea/api_key), every call goes through core.http.Client (offline fixtures, DATA_ACCESS_FORCE=restricted,
 credential-free request log), and every message passes core.keys.redact. BEA puts the key (its "UserID")
 in the URL and echoes it in every reply, so scrub_response() removes the echo before anything is saved.

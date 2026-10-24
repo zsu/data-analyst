@@ -435,7 +435,7 @@ def package_files(collection: str, number, data_path: str, ddi_path: str | None,
 # --------------------------------------------------------------------------- cannot download: recovery
 REASON_TEXT = {
     "key_missing": ("no IPUMS API key was found (not in the IPUMS_API_KEY environment variable, a key file, "
-                    "Claude Code's settings.json, or ~/.ipums/api_key)"),
+                    "keys.json, Claude Code's settings.json, or ~/.ipums/api_key)"),
     "auth": ("IPUMS rejected the API key (HTTP 401 or 403): the key is wrong, or the account is not "
              "registered for this collection"),
     "network": "IPUMS (api.ipums.org) could not be reached from here",
@@ -562,7 +562,7 @@ Upload these two files to the chat (do not unzip or edit them):
 1. the data file (the `.csv.gz` that IPUMS named, for example `@COLLECTION@_00012.csv.gz`);
 2. the codebook (the `.xml` DDI file, for example `@COLLECTION@_00012.xml`).
 
-Claude then packages them and continues the analysis.
+The assistant then packages them and continues the analysis.
 
 Tips:
 - The files are for your own use under the IPUMS terms of use: do not share or repost them.
@@ -763,15 +763,15 @@ def route_check(spec: dict, body: dict, spec_path: str, out: str, env: str, forc
     r["ingest_command"] = ingest_cmd
     if env in ("local", "ssh"):
         path, setup = setup_command(SOURCE)
-        r.update(setup_script=path, run_command=setup, settings_file=keys.settings_path())
+        r.update(setup_script=path, run_command=setup, settings_file=keys.config_path())
         return done("run_setup",
                     "No IPUMS API key is set up yet. The setup script asks for the key with hidden input, checks "
-                    "it with IPUMS and stores it in Claude Code's settings.json. Get a key at "
+                    "it with IPUMS and stores it in the skill's keys.json (~/.config/data-analyst). Get a key at "
                     "https://account.ipums.org/api_keys (register for the collection you need). Without a key, "
                     "the same extract can be built on the IPUMS website with only a free account: the steps are "
                     f"in {instructions}.",
                     "Offer both. Key: give the user run_command to run in their own terminal (do not run it for "
-                    "them: it needs their key typed in); settings.json is read directly, so when the user says it "
+                    "them: it needs their key typed in); the key file is read directly, so when the user says it "
                     "is done, run --check again. Hand download (website, or a key the user would rather not store): "
                     "point to INSTRUCTIONS.md and the download scripts, then run ingest_command on the downloaded "
                     "files. Never ask for the key in the chat.",
@@ -957,9 +957,9 @@ def report_blocked(err: IpumsError, env: str, collection, body, spec_path: str |
              f"{os.path.join(bundle, 'INSTRUCTIONS.md')}." if bundle else "")
     if reason == "key_missing" and env in ("local", "ssh"):
         path, setup = setup_command(SOURCE)
-        r.update(route="run_setup", setup_script=path, run_command=setup, settings_file=keys.settings_path(),
+        r.update(route="run_setup", setup_script=path, run_command=setup, settings_file=keys.config_path(),
                  message=lead + " The setup script asks for the key with hidden input, checks it and stores it in "
-                 "Claude Code's settings.json (read directly, no restart). Key page: "
+                 "the skill's keys.json (~/.config/data-analyst) (read directly, no restart). Key page: "
                  "https://account.ipums.org/api_keys." + where,
                  action="Give the user run_command to run in their own terminal (never run it for them, never ask "
                         "for the key in chat). Then run the same request again; or --ingest hand-downloaded files.",

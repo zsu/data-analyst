@@ -1,6 +1,6 @@
 ---
 name: data-analyst
-description: "Answer questions with official U.S. government data from federal sources: economy (BEA GDP and income, BLS jobs, CPI and wages, FRED/ALFRED, Census ACS, World Bank), federal budget and finance (Treasury Fiscal Data, Treasury yields, USAspending), federal workforce (OPM), survey microdata (IPUMS CPS, ACS), energy (EIA), health (CDC, CMS, FDA, NIH, ClinicalTrials.gov), legislation and regulation (Congress.gov, GovInfo, Federal Register, Regulations.gov, FEC), environment, safety, justice and education (EPA, NOAA, USGS, FEMA, NHTSA, FBI, College Scorecard, NAEP) and more. Picks every source a question needs, gets the data in any environment (with or without API keys, restricted networks, the claude.ai sandbox, manual download when blocked), asks only critical questions, and returns CSV data plus an audited short answer, or an audited HTML report or paper when asked. Use it whenever someone wants U.S. government statistics, trends, comparisons, charts or a data-backed report, even without naming an agency or API."
+description: "Answer questions with official U.S. government data from federal sources: economy (BEA GDP and income, BLS jobs, CPI and wages, FRED/ALFRED, Census ACS, World Bank), federal budget and finance (Treasury Fiscal Data, Treasury yields, USAspending), federal workforce (OPM), survey microdata (IPUMS CPS, ACS), energy (EIA), health (CDC, CMS, FDA, NIH, ClinicalTrials.gov), legislation and regulation (Congress.gov, GovInfo, Federal Register, Regulations.gov, FEC), environment, safety, justice and education (EPA, NOAA, USGS, FEMA, NHTSA, FBI, College Scorecard, NAEP) and more. Picks every source a question needs, gets the data in any environment (with or without API keys, restricted networks, hosted chat sandboxes, manual download when blocked), asks only critical questions, and returns CSV data plus an audited short answer, or an audited HTML report or paper when asked. Use it whenever someone wants U.S. government statistics, trends, comparisons, charts or a data-backed report, even without naming an agency or API."
 ---
 
 # U.S. government data → answers, data and reports
@@ -13,7 +13,9 @@ Only when the user asks for a report, brief, write-up, paper or publication do y
 self-contained HTML product and pass the audit. **Accuracy comes before everything else**: every number
 traces to a downloaded file and, where possible, ties to the agency's published figure.
 
-`<skill>` below is this skill's folder: ${CLAUDE_SKILL_DIR} (if that shows up unexpanded, use the folder this SKILL.md was loaded from). Never write inside it (it is read-only on claude.ai).
+`<skill>` below is this skill's folder: the folder this SKILL.md was loaded from (Claude expands it here: ${CLAUDE_SKILL_DIR}). Never write inside it (it is read-only in hosted sandboxes and plugin caches).
+This file names actions ("ask with your question tool", "send the file"), not one assistant's tools:
+`references/agent_tools.md` maps them for Claude, Codex and others.
 
 ## Bundled tools
 | Tool | Job |
@@ -26,6 +28,7 @@ traces to a downloaded file and, where possible, ties to the agency's published 
 | `scripts/report/` | `audit_answer.py` (quick answers), `build_report.py`, `style_check.py`, `audit_report.py` (reports); `method_audit.py` documents `decisions.json` |
 | `references/routing.md` | which sources answer which kinds of question, and the usual pairings |
 | `references/report_patterns.md`, `style_guide.md` | read only when writing a report |
+| `references/agent_tools.md` | which tool or setting each action means in your assistant (Claude, Codex, ...) |
 
 ## 0. Decide the product
 - **Quick answer + data** (default): "how much…", "chart…", "what was…", "pull the data on…".
@@ -44,7 +47,7 @@ read by code) plus these general ones: nominal vs real (and the deflator), fisca
 geography level, data vintage (latest vs as first published), estimate vs margin of error (surveys),
 weights and universe (microdata), answer vs report, and any download that will be large or slow (IPUMS
 extracts).
-- Ask in **one** round, at most 4 questions, with the AskUserQuestion tool when available; each offers
+- Ask in **one** round, at most 4 questions, with your question tool when available; each offers
   exactly one "Don't know — decide for me" option (never a separate "Skip"), your recommended option first.
 - A skipped or unanswered question is a "Don't know". Exception: a **blocking** question (what the user
   means: which program, place, population or product) has no defensible default. After a skip, ask it once
@@ -112,7 +115,7 @@ the user), `action` (what you do next) and `next_command`. A plan check returns 
 | `run_setup` | a key is needed; the user has a terminal | give them `run_command` (`setup.ps1 -Source <id>` / `setup.sh <id>`) to run **themselves**; never ask for a key in chat; offer any keyless alternative; rerun `--check` when they say it is stored |
 | `cloud_secret` | key needed in a cloud session | add the variable to the environment's secrets and restart, or use the bundle |
 | `cloud_allowlist` | the cloud network blocks the host | allow the hosts listed, or use the bundle |
-| `manual_download` | this environment cannot get the data (claude.ai with network off or the host not allowed, a sandbox, a key that cannot be stored here) | send `INSTRUCTIONS.md`, both `download_scripts` (`.sh` for macOS/Linux, `.ps1` for Windows: the request is built in, they ask for any key with hidden input and download everything) and the request (`request_spec` / `request_body`: spec.json, IPUMS extract_spec.json) with present_files / SendUserFile when available, and print the paths; give the user the one command for their system (`user_commands`, e.g. `bash ~/Downloads/download_data.sh`; both when unsure), never a Python command; wait for the upload, then run `next_command` with the uploaded files (or their folder) after `--ingest` |
+| `manual_download` | this environment cannot get the data (a hosted chat with network off or the host not allowed, a sandbox, a key that cannot be stored here) | send `INSTRUCTIONS.md`, both `download_scripts` (`.sh` for macOS/Linux, `.ps1` for Windows: the request is built in, they ask for any key with hidden input and download everything) and the request (`request_spec` / `request_body`: spec.json, IPUMS extract_spec.json) with your file-sending tool when available, and print the paths; give the user the one command for their system (`user_commands`, e.g. `bash ~/Downloads/download_data.sh`; both when unsure), never a Python command; wait for the upload, then run `next_command` with the uploaded files (or their folder) after `--ingest` |
 | `fix_spec` | the spec names something the source does not have | fix it with `--search` / `--endpoints` / `source.md`, rerun `--check` |
 | `install_deps` | an optional package is missing | install only if the network allows; otherwise the pack's fallback |
 | `report_error` | the user's own machine cannot reach the source | tell the user (internet, VPN, proxy) and stop |
@@ -129,9 +132,9 @@ come back as one table. The deep
 packs (bea, bls, fred, ipums, opm, treasury) keep only the latest spec's record: put all their requests in one
 spec, or give the second step its own `<out>`.
 
-On claude.ai there are no setup scripts and no stored keys: keyless routes work if the organization's
-network settings allow the host; keyed data comes by manual download, or the user runs the request in
-Claude Code. If Python itself is missing, say so; for a single published number only, you may read the
+In a hosted chat sandbox (claude.ai, ChatGPT, Codex cloud) there are no setup scripts and no stored keys:
+keyless routes work if the network settings allow the host; keyed data comes by manual download, or the
+user runs the request in a coding agent on their own computer (Claude Code, Codex). If Python itself is missing, say so; for a single published number only, you may read the
 API's JSON with a fetch tool and quote it with its URL and date. Never estimate or recall numbers instead.
 
 ## 4. Analyze in `<out>/analysis.py`

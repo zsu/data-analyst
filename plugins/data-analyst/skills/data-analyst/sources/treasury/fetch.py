@@ -21,7 +21,7 @@ Routes (--check prints one as "route", first match wins; shared names, see scrip
                    or the user runs the bundled curl / PowerShell commands in their own terminal (bundle written)
   cloud_allowlist  cloud session whose network policy blocks the API: allow api.fiscaldata.treasury.gov in the
                    environment's network settings and restart, or download by hand (bundle written)
-  manual_download  sandbox (claude.ai, Cowork, container) with no route to the API: the user downloads the CSV
+  manual_download  sandbox (claude.ai, Cowork, ChatGPT, Codex cloud, container) with no route to the API: the user downloads the CSV
                    files with the bundled links and uploads them, then --ingest
 The normal run applies reuse_existing itself, so rerunning never downloads twice (--refresh or --force
 re-downloads).
@@ -483,9 +483,9 @@ def download(spec: dict, out: str, client: FiscalDataClient) -> dict:
 # --------------------------------------------------------------------------- manual route
 MANUAL_TEMPLATE = """# Download the Treasury data by hand
 
-Claude could not reach the Fiscal Data API from its environment (@REASON@). The data are public and
+The assistant could not reach the Fiscal Data API from its environment (@REASON@). The data are public and
 need no account or key. Download the files below on your own computer, then upload them to the chat.
-Claude will check and package them.
+The assistant will check and package them.
 
 @FILES@
 
@@ -506,7 +506,7 @@ rows), save the pages as `<name>_2.csv`, `<name>_3.csv`, and upload every page.
 ## Option C: the dataset web page
 The dataset page (listed under each file above) has a **Download** button: pick the table, the date
 range and **CSV**, then unzip. This gives the whole table without the 10,000-row page limit, but
-Claude then has to apply the filter itself, so prefer the links when they work.
+The assistant then has to apply the filter itself, so prefer the links when they work.
 
 ## Upload
 Upload the `.csv` (or `.zip`) files as they are. Do not open and re-save them in Excel first: Excel
@@ -541,7 +541,7 @@ def write_manual_bundle(spec: dict, out: str, reason: str, spec_path: str = "<ou
     os.makedirs(d, exist_ok=True)
     blocks, items = [], []
     for q in dataset_queries(spec):
-        note = (f"- Claude applies the rest of the filter after upload: `{json.dumps(q['local_filter'])}`\n"
+        note = (f"- The assistant applies the rest of the filter after upload: `{json.dumps(q['local_filter'])}`\n"
                 if q["local_filter"] else "")
         blocks.append(f"### {q['name']}.csv\n- Endpoint: `{q['endpoint']}`\n- Filter: `{q['filter'] or 'none'}`\n"
                       f"{note}- Link: {q['url_csv']}\n- Dataset page: {dataset_page(q['endpoint'])}\n")
@@ -752,7 +752,7 @@ def route_check(spec: dict, out: str, env: str, spec_path: str, refresh: bool = 
                     f"This {env} machine cannot reach api.fiscaldata.treasury.gov ({p['detail'][:160]}). Check the "
                     "internet connection, VPN and proxy (set HTTPS_PROXY if the network needs one), then ask again. "
                     f"Or run the one-command download script in {bundle} (see INSTRUCTIONS.md) in your own terminal "
-                    "and tell Claude where the files are.",
+                    "and tell the assistant where the files are.",
                     "Tell the user both options. If they fix the network, run --check again. If they download by "
                     "hand, wait for the files, then run next_command.", ingest_cmd)
     bundle = write_manual_bundle(spec, out, f"no network route from this {env} environment", spec_path)
