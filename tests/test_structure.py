@@ -41,6 +41,13 @@ class TestSkillBudget(unittest.TestCase):
         self.assertLessEqual(len(desc), MAX_DESC)
         self.assertLessEqual(len(m.group(2).strip().splitlines()), MAX_SKILL_BODY)
 
+    def test_skill_md_names_no_assistant_tool(self):
+        """SKILL.md names actions; references/agent_tools.md maps them per assistant (Claude, Codex, ...)."""
+        body = open(os.path.join(SKILL, "SKILL.md"), encoding="utf-8").read()
+        for tool in ("AskUserQuestion", "SendUserFile", "present_files", "WebSearch", "WebFetch"):
+            self.assertNotIn(tool, body, f"SKILL.md names {tool}: say the action, map it in references/agent_tools.md")
+        self.assertTrue(os.path.isfile(os.path.join(SKILL, "references", "agent_tools.md")))
+
     def test_generic_voice(self):
         """No organization-specific voice anywhere in the skill text the model reads."""
         bad = re.compile(r"Congressional Budget Office|\bCBO by name\b|\bCBO voice\b")

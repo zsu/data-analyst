@@ -115,7 +115,7 @@ numbers can carry letters): select with `pick()` or compare strings, not integer
 
 ## Access
 - **Key** `BEA_API_KEY` (free, https://apps.bea.gov/API/signup/; BEA emails it and it works only after the
-  activation link is clicked). Found by core.keys (environment, `BEA_API_KEY_FILE`, Claude Code settings.json,
+  activation link is clicked). Found by core.keys (environment, `BEA_API_KEY_FILE`, keys.json, Claude Code settings.json,
   `~/.bea/api_key`); stored with the skill's setup script (`setup.ps1 -Source bea` / `setup.sh bea`), which
   checks it with `keycheck.py`. Never ask for the key in chat. BEA puts it in the URL and echoes it in every
   reply: the pack scrubs both (core.keys.redact plus the USERID echo); code must not build its own URLs.

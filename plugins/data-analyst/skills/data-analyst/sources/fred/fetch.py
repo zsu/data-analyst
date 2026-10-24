@@ -378,8 +378,8 @@ def route_check(s: dict, out: str, env: str, force: bool = False, spec_path: str
             r.update(setup_script=path, run_command=cmd)
             return done("run_setup",
                         lead + need + f" A free key is at {KEY_URL} (sign in, then Request API Key); the setup "
-                        "script asks for it with hidden input, checks it with FRED and stores it in Claude Code's "
-                        "settings.json.",
+                        "script asks for it with hidden input, checks it with FRED and stores it in "
+                        "the skill's keys.json (~/.config/data-analyst).",
                         "Give the user run_command to run in their own terminal (do not run it for them, and never "
                         "ask for the key in the chat). Offer the keyless alternative: as-of vintages instead of "
                         "first-release or full histories, explicit per-area series IDs instead of a GeoFRED "
@@ -409,8 +409,8 @@ def route_check(s: dict, out: str, env: str, force: bool = False, spec_path: str
                     f"restart, or download by hand with the files in {b}.",
                     "Offer both options. For the manual one: " + SEND, ingest_cmd)
     return done("manual_download",
-                f"This {env} environment cannot reach FRED ({why}). On claude.ai an organization admin can allow "
-                "fred.stlouisfed.org (keyless) or api.stlouisfed.org in the network settings; otherwise the "
+                f"This {env} environment cannot reach FRED ({why}). In a hosted sandbox (claude.ai, Codex cloud) an "
+                "admin can allow fred.stlouisfed.org (keyless) or api.stlouisfed.org in the network settings; otherwise the "
                 f"download links and scripts are in {b}: open the links (or run one command) on your own computer "
                 "and upload the files.",
                 SEND, ingest_cmd)
@@ -450,7 +450,7 @@ request; you do not need to open it.
 ## Upload
 
 Upload every downloaded file (`*.csv`, `*.xlsx`, `*.json`) or the whole folder. Do not edit or rename
-them. After the upload Claude packages the files.
+them. After the upload the assistant packages the files.
 """
 
 KEYNOTE_NEEDED = ("Some files come from the FRED API and need your own free API key ({url}): {needs}. The scripts "

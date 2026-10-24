@@ -616,8 +616,8 @@ helper modules and a copy of the skill's `core/` package):
 python fetch.py spec.json --out .
 ```
 It downloads only the files in `spec.json`, keeps the requested columns and rows, and writes a small
-`data/opm/` folder (Parquet and CSV). **Zip the `data/` folder and upload it.** It works even where Claude
-cannot read Parquet, because the folder also holds CSV files. Prefer it for many employment months.
+`data/opm/` folder (Parquet and CSV). **Zip the `data/` folder and upload it.** It works even where the
+assistant cannot read Parquet, because the folder also holds CSV files. Prefer it for many employment months.
 
 ## Option C: download TXT or JSON from the website (no software needed)
 On https://data.opm.gov/get-data/data-downloads, click **Download** on each file you need and choose
@@ -630,7 +630,7 @@ zip them before uploading.
 For simple counts, OPM's Table Builder (https://data.opm.gov/explore-data/data/table-builder) can
 export an aggregate table; upload the CSV and say which table it is.
 
-After the upload Claude reads the files and continues the analysis. {url_note}
+After the upload the assistant reads the files and continues the analysis. {url_note}
 """
     with open(os.path.join(d, "INSTRUCTIONS.md"), "w", encoding="utf-8") as fh:
         fh.write(text)
@@ -851,8 +851,8 @@ def main():
                   "action": "Offer both options. For the manual one: " + SEND_BUNDLE + " When they upload, run "
                             "next_command."},BLK)
         emit({"route": "manual_download", **common,
-              "message": "This sandbox has no route to data.opm.gov (on claude.ai an organization admin can allow "
-                         "data.opm.gov in the network settings). The user downloads by hand and uploads the files.",
+              "message": "This sandbox has no route to data.opm.gov (in a hosted sandbox such as claude.ai or Codex "
+                         "cloud an admin can allow data.opm.gov in the network settings). The user downloads by hand and uploads the files.",
               "action": SEND_BUNDLE + " When they upload, run next_command with the uploaded files or their "
                         "folder."},BLK)
 

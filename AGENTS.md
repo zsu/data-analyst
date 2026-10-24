@@ -1,17 +1,25 @@
 # data-analyst (maintainers)
 
-One Claude skill (`plugins/data-analyst/skills/data-analyst/`, shipped as the `data-analyst` plugin) for U.S. government data. Each source is a pack in
+One Agent Skills skill (`plugins/data-analyst/skills/data-analyst/`, shipped as the `data-analyst` plugin for Claude and Codex) for U.S. government data. Each source is a pack in
 `sources/<id>/` following `docs/pack_contract.md`; its tests are in `tests/sources/<id>/`; shared code is in `scripts/core/`.
 
 - Tests: `python -I tests/run_all.py` (offline; fixtures). One pack: `python -I tests/run_all.py <id>`.
 - Record fixtures from a live call: `DATA_ANALYST_RECORD=tests/sources/<id>/fixtures python .../fetch.py --source <id> ...`.
 - After adding or changing a pack's policy.json: `python tools/gen_routing.py` (the tests fail when routing.md is stale).
-- Plugin layout: `.claude-plugin/marketplace.json` (marketplace `zsu`) -> `plugins/data-analyst/.claude-plugin/plugin.json`
-  -> `skills/data-analyst/`. Version lives only in plugin.json: bump it per release (users update on a new version).
-  Check with `claude plugin validate .` and `claude plugin validate plugins/data-analyst`. Run it locally without installing:
-  `claude --plugin-dir plugins/data-analyst`. No CLAUDE.md or AGENTS.md inside the plugin folder (not loaded from there).
+- Plugin layout: one shared `skills/` folder, one thin manifest per assistant (as obra/superpowers does).
+  Claude: `.claude-plugin/marketplace.json` (marketplace `zsu`) -> `plugins/data-analyst/.claude-plugin/plugin.json`.
+  Codex: `.agents/plugins/marketplace.json` -> `plugins/data-analyst/.codex-plugin/plugin.json` (`"skills": "./skills/"`).
+  Version lives in both plugin.json files (never in a marketplace entry) and must match (tests/test_plugin.py):
+  bump both per release (users update on a new version). Check with `claude plugin validate .` and
+  `claude plugin validate plugins/data-analyst`; Codex: `codex plugin marketplace add .` (needs a Codex CLI with plugin
+  support). Run it locally without installing: `claude --plugin-dir plugins/data-analyst`. No CLAUDE.md or AGENTS.md
+  inside the plugin folder (not loaded from there).
+- Keep the skill assistant-neutral: SKILL.md names actions ("your question tool"), and
+  `references/agent_tools.md` maps them per assistant; tests/test_structure.py rejects tool names in SKILL.md.
+  User-facing messages say "the assistant", not "Claude". Keys: the setup scripts write `~/.config/data-analyst/keys.json`
+  (`$DATA_ANALYST_CONFIG_DIR`); `core.keys` also reads Claude Code's settings.json for keys stored there earlier.
 - Upload plugin zip for claude.ai / Cowork (Customize > Plugins > Upload): `python tools/package_skill.py --plugin`.
-- Upload skill zip for claude.ai: `python tools/package_skill.py` (excludes tests and fixtures; bundles every
+- Upload skill zip for claude.ai (also a plain Agent Skills folder any assistant can load): `python tools/package_skill.py` (excludes tests and fixtures; bundles every
   policy.json/endpoints.json into `sources/packs.json`, so runtime code reads them via `core.packfiles`).
   claude.ai rejects a zip of more than 200 files; the packager and tests/test_structure.py enforce it.
 - Hard limits in tests/test_structure.py: SKILL.md description <= 1024 chars (claude.ai rejects longer) and

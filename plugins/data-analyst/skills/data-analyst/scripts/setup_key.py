@@ -3,7 +3,7 @@
     python setup_key.py info <source>              # key variable, signup URL (JSON)
     python setup_key.py verify <source>            # key from DATA_ANALYST_SETUP_KEY; exit 0 ok, 4 rejected,
                                                    # 3 unclear, 5 network
-    python setup_key.py save <source> <settings>   # writes env.<VAR> into settings.json (backup kept)
+    python setup_key.py save <source> [<file>]     # writes env.<VAR> into keys.json, or <file> (backup kept)
 
 The key travels only through the DATA_ANALYST_SETUP_KEY environment variable (never argv, never printed).
 A pack can supply sources/<id>/keycheck.py with verify(key) -> (True|False|None, detail); otherwise the
@@ -25,14 +25,16 @@ import urllib.parse
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from core import packs  # noqa: E402
 from core.http import Client, DataError  # noqa: E402
-from core.keys import redact, remember  # noqa: E402
+from core.keys import config_path, redact, remember  # noqa: E402
 
 
 def info(pid: str) -> int:
     p = packs.load(pid).policy
     a = p["auth"]
     print(json.dumps({"source": pid, "title": p["title"], "env": a.get("env"), "required": a["required"],
-                      "signup_url": a.get("signup_url"), "extra": a.get("extra") or {}}))
+                      "signup_url": a.get("signup_url"), "extra": a.get("extra") or {},
+                      # a key already in the environment wins over the stored one (core.keys lookup order)
+                      "env_set": bool(a.get("env") and (os.environ.get(a["env"]) or "").strip())}))
     return 0 if a.get("env") else 2
 
 
@@ -83,7 +85,8 @@ def verify(pid: str) -> int:
     return 0 if ok else 4 if ok is False else 3
 
 
-def save(pid: str, path: str) -> int:
+def save(pid: str, path: str | None = None) -> int:
+    path = path or config_path()
     env_name = packs.load(pid).policy["auth"].get("env")
     key = os.environ.get("DATA_ANALYST_SETUP_KEY", "").strip()
     if not env_name or not key:
@@ -137,5 +140,5 @@ if __name__ == "__main__":
     if cmd == "verify":
         sys.exit(verify(pid))
     if cmd == "save":
-        sys.exit(save(pid, sys.argv[3]))
+        sys.exit(save(pid, sys.argv[3] if len(sys.argv) > 3 else None))
     sys.exit(2)

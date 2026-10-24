@@ -1,22 +1,28 @@
 #!/usr/bin/env bash
-# Store an API key for one data-analyst source in Claude Code user settings (macOS, Linux, SSH, Git Bash).
+# Store an API key for one data-analyst source (macOS, Linux, SSH, Git Bash). Works for any assistant.
 #
-# Usage:  bash setup.sh <source> [--no-verify] [--settings=PATH]
+# Usage:  bash setup.sh <source> [--no-verify] [--force] [--claude] [--settings=PATH]
 #
+#   - If the key variable is already set in your environment, stores nothing (the skill uses it directly);
+#     --force stores a key anyway.
 #   - Prompts for the key with hidden input. The key is never echoed, logged, or put on a command line.
 #   - Checks the key with the source's API (one small request) unless --no-verify.
-#   - Writes "env": {"<KEY_VARIABLE>": "..."} into ~/.claude/settings.json (or $CLAUDE_CONFIG_DIR),
-#     keeping every other setting; the previous file is saved as settings.json.bak.
-#   - Not for claude.ai: the web sandbox has no settings file; use the manual-download route there.
+#   - Writes "env": {"<KEY_VARIABLE>": "..."} into ~/.config/data-analyst/keys.json (or
+#     $DATA_ANALYST_CONFIG_DIR), which the skill reads directly under Claude, Codex or any other assistant;
+#     --claude writes Claude Code's settings.json instead. Other entries are kept; the old file is saved as .bak.
+#   - Not for hosted chat sandboxes (claude.ai, ChatGPT): use the manual-download route there.
 set -euo pipefail
 
 SOURCE="${1:-}"; shift || true
-[ -n "$SOURCE" ] && [ "${SOURCE#-}" = "$SOURCE" ] || { sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
-SETTINGS="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/settings.json"
+[ -n "$SOURCE" ] && [ "${SOURCE#-}" = "$SOURCE" ] || { sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
+SETTINGS=""                      # empty: the helper writes keys.json
 VERIFY=1
+FORCE=0
 for arg in "$@"; do
   case "$arg" in
     --no-verify) VERIFY=0 ;;
+    --force) FORCE=1 ;;
+    --claude) SETTINGS="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/settings.json" ;;
     --settings=*) SETTINGS="${arg#*=}" ;;
     *) echo "Unknown option: $arg" >&2; exit 2 ;;
   esac
@@ -33,6 +39,11 @@ INFO="$("$PY" "$HELPER" info "$SOURCE")" || die "Source '$SOURCE' does not use a
 ENVVAR="$(printf '%s' "$INFO" | "$PY" -c 'import json,sys; print(json.load(sys.stdin)["env"])')"
 SIGNUP="$(printf '%s' "$INFO" | "$PY" -c 'import json,sys; print(json.load(sys.stdin)["signup_url"])')"
 echo "The key goes in $ENVVAR. Get a free key at $SIGNUP"
+if [ "$(printf '%s' "$INFO" | "$PY" -c 'import json,sys; print(json.load(sys.stdin)["env_set"])')" = "True" ]; then
+  # a variable this terminal sees is one every assistant started from it sees too: a stored copy adds nothing
+  [ "$FORCE" = "1" ] || { echo "$ENVVAR is already set in your environment; the skill uses it directly. Nothing was stored."; exit 0; }
+  echo "Note: $ENVVAR in your environment takes precedence over the stored key until you unset it."
+fi
 
 if [ -t 0 ]; then
   printf 'Enter your %s (input is hidden): ' "$ENVVAR"
@@ -68,5 +79,5 @@ if [ "$VERIFY" = "1" ]; then
     case "$ans" in y|Y|yes|YES) ;; *) die "Key not saved. Nothing was changed." ;; esac
   fi
 fi
-"$PY" "$HELPER" save "$SOURCE" "$SETTINGS" || die "Could not update the settings file."
-echo "Done. Ask Claude to run the request again; the skill reads the key from settings.json at once."
+"$PY" "$HELPER" save "$SOURCE" ${SETTINGS:+"$SETTINGS"} || die "Could not update the key file."
+echo "Done. Ask your assistant to run the request again; the skill reads the key at once."

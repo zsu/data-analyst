@@ -1105,7 +1105,7 @@ def run_bulk(reqs: list[dict], out: str, files: dict | None = None) -> tuple[lis
 
 # --------------------------------------------------------------------------- routes
 REASON_TEXT = {
-    "key_missing": f"no BEA API key was found (not in {KEY_VAR}, a key file, Claude Code's settings.json, or ~/.bea/api_key)",
+    "key_missing": f"no BEA API key was found (not in {KEY_VAR}, a key file, keys.json, Claude Code's settings.json, or ~/.bea/api_key)",
     "auth": "BEA rejected the API key (mistyped, or not yet activated from BEA's email)",
     "network": "BEA (apps.bea.gov) could not be reached from here",
     "rate_limit": "BEA has locked the key out (for a minute to an hour) after too many requests or errors in a minute",
@@ -1148,7 +1148,7 @@ files to upload. If it is interrupted, run it again: files already downloaded ar
 @API@
 ## Upload
 
-Upload every file listed above to the chat. Claude then packages them and continues the analysis.
+Upload every file listed above to the chat. The assistant then packages them and continues the analysis.
 
 Tips:
 - A reply with "APIErrorCode" means a request has a problem. Upload it anyway; the analyst will fix the request.
@@ -1399,20 +1399,20 @@ def route_check(spec: dict, reqs: list[dict], out: str, env: str, spec_path: str
             return done("cloud_allowlist", f"This cloud session cannot reach apps.bea.gov ({why}). Allow apps.bea.gov "
                         "in the environment's network settings and restart, or download on your own computer with "
                         f"the script in {b}.", "Offer both options. For the manual one: " + SEND_BUNDLE, ingest_cmd)
-        return done("manual_download", f"BEA cannot be reached from this {env} environment ({why}). On claude.ai an "
-                    "organization admin can allow apps.bea.gov; otherwise the user downloads the files on their own "
+        return done("manual_download", f"BEA cannot be reached from this {env} environment ({why}). In a hosted "
+                    "sandbox (claude.ai, Codex cloud) an admin can allow apps.bea.gov; otherwise the user downloads the files on their own "
                     f"computer with one script ({DOWNLOAD_SCRIPTS['bash']} on macOS or Linux, "
                     f"{DOWNLOAD_SCRIPTS['powershell']} on Windows) or the steps in "
                     f"{os.path.join(b, 'INSTRUCTIONS.md')}, and uploads them.", SEND_BUNDLE, ingest_cmd)
     # reachable, no key, and at least one request needs the API
     if env in ("local", "ssh"):
         path, setup = setup_command(SOURCE)
-        r.update(setup_script=path, run_command=setup, settings_file=keys.settings_path())
+        r.update(setup_script=path, run_command=setup, settings_file=keys.config_path())
         return done("run_setup", f"No BEA API key is set up, and these requests need the API: {', '.join(need_api)}. "
                     f"A key is free at {SIGNUP_URL} (BEA emails it with an activation link). The setup script asks "
-                    "for it with hidden input, checks it with BEA and stores it in Claude Code's settings.json.",
+                    "for it with hidden input, checks it with BEA and stores it in the skill's keys.json (~/.config/data-analyst).",
                     "Give the user run_command to run in their own terminal (do not run it for them). The scripts "
-                    "read settings.json directly, so when the user says it is done, run --check again. Never ask "
+                    "read the key file directly, so when the user says it is done, run --check again. Never ask "
                     "for the key in the chat. If they would rather not register, offer to drop or replace the "
                     "API-only requests (bulk files cover NIPA tables, state and county Regional tables and the "
                     "GDP-by-industry workbooks; FRED, keyless or with its own key, mirrors the monthly trade "
@@ -1438,7 +1438,7 @@ def report_blocked(err: BeaError, env: str, reqs, out: str, spec_path: str):
               "message": f"Cannot download from BEA: {REASON_TEXT[reason]}.", "action": "", "next_command": ""}
     if reason == "key_missing" and env in ("local", "ssh"):
         path, setup = setup_command(SOURCE)
-        result.update(route="run_setup", run_command=setup, next_command=setup, settings_file=keys.settings_path(),
+        result.update(route="run_setup", run_command=setup, next_command=setup, settings_file=keys.config_path(),
                       action="Ask the user to run run_command in their own terminal (key page: "
                              f"{SIGNUP_URL}); never ask for the key in the chat. Or rerun with --prefer bulk when "
                              "every request is in the bulk files.")

@@ -1,4 +1,5 @@
-"""Build the upload zip for claude.ai (Settings > Capabilities > Skills > Upload) or for sharing.
+"""Build the upload zip for claude.ai (Settings > Capabilities > Skills > Upload) or for sharing: the skill zip
+is a plain Agent Skills folder, so any assistant that reads SKILL.md can use it unzipped.
 
     python tools/package_skill.py [--out dist/data-analyst.zip] [--max-mb 30] [--max-files 200]
     python tools/package_skill.py --plugin [--out dist/data-analyst-plugin.zip]

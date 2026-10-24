@@ -10,8 +10,8 @@ Two ways in:
                notes or copyright status; titles, units, frequency, seasonal adjustment and the last update
                come from the XLSX README sheet.
 
-The key comes from core.keys.find_key("FRED_API_KEY", "fred") (environment, *_FILE, Claude Code
-settings.json, ~/.fred/api_key) and is never printed. FRED v1 takes it as the api_key query parameter, which
+The key comes from core.keys.find_key("FRED_API_KEY", "fred") (environment, *_FILE, keys.json, Claude
+Code settings.json, ~/.fred/api_key) and is never printed. FRED v1 takes it as the api_key query parameter, which
 core.http.Client drops from every recorded URL; FRED v2 takes it as "Authorization: Bearer <key>" (checked live
 2026-10-20: api_key in the query answers HTTP 401 "Missing or invalid credentials."). Every request goes
 through core.http.Client, so offline fixtures, the restricted switch and the request log apply.
@@ -194,7 +194,7 @@ class FredClient:
             self.key, self.key_source = find_api_key()
         if not self.key:
             raise FredError(f"No {KEY_ENV} key found. Get a free key at {KEY_URL}, then run the skill's setup "
-                            "script (setup.ps1 -Source fred / setup.sh fred); it stores the key in settings.json, "
+                            "script (setup.ps1 -Source fred / setup.sh fred); it stores the key in keys.json, "
                             "which these scripts read at once.", kind="key_missing")
         self.http = Client(API, name="fred", auth=AUTH_V1, key=self.key, rps=RPS, burst=BURST, timeout=timeout,
                            user_agent=UA)

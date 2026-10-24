@@ -1,6 +1,6 @@
 # data-analyst
 
-A Claude skill that answers questions with official U.S. government data from federal sources (BEA, BLS,
+An AI-assistant skill (Claude, Codex, or any assistant that reads Agent Skills) that answers questions with official U.S. government data from federal sources (BEA, BLS,
 FRED, Census, IPUMS, Treasury, OPM, USAspending, CDC, Congress.gov, EPA and more). It picks the sources a
 question needs, gets the data in any environment, asks only the questions that change the numbers, and
 returns CSV data plus a short answer, or an audited HTML report or paper when asked.
@@ -35,6 +35,11 @@ triggers on its own when you ask a question about U.S. government data.
     "enabledPlugins": {"data-analyst@zsu": true}
   }
   ```
+- **Codex (CLI and app):** `codex plugin marketplace add zsu/data-analyst`, then install `data-analyst` from the
+  Plugins directory. The skill triggers on its own for U.S. government data questions. Codex's sandbox may block
+  network access; the skill says so and how to allow it.
+- **Any other assistant that reads Agent Skills:** copy `plugins/data-analyst/skills/data-analyst/` (or unzip
+  `dist/data-analyst.zip` from `python tools/package_skill.py`) into that assistant's skills folder.
 - **Develop without installing:** from a clone, `claude --plugin-dir plugins/data-analyst`.
 
 The skill never writes into its own folder (the plugin cache): outputs go to `out/` in your working directory
@@ -42,8 +47,11 @@ The skill never writes into its own folder (the plugin cache): outputs go to `ou
 
 ## API keys (optional for most sources)
 Run the setup script for a source in your own terminal; it asks for the key with hidden input and stores
-it in Claude Code's `settings.json`. When the skill needs a key it prints the exact command for your install
-(a plugin lives under `~/.claude/plugins/cache/`); from a clone, run:
+it in `~/.config/data-analyst/keys.json` (or `$DATA_ANALYST_CONFIG_DIR`), which the skill reads directly under
+any assistant. If the key variable (e.g. `FRED_API_KEY`) is already set in your environment, the script stores
+nothing: the skill uses it (`--force` / `-Force` stores one anyway). Keys stored earlier in Claude Code's
+`settings.json` keep working (`--claude` / `-Claude` still writes there). When the skill needs a key it prints the
+exact command for your install; from a clone, run:
 ```bash
 bash plugins/data-analyst/skills/data-analyst/setup.sh fred
 ```

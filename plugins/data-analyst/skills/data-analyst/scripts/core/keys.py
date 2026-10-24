@@ -3,9 +3,12 @@
 A pack names its key variable in policy.json (auth.env, e.g. "FRED_API_KEY"). find_key() looks, in order:
   1. the <ENV> environment variable
   2. the file named by the <ENV>_FILE environment variable
-  3. "env": {"<ENV>": "..."} in Claude Code's settings.json (~/.claude or $CLAUDE_CONFIG_DIR), which
-     setup.ps1 / setup.sh write; read directly, so a key stored a moment ago works without a restart
-  4. ~/.<home>/api_key (a file holding only the key); <home> is auth.home in policy.json
+  3. "env": {"<ENV>": "..."} in the skill's own keys.json (~/.config/data-analyst or $DATA_ANALYST_CONFIG_DIR),
+     which setup.ps1 / setup.sh write; the same file serves every assistant (Claude, Codex, a plain terminal)
+  4. "env": {"<ENV>": "..."} in Claude Code's settings.json (~/.claude or $CLAUDE_CONFIG_DIR; setup --claude)
+  5. ~/.<home>/api_key (a file holding only the key); <home> is auth.home in policy.json
+Files 3 and 4 are read directly on every lookup, not loaded into the environment, so a key stored a moment
+ago works without a restart.
 Returns (key, source label). The label may be printed; the key never is. Every message that leaves a
 pack goes through redact(), which removes every key this process has seen plus the usual key-shaped
 query parameters, headers and JSON fields.
@@ -30,9 +33,24 @@ def restricted() -> bool:
     return (os.environ.get("DATA_ACCESS_FORCE") or "").strip().lower() == "restricted"
 
 
+def config_path() -> str:
+    cfg = os.environ.get("DATA_ANALYST_CONFIG_DIR") or os.path.join(os.path.expanduser("~"), ".config", "data-analyst")
+    return os.path.join(cfg, "keys.json")
+
+
 def settings_path() -> str:
     cfg = os.environ.get("CLAUDE_CONFIG_DIR") or os.path.join(os.path.expanduser("~"), ".claude")
     return os.path.join(cfg, "settings.json")
+
+
+def _read_env_json(path: str, env: str) -> str:
+    """The "env" block of a JSON settings file (keys.json, Claude Code's settings.json)."""
+    try:
+        with open(path, encoding="utf-8-sig") as f:
+            data = json.load(f)
+    except (OSError, ValueError):
+        return ""
+    return str(((data.get("env") if isinstance(data, dict) else None) or {}).get(env) or "").strip()
 
 
 def _read_key_file(path: str) -> str:
@@ -47,7 +65,8 @@ def key_locations(env: str, home: str | None = None) -> list[str]:
     home = home or env.lower().replace("_api_key", "").replace("_", "-")
     return [f"the {env} environment variable",
             f"the file named by the {env}_FILE environment variable",
-            f'"env": {{"{env}": "..."}} in {settings_path()} (setup.ps1 / setup.sh write it)',
+            f'"env": {{"{env}": "..."}} in {config_path()} (setup.ps1 / setup.sh write it)',
+            f'"env": {{"{env}": "..."}} in Claude Code\'s {settings_path()}',
             f"~/.{home}/api_key (a file holding only the key)"]
 
 
@@ -64,16 +83,11 @@ def find_key(env: str | None, home: str | None = None) -> tuple[str | None, str 
         key = _read_key_file(os.environ[f"{env}_FILE"])
         if key:
             found = key, f"file named by {env}_FILE"
-    if not found[0]:
-        sp = settings_path()
-        try:
-            with open(sp, encoding="utf-8-sig") as f:
-                data = json.load(f)
-            key = str(((data.get("env") if isinstance(data, dict) else None) or {}).get(env) or "").strip()
+    for label, path in (("keys.json", config_path()), ("settings.json", settings_path())):
+        if not found[0]:
+            key = _read_env_json(path, env)
             if key:
-                found = key, f"settings.json ({sp})"
-        except (OSError, ValueError):
-            pass
+                found = key, f"{label} ({path})"
     if not found[0]:
         kf = os.path.join(os.path.expanduser("~"), f".{home}", "api_key")
         key = _read_key_file(kf)

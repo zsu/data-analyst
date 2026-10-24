@@ -1,6 +1,6 @@
 """BLS Public Data API client for the bls pack (standard library only).
 
-The key comes from core.keys.find_key("BLS_API_KEY", "bls") (environment, *_FILE, Claude Code settings.json,
+The key comes from core.keys.find_key("BLS_API_KEY", "bls") (environment, *_FILE, keys.json, Claude Code settings.json,
 ~/.bls/api_key) and is never printed. Without a key the client uses API v1 (no registration, lower limits);
 with a key, v2. Every request goes through core.http.Client, so offline fixtures (DATA_ANALYST_FIXTURES),
 the restricted switch (DATA_ACCESS_FORCE=restricted) and the request log (core.http.SOURCES) apply.

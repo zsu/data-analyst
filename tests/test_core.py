@@ -21,7 +21,8 @@ FAKE = "abcdef0123456789abcdef0123456789"
 
 
 def isolated_home(tmp):
-    return mock.patch.dict(os.environ, {"HOME": tmp, "USERPROFILE": tmp, "CLAUDE_CONFIG_DIR": os.path.join(tmp, ".claude")})
+    return mock.patch.dict(os.environ, {"HOME": tmp, "USERPROFILE": tmp, "CLAUDE_CONFIG_DIR": os.path.join(tmp, ".claude"),
+                                        "DATA_ANALYST_CONFIG_DIR": os.path.join(tmp, ".config", "data-analyst")})
 
 
 class TestKeys(unittest.TestCase):
@@ -35,6 +36,10 @@ class TestKeys(unittest.TestCase):
             os.makedirs(os.path.join(t, ".claude"))
             json.dump({"env": {"X_TEST_KEY": "from-settings"}}, open(os.path.join(t, ".claude", "settings.json"), "w"))
             self.assertEqual(keys.find_key("X_TEST_KEY", "xtest")[0], "from-settings")
+            # the skill's own keys.json (any assistant) comes before Claude Code's settings.json
+            os.makedirs(os.path.join(t, ".config", "data-analyst"))
+            json.dump({"env": {"X_TEST_KEY": "from-keys-json"}}, open(keys.config_path(), "w"))
+            self.assertEqual(keys.find_key("X_TEST_KEY", "xtest"), ("from-keys-json", f"keys.json ({keys.config_path()})"))
             kf = os.path.join(t, "k.txt")
             open(kf, "w").write("from-file-var")
             with mock.patch.dict(os.environ, {"X_TEST_KEY_FILE": kf}):
@@ -257,6 +262,28 @@ class TestPlan(unittest.TestCase):
 
 
 class TestSetupKey(unittest.TestCase):
+    def helper(self, *args, **env):
+        e = {k: v for k, v in os.environ.items() if not k.endswith("_API_KEY")}
+        e.update(env)
+        return subprocess.run([sys.executable, "-I", "-B", os.path.join(SKILL, "scripts", "setup_key.py"), *args],
+                              capture_output=True, text=True, env=e)
+
+    def test_save_defaults_to_keys_json(self):
+        with tempfile.TemporaryDirectory() as t:
+            cfg = os.path.join(t, "cfg")
+            p = self.helper("save", "fred", DATA_ANALYST_SETUP_KEY=FAKE, DATA_ANALYST_CONFIG_DIR=cfg)
+            self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+            self.assertNotIn(FAKE, p.stdout + p.stderr)
+            with open(os.path.join(cfg, "keys.json"), encoding="utf-8") as f:
+                self.assertEqual(json.load(f), {"env": {"FRED_API_KEY": FAKE}})
+
+    def test_info_reports_a_key_already_in_the_environment(self):
+        self.assertFalse(json.loads(self.helper("info", "fred").stdout)["env_set"])
+        p = self.helper("info", "fred", FRED_API_KEY=FAKE)
+        self.assertTrue(json.loads(p.stdout)["env_set"])
+        self.assertNotIn(FAKE, p.stdout)
+
+
     def test_probe_on_another_host_is_not_a_key_check(self):
         """usgs probes earthquake.usgs.gov, which ignores keys: verify must say "not checked", not "OK"."""
         env = {**os.environ, "DATA_ANALYST_SETUP_KEY": FAKE, "DATA_ACCESS_FORCE": "restricted"}

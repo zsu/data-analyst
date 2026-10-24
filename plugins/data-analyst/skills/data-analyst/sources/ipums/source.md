@@ -143,12 +143,12 @@ Typical questions, conventions (populations, definitions, benchmarks) and chart 
 ## Access
 - Key: `IPUMS_API_KEY`, free at https://account.ipums.org/api_keys; the account must be registered
   separately for each collection (usa.ipums.org, cps.ipums.org, ...). Found, in order, in the environment
-  variable, the file named by `IPUMS_API_KEY_FILE`, `env.IPUMS_API_KEY` in Claude Code's settings.json,
+  variable, the file named by `IPUMS_API_KEY_FILE`, `env.IPUMS_API_KEY` in keys.json, then in Claude Code's settings.json,
   `~/.ipums/api_key`. A 401/403 with a key set means a wrong key or an unregistered collection (route
   `report_error`): never point at the setup script then. No key on a local/ssh machine: route
   `run_setup` (the user runs the skill's setup script with `-Source ipums` / `ipums` in their own
   terminal; never ask for the key in chat).
-- Manual route (sandbox, claude.ai, no key, no network): `--check` writes
+- Manual route (sandbox, hosted chat, no key, no network): `--check` writes
   `<out>/manual_download/ipums/` with `INSTRUCTIONS.md` (Option A without a key: the IPUMS website
   extract builder, listing the exact samples, variables, case selections, CSV format and description;
   Option B with a key: one command, `bash ~/Downloads/download_ipums.sh` (macOS/Linux) or `powershell
