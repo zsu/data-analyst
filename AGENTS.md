@@ -7,12 +7,14 @@ One Agent Skills skill (`plugins/data-analyst/skills/data-analyst/`, shipped as 
 - Record fixtures from a live call: `DATA_ANALYST_RECORD=tests/sources/<id>/fixtures python .../fetch.py --source <id> ...`.
 - After adding or changing a pack's policy.json: `python tools/gen_routing.py` (the tests fail when routing.md is stale).
 - Plugin layout: one shared `skills/` folder, one thin manifest per assistant (as obra/superpowers does).
-  Claude: `.claude-plugin/marketplace.json` (marketplace `zsu`) -> `plugins/data-analyst/.claude-plugin/plugin.json`.
-  Codex: `.agents/plugins/marketplace.json` -> `plugins/data-analyst/.codex-plugin/plugin.json` (`"skills": "./skills/"`).
-  Version lives in both plugin.json files (never in a marketplace entry) and must match (tests/test_plugin.py):
-  bump both per release (users update on a new version). Check with `claude plugin validate .` and
-  `claude plugin validate plugins/data-analyst`; Codex: `codex plugin marketplace add .` (needs a Codex CLI with plugin
-  support). Run it locally without installing: `claude --plugin-dir plugins/data-analyst`. No CLAUDE.md or AGENTS.md
+  Claude: `plugins/data-analyst/.claude-plugin/plugin.json`; Codex: `plugins/data-analyst/.codex-plugin/plugin.json`
+  (`"skills": "./skills/"`). There is no marketplace in this repo: the `zsu` marketplace lives on `main` of
+  `zsu/agent-plugins` (Claude `.claude-plugin/marketplace.json` and Codex `.agents/plugins/marketplace.json`).
+  It installs the plugin from this repo with a `git-subdir` source (`plugins/data-analyst`, ref `main`).
+  Version lives in both plugin.json files (never in a catalog entry) and must match (tests/test_plugin.py):
+  bump both per release (users update on a new version). Check with
+  `claude plugin validate plugins/data-analyst`. Run it locally without installing:
+  `claude --plugin-dir plugins/data-analyst`. No CLAUDE.md or AGENTS.md
   inside the plugin folder (not loaded from there).
 - Keep the skill assistant-neutral: SKILL.md names actions ("your question tool"), and
   `references/agent_tools.md` maps them per assistant; tests/test_structure.py rejects tool names in SKILL.md.
