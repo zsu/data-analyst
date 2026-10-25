@@ -211,6 +211,23 @@
    "paging": {
     "type": "none"
    }
+  },
+  "sections": {
+   "path": "/packages/{packageId}/uslm",
+   "method": "GET",
+   "description": "One row per section of a public law, from GPO's USLM XML (113th Congress on): identifier, number, heading, enclosing titles, the U.S. Code sections it amends, cites, or is classified to, amending-action count, text.",
+   "params": {
+    "packageId": {
+     "desc": "PLAW package id, e.g. PLAW-117publ169"
+    },
+    "max_chars": {
+     "desc": "cut each section's text at this many characters (default: no cut)"
+    }
+   },
+   "records": "",
+   "paging": {
+    "type": "none"
+   }
   }
  },
  "catalog": {

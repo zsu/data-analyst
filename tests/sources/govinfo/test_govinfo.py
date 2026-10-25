@@ -18,6 +18,11 @@ SPEC = {"description": "Stablecoin bills in the 118th Congress, recent budget of
              "params": {"collection": "GOVPUB", "publisher": "Congressional Budget Office", "date_from": "2026-06-01",
                         "sort": "newest"}},
             {"name": "law_text", "endpoint": "text", "params": {"packageId": "PLAW-118publ201"}}]}
+SECTIONS_SPEC = {"description": "Sections of two 2024 laws and the U.S. Code sections the first amends",
+                 "requests": [
+                     {"name": "performance_act", "endpoint": "sections", "params": {"packageId": "PLAW-118publ190"}},
+                     {"name": "clinic_naming", "endpoint": "sections",
+                      "params": {"packageId": "PLAW-118publ200", "max_chars": 200}}]}
 
 
 def adapter():
@@ -93,6 +98,39 @@ class TestGovinfo(PackTest):
         self.assertEqual(items["law_text.htm"]["url"],
                          "https://www.govinfo.gov/content/pkg/PLAW-118publ201/html/PLAW-118publ201.htm")
         self.assertIn("collection:BILLS", items["stablecoin_bills.json"]["body"]["query"])
+
+    def test_sections(self):
+        code, r, out = self.fetch(SECTIONS_SPEC)
+        self.assertEqual(code, 0, r)
+        secs = self.csv(out, "performance_act")
+        self.assertEqual(len(secs), 8)
+        self.assertEqual(secs[0]["identifier"], "/us/pl/118/190/s1")
+        self.assertEqual(secs[0]["usc_classified"], "31 U.S.C. 1101")       # the "31 USC 1101 note" margin note
+        self.assertEqual(secs[3]["usc_amended"], "31 U.S.C. 1120(a)(2)")
+        self.assertEqual(secs[2]["usc_amended"], "31 U.S.C. 1122")
+        self.assertTrue(all(s["num"] == str(i + 1) for i, s in enumerate(secs)))   # nothing from <quotedContent>
+        self.assertIn("REPORTING. (a)", secs[1]["text"])
+        clinic = self.csv(out, "clinic_naming")
+        self.assertEqual(len(clinic), 1)
+        self.assertEqual((clinic[0]["usc_amended"], clinic[0]["usc_cited"]), ("", ""))
+        self.assertEqual(len(clinic[0]["text"]), 200)
+
+    def test_sections_without_uslm(self):
+        a = adapter()                                   # bills carry the older bill XML, not USLM [live 2026-10-25]
+        p = a.check_spec({"requests": [{"name": "b", "endpoint": "sections", "params": {"packageId": "BILLS-118hr4763eh"}}]})
+        self.assertTrue(any("use endpoint text" in x for x in p), p)
+        old = {"requests": [{"name": "old_law", "endpoint": "sections", "params": {"packageId": "PLAW-112publ1"}}]}
+        code, r, _ = self.fetch(old)                    # USLM starts with the 113th Congress: GovInfo answers HTTP 400
+        self.assertNotEqual(code, 0)
+        self.assertIn("113th Congress", r["message"])
+
+    def test_sections_upload(self):
+        a = adapter()
+        req = {"name": "u", "endpoint": "sections", "params": {"packageId": "PLAW-118publ200"}}
+        rows = a.parse_upload(None, req, [os.path.join(HERE, "fixtures", "r008.xml")])
+        self.assertEqual(rows[0]["identifier"], "/us/pl/118/200/s1")
+        self.assertEqual(a.usc_cite("/us/usc/t16/s666c–1/p"), "16 U.S.C. 666c–1(p)")
+        self.assertEqual(a.usc_cite("/us/usc/t31/ch11"), "31 U.S.C. ch. 11")
 
     def test_published_end_date_inclusive(self):
         # GovInfo's /published end date is exclusive [live 2026-10-21]; the spec's is inclusive
