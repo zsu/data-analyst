@@ -42,10 +42,14 @@
     "committee reports",
     "house reports",
     "senate reports",
-    "printed hearings"
+    "printed hearings",
+    "uslm",
+    "sections of a law",
+    "amends the united states code"
   ],
   "questions": [
     "full text of a bill or law",
+    "the sections of a law and the U.S. Code sections it amends",
     "which bills mention a phrase",
     "public laws enacted in a year",
     "committee reports on a bill",

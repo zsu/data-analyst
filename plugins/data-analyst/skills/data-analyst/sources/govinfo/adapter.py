@@ -7,7 +7,10 @@
   syntax for experts and is passed unchanged.
 - text: fetch a package's summary, then its text link (api.govinfo.gov, with key) or the public content
   link (www.govinfo.gov, never with key), strip the HTML and return one row.
-- manual_items: api links carry the public DEMO_KEY; text items use the keyless www.govinfo.gov link.
+- sections: a public law's USLM XML (GPO, 113th Congress on), one row per section, with the U.S. Code
+  references split into amended (an <amendingAction> in the same chapeau/content/paragraph), cited and
+  classified (margin notes). Sections inside <quotedContent> are the amended Code text, not the law's own.
+- manual_items: api links carry the public DEMO_KEY; text and sections items use keyless www.govinfo.gov links.
 """
 from __future__ import annotations
 
@@ -17,6 +20,7 @@ import math
 import os
 import re
 import urllib.parse
+import xml.etree.ElementTree as ET
 
 from core import generic_rest as gr
 from core import packfiles
@@ -152,6 +156,9 @@ def check_spec(spec):
                 probs.append(f"request {n!r}: text needs packageId, or congress + billtype + number")
             elif not p.get("packageId") and str(p["billtype"]).lower() not in BILL_TYPES:
                 probs.append(f"request {n!r}: billtype must be one of {BILL_TYPES}")
+        elif ep == "sections":
+            if not re.fullmatch(r"PLAW-\d+(publ|pvtl)\d+", str(p.get("packageId") or "")):
+                probs.append(f"request {n!r}: sections needs a PLAW packageId (e.g. PLAW-117publ169). {NO_USLM}")
         probs += _outside_coverage(n, p)
     return probs
 
@@ -193,8 +200,8 @@ def _text_row(pid: str, summary: dict, text: str, link: str, max_chars, committe
             "text_url": link, "characters": full, "truncated": bool(max_chars) and full > int(max_chars), "text": text}
 
 
-def _link_text(api, link: str) -> tuple[str, str]:
-    """(plain text, the link shown without a key) of a GovInfo txt or htm link."""
+def _get_raw(api, link: str) -> tuple[str, str]:
+    """(body, the link shown without a key) of a GovInfo link."""
     u = urllib.parse.urlsplit(link)
     if u.scheme != "https" or u.hostname not in ("api.govinfo.gov", "www.govinfo.gov"):
         raise DataError(f"govinfo: not fetching a non-GovInfo link {u.scheme}://{u.hostname}", kind="api")
@@ -204,7 +211,13 @@ def _link_text(api, link: str) -> tuple[str, str]:
     else:                                           # the key is only ever sent to api.govinfo.gov
         www = Client("https://www.govinfo.gov", name="govinfo-content", rps=2, burst=4)
         raw = www.get(u.path, q).text()
-    return html_to_text(raw), urllib.parse.urlunsplit(u._replace(query=urllib.parse.urlencode(q)))
+    return raw, urllib.parse.urlunsplit(u._replace(query=urllib.parse.urlencode(q)))
+
+
+def _link_text(api, link: str) -> tuple[str, str]:
+    """(plain text, the link shown without a key) of a GovInfo txt or htm link."""
+    raw, shown = _get_raw(api, link)
+    return html_to_text(raw), shown
 
 
 def _granule_texts(api, pid: str) -> tuple[list[str], list[str], list[str]]:
@@ -251,11 +264,128 @@ def _fetch_text(pack, req) -> list[dict]:
     return [_text_row(pid, summary, "\n\n".join(texts), shown, p.get("max_chars"), "; ".join(committees))]
 
 
+USLM_NS = "{http://schemas.gpo.gov/xml/uslm}"
+CONTAINERS = ("division", "title", "subtitle", "part", "subpart", "chapter", "subchapter")
+BLOCKS = ("chapeau", "content", "continuation", "p")   # where "Section X of title Y is amended" sits with its action
+SPACED = BLOCKS + ("heading", "subsection", "paragraph", "subparagraph", "clause", "subclause", "item")
+NO_USLM = ("GovInfo has USLM XML for public laws from the 113th Congress (2013) on, not for bills, Statutes at "
+           "Large granules or most private laws; check the id, or use endpoint text")
+
+
+def _local(tag) -> str:
+    return tag.rsplit("}", 1)[-1] if isinstance(tag, str) else ""
+
+
+def _walk(el, skip=("quotedContent", "sidenote")):
+    """el and its descendants, not entering amended (quoted) text or margin notes."""
+    yield el
+    for c in el:
+        if _local(c.tag) not in skip:
+            yield from _walk(c, skip)
+
+
+def _plain(el) -> str:
+    """Text of an element without its margin notes, whitespace and soft hyphens normalised."""
+    parts = []
+
+    def go(e):
+        parts.append(e.text or "")
+        for c in e:
+            if _local(c.tag) != "sidenote":
+                go(c)
+                if _local(c.tag) in SPACED:          # "HEADING.(a)" -> "HEADING. (a)"
+                    parts.append(" ")
+            parts.append(c.tail or "")
+    go(el)
+    return re.sub(r"\s+", " ", "".join(parts).replace("\xad", "")).strip()
+
+
+def usc_cite(href: str) -> str:
+    """/us/usc/t31/s1120/a/2 -> 31 U.S.C. 1120(a)(2); /us/usc/t31/ch11 -> 31 U.S.C. ch. 11."""
+    m = re.fullmatch(r"/us/usc/t(\w+)/(s|ch)([^/]+)((?:/[^/]+)*)", href)      # section numbers like 666c–1
+    if not m:
+        return href
+    if m.group(2) == "ch":
+        return f"{m.group(1)} U.S.C. ch. {m.group(3)}"
+    return f"{m.group(1)} U.S.C. {m.group(3)}" + "".join(f"({x})" for x in m.group(4).split("/") if x)
+
+
+def _child_text(el, name: str) -> str:
+    c = el.find(USLM_NS + name)
+    return _plain(c) if c is not None else ""
+
+
+def _usc(refs) -> list[str]:
+    return [r.get("href", "") for r in refs if _local(r.tag) == "ref" and r.get("href", "").startswith("/us/usc/")]
+
+
+def _section_row(pid: str, sec, path: list[str], max_chars) -> dict:
+    cited = list(dict.fromkeys(_usc(_walk(sec))))
+    amended = []
+    for b in _walk(sec):
+        if _local(b.tag) in BLOCKS and any(_local(x.tag) == "amendingAction" for x in _walk(b)):
+            amended += _usc(_walk(b))
+    amended = list(dict.fromkeys(amended))
+    classified = [h for h in dict.fromkeys(_usc(_walk(sec, ("quotedContent",)))) if h not in cited]
+    num = sec.find(USLM_NS + "num")
+    text = _plain(sec)
+    return {"package_id": pid, "identifier": sec.get("identifier", ""),
+            "num": num.get("value", _plain(num)) if num is not None else "", "heading": _child_text(sec, "heading"),
+            "within": " > ".join(path),
+            "usc_amended": "; ".join(usc_cite(h) for h in amended),
+            "usc_cited": "; ".join(usc_cite(h) for h in cited if h not in amended),
+            "usc_classified": "; ".join(usc_cite(h) for h in classified),
+            "amending_actions": sum(1 for x in _walk(sec) if _local(x.tag) == "amendingAction"),
+            "characters": len(text), "text": text[:int(max_chars)] if max_chars else text}
+
+
+def uslm_sections(pid: str, raw: str, max_chars=None) -> list[dict]:
+    """One row per section of a USLM law (a law without sections gives one row for its body)."""
+    try:
+        root = ET.fromstring(raw.encode("utf-8"))
+    except ET.ParseError as e:
+        raise DataError(f"govinfo: {pid} USLM is not well-formed XML ({e})", kind="api") from None
+    main = root.find(USLM_NS + "main")
+    if main is None:
+        raise DataError(f"govinfo: {pid} has no <main> in its USLM; use endpoint text", kind="api")
+    rows = []
+
+    def go(el, path):
+        for c in el:
+            name = _local(c.tag)
+            if name == "section":
+                rows.append(_section_row(pid, c, path, max_chars))
+            elif name in CONTAINERS:
+                go(c, path + [" ".join(x for x in (_child_text(c, "num"), _child_text(c, "heading")) if x)])
+            elif name not in ("quotedContent", "sidenote"):
+                go(c, path)
+    go(main, [])
+    if not rows:
+        rows.append(_section_row(pid, main, [], max_chars))
+        rows[0]["identifier"] = rows[0]["identifier"] or pid
+    return rows
+
+
+def _fetch_sections(pack, req) -> list[dict]:
+    p = req.get("params") or {}
+    pid = str(p.get("packageId") or "").strip()
+    api = gr.client_for(pack)
+    try:
+        raw, _ = _get_raw(api, f"https://api.govinfo.gov/packages/{urllib.parse.quote(pid)}/uslm")
+    except DataError as e:
+        if e.kind in ("not_found", "bad_request"):     # GovInfo answers a missing rendition with HTTP 400
+            raise DataError(f"govinfo: no USLM XML for {pid}. {NO_USLM}", kind="bad_request") from None
+        raise
+    return uslm_sections(pid, raw, p.get("max_chars"))
+
+
 def fetch(spec, pack, route):
     tables, notes = {}, []
     for r in spec["requests"]:
         if r.get("endpoint") == "text":
             tables[r["name"]] = _fetch_text(pack, r)
+        elif r.get("endpoint") == "sections":
+            tables[r["name"]] = _fetch_sections(pack, r)
         else:
             t, n = gr.fetch(pack, {"requests": [r]})
             tables.update(t)
@@ -269,7 +399,7 @@ def _calls(spec) -> int:
     for r in spec.get("requests") or []:
         ep = eps.get(r.get("endpoint") or "", {})
         size = int((ep.get("paging") or {}).get("size") or 1000)
-        n += 4 if r.get("endpoint") == "text" else max(1, math.ceil(int(r.get("max_rows") or size) / size))
+        n += 4 if r.get("endpoint") == "text" else 1 if r.get("endpoint") == "sections" else max(1, math.ceil(int(r.get("max_rows") or size) / size))
     return n
 
 
@@ -293,6 +423,12 @@ def manual_items(spec, pack):
                           "method": "GET", "body": None,
                           "note": "public text page, no key; if it is missing, open https://www.govinfo.gov/app/details/" + pid})
             continue
+        if r.get("endpoint") == "sections":
+            pid = str((r.get("params") or {}).get("packageId") or "")
+            items.append({"name": f"{r['name']}#1", "request": r["name"], "filename": f"{r['name']}.xml",
+                          "url": f"https://www.govinfo.gov/content/pkg/{pid}/uslm/{pid}.xml", "needs_key": False,
+                          "method": "GET", "body": None, "note": "public USLM XML, no key"})
+            continue
         one = {"requests": [r]}
         if r.get("endpoint") == "search":
             ep, params, _ = gr.resolve(pack, r)
@@ -309,6 +445,14 @@ def manual_items(spec, pack):
 
 
 def parse_upload(pack, req, paths):
+    if req.get("endpoint") == "sections":
+        p = req.get("params") or {}
+        rows = []
+        for pth in paths:
+            with open(pth, "rb") as f:
+                rows += uslm_sections(str(p.get("packageId") or ""), f.read().decode("utf-8-sig", errors="replace"),
+                                      p.get("max_chars"))
+        return rows
     if req.get("endpoint") != "text":
         return gr.parse_upload(pack, req, paths)
     rows = []

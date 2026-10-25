@@ -5,8 +5,8 @@ Code, Congressional Record, committee reports and hearings, Federal Register and
 agency publications catalogued by GPO.
 
 ## When to use
-- Which bills or reports use a phrase; full text of a bill version or law; public laws enacted in a date
-  range; committee reports, hearings and Congressional Record issues on a topic; agency reports in GOVPUB.
+- Which bills or reports use a phrase; full text of a bill version or law; a law's sections and the U.S.
+  Code sections it amends; public laws enacted in a date range; committee reports, hearings and Congressional Record issues on a topic; agency reports in GOVPUB.
 - Not here: bill status, sponsors, cosponsors, actions and votes (congress); rule metadata and counts
   (federal-register); public comments (regulations). Cost estimates as numbers are not available from
   any API in this skill (see traps).
@@ -21,6 +21,7 @@ agency publications catalogued by GPO.
 | `granules` | granule in a package (CREC articles, FR documents, CFR parts) | `packageId` |
 | `related` | related collection for a package (bill versions, status, reports, CREC, signing statements) | `accessId` |
 | `text` | one row: package_id, title, date_issued, pages, characters, text | `packageId`, or `congress` + `billtype` + `number` (+ `version`, default `enr`), `max_chars` |
+| `sections` | section of a public law (USLM XML): identifier, num, heading, within (enclosing titles), usc_amended, usc_cited, usc_classified, amending_actions, characters, text | `packageId` (PLAW, 113th Congress on), `max_chars` (per section) |
 
 Collections (catalog aliases, `--search "reports"`): BILLS, BILLSTATUS, BILLSUM, PLAW, STATUTE, USCODE,
 CRPT, CREC, CRECB, CHRG, CPRT, CDOC, SERIALSET, FR, CFR, ECFR, CPD, PPP, BUDGET, ERP, ECONI, GAOREPORTS
@@ -43,6 +44,11 @@ chamber), enr enrolled (passed both).
   {"name": "laws_2024", "endpoint": "published",
    "params": {"start_date": "2024-01-01", "end_date": "2024-12-31", "collection": "PLAW"}},
   {"name": "law_text", "endpoint": "text", "params": {"packageId": "PLAW-118publ201"}}]}
+```
+```json
+{"description": "The sections of Public Law 118-190 and the U.S. Code sections each one amends",
+ "requests": [{"name": "law_sections", "endpoint": "sections",
+   "params": {"packageId": "PLAW-118publ190", "max_chars": 500}}]}
 ```
 ```json
 {"description": "Budget office publications catalogued by GPO since June 2026 (a subset of its reports)",
@@ -89,6 +95,17 @@ chamber), enr enrolled (passed both).
   packages (an omnibus law) give a text column of several MB; set `max_chars` to keep a sample. Some
   packages have only PDF: the request then fails with "no text rendition". Committee reports and hearings
   keep their text per granule: `text` reads the granules (up to 25) and fills `committees` from them.
+- `sections` reads GPO's USLM XML (United States Legislative Markup), which GovInfo has for public laws from
+  the 113th Congress (2013) on. Bills have only the older bill XML, Statutes at Large only a whole-volume file
+  (tens of MB), and most private laws have no USLM: use `text` for those (GovInfo answers a missing USLM
+  file with HTTP 400). Sections inside a title carry it in `within`. Sections quoted inside an amendment are
+  the new Code text and are not rows. U.S. Code references are split three ways. `usc_amended`: a
+  reference in the same sentence as an amending action ("is amended", "striking", "inserting").
+  `usc_cited`: other references. `usc_classified`: margin notes ("31 USC 1101 note"), which show where the
+  Office of the Law Revision Counsel places the provision. All are `"; "`-joined: split them before
+  counting. Amendments to a named Act that cite no Code section ("Section 102(d) of the ... Act") appear
+  only in `text`. GPO converts laws to USLM automatically and warns that compacts and unusual structures
+  may be marked up inconsistently, so check a surprising count against `text`.
 - Committees: the package summary and `governmentAuthor` name only the chamber. Per committee, search with
   `query: 'collection:CRPT AND congress:118 AND committee:"Natural Resources"'`: the field matches words of
   any committee name in either chamber (that query also returns Senate Energy and Natural Resources
