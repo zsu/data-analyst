@@ -87,7 +87,9 @@ EXIT_OK, EXIT_SPEC, EXIT_UNEXPECTED, EXIT_BLOCKED = (routes.EXIT_OK, routes.EXIT
 APPROX_ROWS = {
     "usa_acs1": 3_300_000, "usa_acs5": 16_000_000, "usa_census": 3_000_000,
     "cps_asec": 160_000, "cps_monthly": 120_000,
+    "nhis": 45_000, "nhis_pre2019": 100_000, "meps": 25_000,   # NHIS 2024: 41k sample adults and children; MEPS 2022: 22k
 }
+SELECTABLE = ("usa", "cps", "ipumsi")      # collections with case selection and monetary adjustment
 CITATIONS = {
     "usa": ("Steven Ruggles, Sarah Flood, Matthew Sobek, et al. IPUMS USA [dataset]. "
             "Minneapolis, MN: IPUMS. Use the exact version and DOI cited at https://usa.ipums.org/usa/cite.shtml "
@@ -95,9 +97,15 @@ CITATIONS = {
     "cps": ("Sarah Flood, Miriam King, Renae Rodgers, Steven Ruggles, J. Robert Warren, et al. "
             "IPUMS CPS [dataset]. Minneapolis, MN: IPUMS. Use the exact version and DOI cited at "
             "https://cps.ipums.org/cps/citation.shtml (the unversioned DOI does not resolve)"),
+    "nhis": ("IPUMS NHIS [dataset]. Minneapolis, MN: IPUMS. Use the exact version and DOI cited at "
+             "https://nhis.ipums.org/nhis/citation.shtml, and acknowledge NCHS as the source of the NHIS"),
+    "meps": ("IPUMS MEPS [dataset]. Minneapolis, MN: IPUMS. Use the exact version and DOI cited at "
+             "https://meps.ipums.org/meps/citation.shtml, and acknowledge AHRQ as the source of the MEPS"),
 }
 SOURCE_LINE = {"usa": "IPUMS-USA (American Community Survey / decennial census)",
-               "cps": "IPUMS-CPS (Current Population Survey)"}
+               "cps": "IPUMS-CPS (Current Population Survey)",
+               "nhis": "IPUMS NHIS (National Health Interview Survey, NCHS)",
+               "meps": "IPUMS MEPS (Medical Expenditure Panel Survey, AHRQ)"}
 WEIGHT_HINTS = {
     "PERWT": "person weight (USA): use for person-level estimates",
     "HHWT": "household weight (USA): use for household-level estimates (one row per household, PERNUM==1)",
@@ -105,6 +113,11 @@ WEIGHT_HINTS = {
     "WTFINL": "final basic monthly weight (CPS): use for monthly labor-force estimates",
     "EARNWT": "earnings weight (CPS outgoing rotation groups): use for EARNWEEK2/HOURWAGE2 and UNION",
     "ASECWTH": "ASEC household weight (CPS)",
+    "SAMPWEIGHT": "sample adult / sample child weight (NHIS): the only person weight from 2019 on",
+    "PERWEIGHT": "person weight (MEPS annual weight; NHIS person file before 2019)",
+    "PARTWEIGHT": "2020 NHIS sample adults: use instead of SAMPWEIGHT when pooling 2019-2020",
+    "SAQWEIGHT": "MEPS self-administered questionnaire weight: use for SAQ items (adults)",
+    "DIABWEIGHT": "MEPS diabetes care survey weight",
 }
 TERMS_LINE = ("The extract is for the user's own use under the IPUMS terms of use: it must not be shared, "
               "attached to a report or reposted. Share extract_spec.json and the reproduce scripts instead; "
@@ -155,6 +168,12 @@ def spec_problems(spec: dict) -> list[str]:
             bad.append(f"case_selections.{name}: {e}")
     if spec.get("case_select_who") not in (None, "individuals", "households"):
         bad.append('"case_select_who" must be "individuals" or "households"')
+    c = spec.get("collection")
+    if isinstance(c, str) and c not in SELECTABLE:       # IPUMS would refuse the extract with HTTP 400
+        for k in ("case_selections", "adjust_monetary_values"):
+            if spec.get(k):
+                bad.append(f'"{k}" is available only for {", ".join(SELECTABLE)}: remove it and filter the '
+                           f"{c} extract after download")
     return bad
 
 
@@ -204,6 +223,10 @@ def approx_rows(samples: list[str]) -> int:
             n += APPROX_ROWS["cps_asec"]
         elif s.startswith("cps"):
             n += APPROX_ROWS["cps_monthly"]
+        elif re.fullmatch(r"ih\d{4}", s):
+            n += APPROX_ROWS["nhis" if int(s[2:]) >= 2019 else "nhis_pre2019"]
+        elif re.fullmatch(r"mp\d{4}", s):
+            n += APPROX_ROWS["meps"]
         else:
             n += 500_000
     return n
@@ -596,6 +619,9 @@ def sample_label(sample: str) -> str:
         if mo == 3 and m.group(3) == "s":
             return f"ASEC {y}"
         return f"{MONTHS[mo - 1]} {y} basic monthly" if 1 <= mo <= 12 else ""
+    m = re.fullmatch(r"(ih|mp)(\d{4})", sample)
+    if m:
+        return f"{m.group(2)} {'NHIS' if m.group(1) == 'ih' else 'MEPS'}"
     return ""
 
 

@@ -17,7 +17,8 @@ Use `fetch.py --route "<question>"` for a ranked suggestion.
 | Wages and earnings | bls | ipums, opm | BLS ECI, CES, OEWS; IPUMS CPS/ACS for distributions by group (weighted, with SEs). |
 | Federal workforce: headcount, hires, separations, pay | opm | bls, ipums, usaspending | OPM FWD (coverage gaps: USPS, intelligence agencies; pay withheld for ~45% of records); BLS ECI or IPUMS for private comparisons. |
 | Demographics, poverty, income by place | census | ipums, bea | ACS tables with margins of error; IPUMS microdata for custom tabulations; BEA regional income. |
-| Custom tabulations from survey microdata | ipums | census, bls | IPUMS CPS/ACS/decennial; weighted estimates with SEs; microdata never redistributed. |
+| Custom tabulations from survey microdata | ipums | census, bls | IPUMS CPS/ACS/decennial, NHIS, MEPS; weighted estimates with SEs; microdata never redistributed. |
+| Health insurance, access to care, health care spending by group | ipums | census, cdc, cms | IPUMS NHIS (insurance, access, conditions) and MEPS (spending by payer); ACS tables for state coverage; CMS for Medicare program data. |
 | Federal spending by agency, program, place, recipient | usaspending | treasury, census | Obligations vs outlays differ; Treasury MTS for totals; Census population (not USAspending's) for per-person figures. |
 | Legislation, votes, laws, CRS reports | congress | govinfo, federal-register | Congress.gov for bills and actions; GovInfo for text and CBO/committee reports; Federal Register for rules. |
 | Regulations and rulemaking | federal-register | regulations, govinfo | Rules and notices; Regulations.gov for dockets and comments. |
@@ -75,7 +76,7 @@ Use `fetch.py --route "<question>"` for a ranked suggestion.
 | govinfo | standard | optional (DATA_GOV_API_KEY) | legislation, regulation, government publications | GovInfo (Government Publishing Office API) |
 | gsa-calc | standard | none | federal procurement, contracting, labor rates | GSA CALC+ Labor Ceiling Rates (Quick Rate API) |
 | hud | standard | required (HUD_USER_TOKEN) | housing | HUD Fair Market Rents and Income Limits API (HUD User) |
-| ipums | deep | required (IPUMS_API_KEY) | labor, earnings, income, poverty, demographics, immigration, health insurance, survey microdata | IPUMS microdata (USA/ACS, CPS and other collections) |
+| ipums | deep | required (IPUMS_API_KEY) | labor, earnings, income, poverty, demographics, immigration, health insurance, health care spending, access to care, survey microdata | IPUMS microdata (USA/ACS, CPS and other collections) |
 | naep | standard | none | education, k-12, student achievement | NAEP, The Nation's Report Card (NAEP Data Service) |
 | nhtsa | standard | none | vehicle safety, transportation, consumer protection | NHTSA Vehicle Safety APIs (recalls, complaints, NCAP ratings, vPIC) |
 | nih | standard | none | health, research funding, science | NIH RePORTER (research grants) |

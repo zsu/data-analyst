@@ -34,6 +34,15 @@ state agencies, research institutes), so there is usually a precedent to follow 
   - distribution of household income and poverty (CPS ASEC);
   - immigration surges (ACS and CPS: education and labor force participation of recent arrivals, using YRIMMIG / YRSUSA1);
   - state-level profiles (ACS: large samples with STATEFIP and PUMA detail).
+- **Health insurance and access by group** (NHIS): uninsured at the interview, private vs. public coverage,
+  no usual place of care, care delayed or forgone because of cost, by age (0-17, 18-64, 65+), poverty ratio,
+  race and Hispanic origin, nativity. Benchmark the headline against NCHS's annual Health Insurance Coverage
+  report (2024: 8.2% of all ages and 11.6% of adults 18-64 uninsured). NHIS has no state identifier in the
+  public files: state estimates come from the ACS.
+- **Health care spending** (MEPS): mean and median spending per person, the share with any spending,
+  out-of-pocket spending and payer shares, by age, insurance type (`COVERTYPE`) and income group (`POVCAT`).
+  Benchmark against AHRQ's MEPS-HC summary tables or Statistical Briefs (2022: $6,765 per person). Name the dollar
+  year; per-person means hide extreme concentration, so pair them with medians or the top-percentile share.
 
 ## Conventions to follow
 
@@ -44,7 +53,7 @@ state agencies, research institutes), so there is usually a precedent to follow 
 - **Earnings:** say whose earnings are averaged. Usually it is workers with positive wages, sometimes full-time, full-year workers only. Also say whether self-employment income is included (INCWAGE excludes it; INCEARN in the ACS includes it).
 
 **Estimation**
-- Always weight. In the USA collection use PERWT (HHWT for household measures). In the CPS ASEC use ASECWT, in CPS basic monthly use WTFINL, and in the CPS outgoing rotation groups use EARNWT.
+- Always weight. In the USA collection use PERWT (HHWT for household measures). In the CPS ASEC use ASECWT, in CPS basic monthly use WTFINL, and in the CPS outgoing rotation groups use EARNWT. In NHIS (2019 on) use SAMPWEIGHT on sample adults or sample children; in MEPS use PERWEIGHT (SAQWEIGHT for questionnaire items).
 - Report the unweighted cell size internally. Suppress or footnote cells with fewer than about 100 respondents; unstable estimates are not published.
 - **Dollars:** convert to a single year's dollars and name the year and index ("in 2023 dollars, using the CPI-U-RS"; the PCE price index is a common choice for earnings and income), with CPI99 or `adjustMonetaryValues`. CPS ASEC income is for the **previous calendar year** (ASEC 2023 means 2022 income). ACS income is for the past 12 months, and IPUMS expresses it in survey-year dollars.
 - **Top-coding:** INCWAGE is top-coded, which mostly matters for means at high education levels. Mention it.
