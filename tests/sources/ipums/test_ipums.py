@@ -9,6 +9,9 @@ Fixtures (fixtures):
 - synthetic_cps_00011.csv.gz: SYNTHETIC rows in the IPUMS CSV layout (see synthetic_README.txt).
   The IPUMS terms forbid redistributing extracts, so no real microdata are stored here; because its
   checksum differs from the one IPUMS reported, it also tests the checksum guard.
+- samples_nhis_p1.json, samples_meps_p1.json: real sample listings (October 2026).
+- ddi_nhis_00001.xml: the real DDI of an NHIS 2024 extract, trimmed to its eleven variables;
+  synthetic_nhis_00001.csv.gz: SYNTHETIC rows in that layout.
 """
 import gzip
 import json
@@ -29,6 +32,17 @@ SPEC = {"collection": "cps",
         "variables": ["AGE", "SEX", "EDUC", "EMPSTAT", "CLASSWLY", "INCWAGE", "WKSWORK1", "UHRSWORKLY"],
         "case_selections": {"AGE": {"min": 25, "max": 54}}}
 FAKE_KEY = {"IPUMS_API_KEY": "offline-test-key-not-real"}
+SPEC_NHIS = {"collection": "nhis", "description": "Uninsured adults, NHIS 2024 (smoke test)", "samples": ["ih2024"],
+             "variables": ["AGE", "EDUC", "EMPSTAT", "USBORN", "HINOTCOVE"]}
+
+
+def _stats(pack_dir):
+    import importlib.util          # by path: ipums and opm both have a lib/stats.py
+    sys.path.insert(0, os.path.join(pack_dir, "lib"))
+    spec = importlib.util.spec_from_file_location("ipums_stats_t", os.path.join(pack_dir, "lib", "stats.py"))
+    stats = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(stats)
+    return stats
 
 
 class TestIpums(PackTest):
@@ -232,11 +246,7 @@ class TestIpums(PackTest):
             os.environ.pop("DATA_ANALYST_FIXTURES", None)
 
     def test_stats_lib(self):
-        import importlib.util          # by path: ipums and opm both have a lib/stats.py
-        sys.path.insert(0, os.path.join(self.pack_dir, "lib"))
-        spec = importlib.util.spec_from_file_location("ipums_stats_t", os.path.join(self.pack_dir, "lib", "stats.py"))
-        stats = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(stats)
+        stats = _stats(self.pack_dir)
         import pandas as pd
         with gzip.open(self._uploads()[0], "rt") as f:
             df = pd.read_csv(f)
@@ -272,6 +282,68 @@ class TestIpums(PackTest):
                           "REPWTP1": [1.0, 1.0], "REPWTP2": [1.0, 1.0]})
         est, se = stats.rep_se(m, lambda d, wt: stats.wmean(d["y"], d[wt]), "cps")
         self.assertEqual((est, se), (1.5, 0.0))
+
+    def test_health_survey_recodes(self):
+        stats = _stats(self.pack_dir)
+        import pandas as pd
+        with gzip.open(os.path.join(self.fixtures, "synthetic_nhis_00001.csv.gz"), "rt") as f:
+            df = stats.clean_missing(pd.read_csv(f), "nhis")
+        self.assertTrue(pd.isna(df.loc[2, "AGE"]))                      # 997 unknown (no DDI labels for AGE)
+        self.assertEqual(list(stats.emp_status(df, "nhis")), ["employed", "not employed", None, None])
+        labels = lambda c: [x if isinstance(x, str) else None for x in c]   # noqa: E731 (unassigned: NaN)
+        self.assertEqual(labels(stats.educ_group(df, "nhis"))[:3], ["Bachelor's degree or more", "High school diploma", None])
+        self.assertEqual(list(stats.foreign_born(df, "nhis")), [False, True, None, False])
+        m = pd.DataFrame({"EDUC": [116, 500, 510, 530, 522], "AGE": [8, 50, 50, 50, 70]})
+        self.assertEqual(labels(stats.educ_group(m, "meps", "educ5")),
+                         ["High school diploma or less", None, "Master's degree", None, "Professional degree or doctorate"])
+        self.assertEqual(list(stats.educ_group(m, "meps"))[1], "Bachelor's degree or more")   # 500: graduate, no detail
+        self.assertTrue(pd.isna(stats.clean_missing(pd.DataFrame({"AGE": [996]}), "meps").loc[0, "AGE"]))
+        # no codes for a collection: refuse rather than borrow another collection's codes
+        for call in (lambda: stats.emp_status(df, "meps"), lambda: stats.educ_group(df, "atus"),
+                     lambda: stats.foreign_born(df), lambda: stats.rep_se(df, lambda d, w: 0.0, "nhis")):
+            with self.assertRaises(ValueError):
+                call()
+        # design-based SE with NHIS STRATA/PSU on the whole file, the sub-population by mask
+        d = df.assign(y=[1, 0, 1, 0])
+        r, se = stats.se_estimate(d, stats.share_z(d, d.y == 1, d.ASTATFLG == 1, "SAMPWEIGHT"), strata="STRATA",
+                                  cluster="PSU")
+        self.assertAlmostEqual(r, 8000 / 15000)
+        self.assertGreater(se, 0)
+
+    def test_health_survey_spec_and_ingest(self):
+        bad = dict(SPEC_NHIS, case_selections={"AGE": {"min": 18, "max": 64}}, adjust_monetary_values=["X"])
+        code, r = self.check(bad)
+        self.assertEqual(r["route"], "fix_spec", r)
+        self.assertEqual(sum("available only for usa, cps, ipumsi" in p for p in json.dumps(r).split("\\n")), 1)
+        self.assertIn("case_selections", json.dumps(r))
+        sp, out = self.write_spec(SPEC_NHIS)
+        up = os.path.join(self.tmp.name, "uploads_nhis")
+        os.makedirs(up)
+        for src, dst in (("synthetic_nhis_00001.csv.gz", "nhis_00001.csv.gz"), ("ddi_nhis_00001.xml", "nhis_00001.xml")):
+            shutil.copy(os.path.join(self.fixtures, src), os.path.join(up, dst))
+        code, r = self.cli(sp, "--out", out, "--ingest", up)
+        self.assertEqual(code, 0, r)
+        self.assertEqual((r["extract"], r["rows"]), ("nhis:1", 4))
+        cov = {c["value"]: c["value_label"] for c in self.csv(out, "codebook") if c["variable"] == "HINOTCOVE"}
+        self.assertEqual(cov.get("2"), "Yes, has no coverage")           # from the real DDI
+        with open(os.path.join(out, "data", "ipums", "README.md"), encoding="utf-8") as f:
+            readme = f.read()
+        self.assertIn("IPUMS NHIS", readme)
+        self.assertIn("SAMPWEIGHT", readme)
+        f = load_pack_module("ipums", "fetch.py")
+        self.assertEqual((f.sample_label("ih2024"), f.sample_label("mp2022")), ("2024 NHIS", "2022 MEPS"))
+        self.assertEqual(f.approx_rows(["ih2024", "mp2022"]), 45_000 + 25_000)
+
+    def test_list_samples_health(self):
+        import subprocess
+        from testkit import FETCH
+        e = {k: v for k, v in os.environ.items() if not k.endswith("_API_KEY")}
+        e.update(DATA_ANALYST_FIXTURES=self.fixtures, **FAKE_KEY)
+        for c, line in (("nhis", "ih2024\t2024 NHIS"), ("meps", "mp2022\t2022 MEPS")):
+            p = subprocess.run([sys.executable, FETCH, "--source", "ipums", "--list-samples", c],
+                               capture_output=True, text=True, env=e)
+            self.assertEqual(p.returncode, 0, p.stderr)
+            self.assertIn(line, p.stdout)
 
     def test_ddi_special_codes_of_continuous_variables(self):
         # INCBUS has no category rows; its NIU code is only in the coding notes [ASEC 2026 DDI, 2026-10-21]

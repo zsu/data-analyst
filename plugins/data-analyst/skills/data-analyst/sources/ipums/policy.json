@@ -11,6 +11,8 @@
     "demographics",
     "immigration",
     "health insurance",
+    "health care spending",
+    "access to care",
     "survey microdata"
   ],
   "keywords": [
@@ -44,7 +46,18 @@
     "replicate weights",
     "atus",
     "nhis",
+    "national health interview survey",
     "meps",
+    "medical expenditure panel survey",
+    "health care spending",
+    "medical spending",
+    "out-of-pocket",
+    "out-of-pocket spending",
+    "health expenditures",
+    "uninsured",
+    "usual source of care",
+    "delayed care",
+    "chronic conditions",
     "union membership",
     "union members"
   ],
@@ -54,7 +67,9 @@
     "share of workers without health insurance by state",
     "veterans labor force participation",
     "workers earning near the minimum wage",
-    "custom tabulations from ACS or CPS microdata"
+    "custom tabulations from ACS or CPS microdata",
+    "uninsured adults by income and age (NHIS)",
+    "out-of-pocket medical spending by age and insurance type (MEPS)"
   ],
   "homepage": "https://www.ipums.org/",
   "terms_url": "https://www.ipums.org/about/terms",
@@ -175,7 +190,7 @@
     }
   ],
   "clarify": [
-    "Which survey and years (samples)? ACS 1-year for states and small groups, ACS 5-year for very small areas, CPS ASEC for annual income, poverty and insurance (income refers to the previous year), CPS monthly for labor force and hourly earnings.",
+    "Which survey and years (samples)? ACS 1-year for states and small groups, ACS 5-year for very small areas, CPS ASEC for annual income, poverty and insurance (income refers to the previous year), CPS monthly for labor force and hourly earnings, NHIS for insurance at the interview, access and health conditions (no trends across 2019), MEPS for health care spending over a calendar year.",
     "Universe: ages, civilians only (CPS CLASSWLY 25 includes active-duty military), household vs. group-quarters population, full-time full-year workers?",
     "Weights and uncertainty: person or household weight, and standard errors by replicate weights (request REPWTP) or design-based (ACS STRATA/CLUSTER)?",
     "Dollars: nominal or constant (which year, which deflator: CPI99 must be requested)?"

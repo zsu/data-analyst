@@ -11,10 +11,13 @@ ATUS, NHIS, MEPS) as filtered extracts, for weighted estimates with standard err
   ACS 1-year (`usYYYYa`, ~3.3M persons) for states and small groups; ACS 5-year (`usYYYYc`) for very small
   groups or areas (pooled period, no year-to-year change); CPS ASEC (`cpsYYYY_03s`) for annual income,
   poverty and insurance (income refers to the previous year; series from 1962); CPS basic monthly
-  (`cpsYYYY_MMs`) for monthly labor force and hourly/weekly earnings.
+  (`cpsYYYY_MMs`) for monthly labor force and hourly/weekly earnings; NHIS (`ihYYYY`) for insurance at the
+  interview, access to care, conditions and health status; MEPS (`mpYYYY`) for health care spending
+  (total, out-of-pocket, by payer) and insurance over a whole year (`docs/variables.md` sections 8-9).
 - Not here: published ACS tables by geography (census pack), official BLS rates and CPS-based series
-  (bls, fred), federal workforce administrative records (opm). Prefer a published table when it answers
-  the question; microdata are for what tables cannot do.
+  (bls, fred), federal workforce administrative records (opm), published health statistics (cdc) and
+  Medicare program data (cms). Prefer a published table when it answers the question; microdata are for
+  what tables cannot do.
 - Your estimates are your own and people may quote them: accuracy comes first.
 
 ## Endpoints and datasets
@@ -29,8 +32,10 @@ There is no variable-metadata endpoint for microdata: variable names and verifie
 `docs/variables.md` (sections 4-7, ready-made variable sets by topic); after a download,
 `data/ipums/codebook.csv` is the authority. API body details, timing and errors: `docs/ipums_api.md`.
 Collections with API extracts: usa, cps, ipumsi, atus, ahtus, mtus, nhis, meps, dhs (case selection and
-monetary adjustment only for usa, cps, ipumsi; dhs needs an account approved by The DHS Program, so a
-401/403 there usually means that approval is missing).
+monetary adjustment only for usa, cps, ipumsi: `--check` refuses them elsewhere, so filter after download;
+dhs needs an account approved by The DHS Program, so a 401/403 there usually means that approval is
+missing). Codes, weights and recodes are documented for usa, cps, nhis and meps; for the others, work from
+the collection's website and `codebook.csv`, and the recode helpers refuse them.
 
 Commands (always through the dispatcher: `python "<skill>/scripts/fetch.py" --source ipums ...`):
 ```
@@ -78,7 +83,14 @@ person), `codebook.csv` (variable, value, value_label), `variables.csv`, the DDI
 weights, terms).
 - **Weights on every estimate**: PERWT / HHWT (USA; household measures on PERNUM == 1), ASECWT (CPS
   ASEC; WTFINL is not offered for ASEC samples: the API refuses it with HTTP 400, verified 2026-10), WTFINL (CPS monthly), EARNWT (earnings questions, outgoing
-  rotation groups). Pooling years: average yearly estimates or divide weights by the number of years.
+  rotation groups), SAMPWEIGHT (NHIS 2019 on: sample adults `ASTATFLG == 1` and sample children
+  `CSTATFLG == 1`, never summed across items of different universes), PERWEIGHT (MEPS; 0 = out of scope).
+  Pooling years: average yearly estimates or divide weights by the number of years.
+- **Health surveys**: NHIS trends break at the 2019 redesign (and 2020 was collected partly by phone, with
+  `PARTWEIGHT`); NHIS EMPSTAT from 2019 is employed / not employed only. MEPS dollars are nominal for the
+  calendar year, spending is highly skewed (screen outliers, add medians), and `CHGTOT` is charges, not
+  payments. Variable names differ from USA/CPS and between NHIS and MEPS (HINOTCOVE vs. HINOTCOV): use
+  `docs/variables.md` sections 8-9.
 - **Missing and top codes**: run `clean_missing(df, collection, codebook=...)`; then print min/max of
   every dollar and hours variable. USA INCWAGE 999999 = N/A, 999998 = missing; CPS INCWAGE 99999999 NIU;
   HHINCOME 9999999 (USA); UHRSWORKLY 999 NIU. An unremoved 9999999 is the classic IPUMS mistake.
@@ -105,7 +117,9 @@ weights, terms).
   method; `lin_se` with STRATA and CLUSTER (added automatically) can understate a PUMS margin (half of the
   replicate one in a 2024 tenure check): prefer `rep_se` when the replicates are in the extract; CPS ASEC `rep_se` with REPWTP (160)
   for person estimates, or REPWT (160) with `weight="ASECWTH", prefix="REPWT"` on householders
-  (`RELATE == 101`) for household estimates such as median household income (P60 tables). CPS basic monthly has
+  (`RELATE == 101`) for household estimates such as median household income (P60 tables). NHIS and MEPS have
+  no replicate weights: `lin_se` with STRATA/PSU (NHIS) or STRATANN/PSUANN (MEPS; STRATAPLD/PSUPLD pooled),
+  on the whole file with a domain mask (`share_z`, `mean_z`). CPS basic monthly has
   no replicate weights and no design variables in the public files: an SE clustered by household is
   approximate, and the answer says so: `lin_se(df, z, strata=<a constant column>, cluster="CPSID")`. BLS's
   CPS variance parameters do not apply to union or earnings estimates. Union membership (`UNION`, with
@@ -131,7 +145,7 @@ import sys, os
 OUT = os.path.dirname(os.path.abspath(__file__))
 sys.path[:0] = [os.path.join(OUT, "lib"), os.path.join(OUT, "lib", "ipums"), r"<skill>/sources/ipums/lib"]  # SKILL.md section 4
 from stats import *
-D, C = f"{OUT}/data/ipums", "cps"                # the collection: "usa" (ACS) or "cps"; codes differ
+D, C = f"{OUT}/data/ipums", "cps"                # "usa" (ACS), "cps", "nhis" or "meps"; codes differ
 df = clean_missing(load(f"{D}/ipums_extract.csv"), C, codebook=f"{D}/codebook.csv")
 df["emp"] = emp_status(df, C)
 t = grouped(df, ["YEAR", "SEX"], "ASECWT", {"employment_rate": share(lambda d: d.emp == "employed", col="emp"),

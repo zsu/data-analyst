@@ -58,7 +58,11 @@ MISSING = {
             "HOURWAGE": [999.99], "HOURWAGE2": [999.99], "UHRSWORKT": [997, 999],
             "UHRSWORK1": [997, 999], "UHRSWORKLY": [999], "WKSWORK1": [],
             "AHRSWORKT": [999]},
+    # AGE has no value labels in the DDI: top code 85; unknown codes per the IPUMS AGE pages [2026-10]
+    "nhis": {"AGE": [997, 998, 999], "BMICALC": [0, 996]},
+    "meps": {"AGE": [996]},
 }
+HEALTH_SURVEYS = ("nhis", "meps")           # IPUMS Health Surveys: EDUC and USBORN share one coding
 _MISSING_LABEL = re.compile(r"\b(n/?a|niu|n\.i\.u\.?|not in universe|missing|unknown|blank|"
                             r"refused|don'?t know|not applicable|illegible|suppressed)\b", re.I)
 
@@ -247,18 +251,35 @@ def grouped(df: pd.DataFrame, by: list[str], weight: str, measures: dict,
 
 
 # ---------------------------------------------------------------- common recodes
+def _codes_for(collection: str, helper: str, known=("usa", "cps")) -> str:
+    """Recodes are written per collection: codes differ (EMPSTAT, EDUC, CITIZEN), so an unknown one must fail
+    loudly instead of borrowing another collection's codes."""
+    if collection not in known:
+        raise ValueError(f"{helper}() has no codes for collection {collection!r} (only {', '.join(known)}): "
+                         "recode from data/ipums/codebook.csv instead")
+    return collection
+
+
 def emp_status(df: pd.DataFrame, collection: str) -> pd.Series:
-    """'employed' / 'unemployed' / 'nilf' / NaN (not in universe, armed forces)."""
+    """'employed' / 'unemployed' / 'nilf' / NaN (not in universe, armed forces).
+
+    NHIS EMPSTAT (sample adults): 100-122 employed, 210-217 unemployed, 220 NILF, 200 'not employed' without
+    detail -> 'not employed' (the only split from 2019 on: 100/200/999). MEPS has no EMPSTAT variable.
+    """
+    _codes_for(collection, "emp_status", ("usa", "cps", "nhis"))
     e = df["EMPSTAT"]
     if collection == "cps":          # CPS EMPSTAT: 10,12 employed; 20-22 unemployed; 30-36 NILF; 1 armed forces
         out = np.select([e.between(10, 12), e.between(20, 22), e.between(30, 36)],
                         ["employed", "unemployed", "nilf"], default=None)
+    elif collection == "nhis":
+        out = np.select([e.between(100, 122), e.between(210, 217), e == 220, e == 200],
+                        ["employed", "unemployed", "nilf", "not employed"], default=None)
     else:                            # USA EMPSTAT: 1 employed, 2 unemployed, 3 NILF, 0 N/A
         out = np.select([e == 1, e == 2, e == 3], ["employed", "unemployed", "nilf"], default=None)
     return pd.Series(out, index=df.index, dtype="object")
 
 
-def foreign_born(df: pd.DataFrame) -> pd.Series:
+def foreign_born(df: pd.DataFrame, collection: str | None = None) -> pd.Series:
     """True if foreign born (Census definition: not a U.S. citizen at birth).
 
     CPS: NATIVITY 5 = foreign born, 1-4 = native (0 = unknown -> NaN).
@@ -266,13 +287,28 @@ def foreign_born(df: pd.DataFrame) -> pd.Series:
     USA (ACS): NATIVITY is not available for ACS samples; use CITIZEN: 0 N/A (born in US), 1 born abroad
          of American parents -> native; 2-5 (naturalized, not a citizen, ...) -> foreign born;
          8 illegible, 9 missing -> NaN.
+    NHIS, MEPS: USBORN 20 born in the U.S. or 11 in a U.S. territory -> native; 10 (no, no detail) and 12 -> foreign
+         born (10 also holds territory births in samples that do not split them); 96-99 -> NaN.
+    Without `collection`, the coding is told apart by the weight columns (ASECWT/WTFINL: CPS; PERWT: USA).
     """
+    if collection in HEALTH_SURVEYS:
+        u = df["USBORN"]
+        return pd.Series(np.where(u.isin([10, 12]), True, np.where(u.isin([11, 20]), False, None)),
+                         index=df.index, dtype="object")
+    if collection is None:
+        if "ASECWT" in df or "WTFINL" in df:
+            collection = "cps"
+        elif "PERWT" in df:
+            collection = "usa"
+        else:
+            raise ValueError("foreign_born(): cannot tell the collection from the columns: pass collection='usa' or 'cps'")
+    _codes_for(collection, "foreign_born")
     if "NATIVITY" in df and df["NATIVITY"].between(1, 5).any():
         n = df["NATIVITY"]
         return pd.Series(np.where(n == 5, True, np.where(n.between(1, 4), False, None)),
                          index=df.index, dtype="object")
     c = df["CITIZEN"]
-    if "ASECWT" in df or "WTFINL" in df:          # CPS coding
+    if collection == "cps":
         return c.isin([4, 5])
     return pd.Series(np.where(c.between(2, 5), True, np.where(c.between(0, 1), False, None)),   # USA coding
                      index=df.index, dtype="object")
@@ -292,8 +328,18 @@ def educ_group(df: pd.DataFrame, collection: str, scheme: str = "educ4") -> pd.S
     educ4: <HS, HS diploma/GED, some college (incl. associate), BA+   (4 groups)
     educ5: HS or less, some college, BA, MA, professional/doctorate   (5 groups, for pay comparisons)
     USA needs EDUCD (detailed); CPS uses EDUC (already detailed, 3-digit).
+    NHIS, MEPS EDUC: 100-116 < HS, 200-202 HS/GED, 300-303 some college/associate, 400 BA, 510 MA, 520-522
+    professional/doctorate; 500 (graduate, no detail) counts as BA+ in educ4 and stays unassigned in educ5;
+    530 'Other degree' (about 8% of MEPS 2022 persons) and 0 NIU stay unassigned: say how they are treated.
+    Restrict to adults first: MEPS codes children's grade in school (101-116), which would count as < HS.
     """
-    if collection == "usa":
+    if _codes_for(collection, "educ_group", ("usa", "cps") + HEALTH_SURVEYS) in HEALTH_SURVEYS:
+        e = df["EDUC"]
+        lt_hs, hs, some, ba, ma, prof = (e.between(100, 116), e.between(200, 202), e.between(300, 303),
+                                         e == 400, e == 510, e.between(520, 522))
+        if scheme == "educ4":
+            ma = ma | (e == 500)
+    elif collection == "usa":
         e = df["EDUCD"]
         # 60 "Grade 12", 100 "4 years of college" and 110-113 "5+ years" are pre-1990 census
         # years-of-schooling codes; 61 "12th grade, no diploma" (ACS) is less than high school
@@ -350,6 +396,10 @@ def rep_se(df: pd.DataFrame, estimator: Callable, collection: str, weight: str |
     estimator(df, weight_col) -> float.  Request "REPWTP" in the extract (ACS: 80 replicates,
     CPS ASEC: 160). SE = sqrt(4/R * sum((theta_r - theta)^2)).  Returns (estimate, se).
     """
+    if collection not in ("usa", "cps"):
+        raise ValueError(f"rep_se(): no replicate weights for collection {collection!r}; use lin_se() with the "
+                         "survey's strata and PSU (NHIS: STRATA, PSU; MEPS: STRATANN, PSUANN, or STRATAPLD, "
+                         "PSUPLD for pooled years)")
     if not weight:                   # CPS: ASECWT on ASEC records, WTFINL on basic monthly ones (ASECWT empty)
         asec = "ASECWT" in df and df["ASECWT"].notna().any()
         weight = {"usa": "PERWT", "cps": "ASECWT" if asec else "WTFINL"}[collection]
@@ -376,6 +426,9 @@ def lin_se(df: pd.DataFrame, z: np.ndarray, strata: str = "STRATA", cluster: str
 
     ACS (IPUMS-USA) provides STRATA and CLUSTER automatically. For the CPS ASEC, use rep_se() instead; CPS
     basic monthly has no design variables: pass a constant strata column and cluster="CPSID" (approximate).
+    NHIS: strata="STRATA", cluster="PSU" (also across pooled years); MEPS: "STRATANN"/"PSUANN" for one
+    year, "STRATAPLD"/"PSUPLD" for pooled years. Keep the whole file and mark the sub-population with the
+    domain mask (share_z / mean_z): filtering rows first drops design information.
     When pooling several ACS years, make strata unique by year: df["STRATA"] = df.YEAR * 10**6 + df.STRATA.
     Vectorized: about one second per 4 million records.
     """

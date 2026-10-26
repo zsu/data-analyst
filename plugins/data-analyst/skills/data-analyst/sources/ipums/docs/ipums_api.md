@@ -52,14 +52,17 @@ After the download, `codebook.csv` holds the authoritative codes.
 - `attachedCharacteristics`: `mother`, `father`, `spouse`, `head`. Each adds a column such as `EDUC_SP`.
 - `adjustMonetaryValues: true` (usa/cps/ipumsi) adds a CPI-adjusted copy of a dollar variable, for example `INCWAGE_CPIU_2010`. Check `variables.csv` for its label and base year.
 - `dataQualityFlags: true` adds a `Q<VAR>` column showing whether the value was allocated or imputed.
-- Technical variables are added automatically (YEAR, SERIAL, PERNUM and the weights, plus SAMPLE/CBSERIAL/CLUSTER/STRATA/GQ for USA, plus MONTH/CPSID/ASECFLAG for CPS).
+- Technical variables are added automatically (YEAR, SERIAL, PERNUM and the weights, plus SAMPLE/CBSERIAL/CLUSTER/STRATA/GQ for USA, plus MONTH/CPSID/ASECFLAG for CPS, STRATA/PSU/SAMPWEIGHT/ASTATFLG/CSTATFLG for NHIS, PSUANN/STRATANN/PSUPLD/STRATAPLD/PERWEIGHT/SAQWEIGHT/DIABWEIGHT for MEPS).
 
 ## Timing and limits
-- A small CPS extract finishes in about 10–60 s. ACS 1-year extracts take minutes. Multi-year ACS 5-year or full-count extracts can take 30+ minutes.
+- A small CPS, NHIS or MEPS extract finishes in about 10–60 s (one NHIS or MEPS year: 11 s in October 2026). ACS 1-year extracts take minutes. Multi-year ACS 5-year or full-count extracts can take 30+ minutes.
 - If the fetch times out, the extract keeps running at IPUMS. Resume it with `python <skill>/scripts/fetch.py --source ipums --resume usa:<number> --out <dir>`.
 - Extract files expire after about 72 hours. The definition saved in `data/extract_spec.json` can be resubmitted at any time.
 - On 429 or 5xx errors the client backs off and retries automatically.
 
 ## Collections that support microdata extracts through the API
 `usa`, `cps`, `ipumsi`, `atus`, `ahtus`, `mtus`, `nhis`, `meps`, `dhs`. Case selection and monetary adjustment are
-available for usa, cps and ipumsi only. NHIS and MEPS are useful for health questions, but their variable names differ. Check each collection's website.
+available for usa, cps and ipumsi only (`--check` refuses them for the others: route `fix_spec`). NHIS and MEPS
+variable names, weights and design variables are in `variables.md` sections 8-9. An unknown variable name returns
+HTTP 400 listing every invalid name ("Invalid variable name: EMPSTAT"), and a variable outside the chosen samples
+says so ("PARTWEIGHT: This variable is not available in any of the samples currently selected"): fix and resubmit.

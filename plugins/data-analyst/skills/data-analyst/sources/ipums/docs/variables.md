@@ -1,10 +1,12 @@
 # Variables and samples for policy questions
 
-Codes marked ✔ were checked against real 2023 extracts (ACS 2023, CPS ASEC 2023, CPS June 2023).
-After every download, `data/ipums/codebook.csv` is the authority, so check any code you are unsure of.
+Codes marked ✔ were checked against real extracts (ACS 2023, CPS ASEC 2023, CPS June 2023; NHIS 2024 and
+MEPS 2022, October 2026). After every download, `data/ipums/codebook.csv` is the authority, so check any
+code you are unsure of.
 
 Contents: 1. Choosing a collection · 2. Sample IDs · 3. Weights · 4. IPUMS-USA (ACS) variables ·
-5. IPUMS-CPS variables · 6. Missing and top codes · 7. Ready-made variable sets by topic
+5. IPUMS-CPS variables · 6. Missing and top codes · 7. Ready-made variable sets by topic ·
+8. IPUMS NHIS variables · 9. IPUMS MEPS variables
 
 ## 1. Choosing a collection
 | Question needs | Use | Why |
@@ -14,7 +16,8 @@ Contents: 1. Choosing a collection · 2. Sample IDs · 3. Weights · 4. IPUMS-US
 | Annual income, poverty, health insurance, program receipt, a long time series (1962+) | **CPS ASEC** (`cpsYYYY_03s`) | The official income and poverty source. Income refers to the **previous** calendar year |
 | Monthly labor force, unemployment, hourly/weekly earnings (minimum wage) | **CPS basic monthly** (`cpsYYYY_MMs`, March basic = `cpsYYYY_03b`) | BLS labor force concepts. Pool 12 months for a sample of about 1.2M records a year |
 | Long-run history (1850–2000) | USA decennial census samples | |
-| Health utilization and spending | `meps`; health status → `nhis` | Variable names differ, so check those websites |
+| Health insurance at the interview, access to care, health status and conditions, by custom groups | **NHIS** (`ihYYYY`) | NCHS's household health survey: about 33k sample adults and 8k sample children a year (2024) |
+| Health care spending (total, out-of-pocket, by payer), use of services, insurance over the year | **MEPS** (`mpYYYY`) | AHRQ's household panel: about 22k persons a year (2022), spending for the whole calendar year |
 
 The ACS starts in 2000 (large samples from 2005, group quarters from 2006). CPS ASEC starts in 1962.
 **ACS 2020 1-year** is IPUMS's experimental-weights release, so note this when using it.
@@ -32,6 +35,8 @@ The ACS starts in 2000 (large samples from 2005, group quarters from 2006). CPS 
     `_02s`, `_03b`, `_04b` ...); take the IDs from `--list-samples cps --match YYYY`, never by pattern
   - **October 2025 was not collected** (lapse in appropriations): 2025 has 11 monthly samples, so a 2025
     annual average divides pooled weights by 11, not 12
+- **NHIS:** `ih2024` = 2024 NHIS (`--list-samples nhis`). **MEPS:** `mp2022` = 2022 MEPS full year
+  (`--list-samples meps`; the newest full-year file lags about two years).
 
 ## 3. Weights (auto-included) ✔
 | Collection / file | Person weight | Household weight | Notes |
@@ -40,12 +45,21 @@ The ACS starts in 2000 (large samples from 2005, group quarters from 2006). CPS 
 | CPS ASEC | `ASECWT` | `ASECWTH` | `WTFINL` is **empty** on ASEC records |
 | CPS basic monthly | `WTFINL` | `HWTFINL` | `ASECWT` is empty on monthly records |
 | CPS earnings (outgoing rotation, MISH 4 and 8) | `EARNWT` | | For `EARNWEEK2`, `HOURWAGE2` and `UNION` (union membership is asked in the outgoing rotation only; BLS's rate is members / employed wage and salary workers, self-employed excluded). Pooling months: divide by the number of months (12; 11 for 2025) for annual-average counts |
+| NHIS 2019 on | `SAMPWEIGHT` | | One sample adult and one sample child per household: `ASTATFLG` 1 = sample adult, `CSTATFLG` 1 = sample child. Adults sum to the civilian noninstitutionalized adult population (2024: 260M), children to 72M. 2020 sample adults: `PARTWEIGHT` when pooling 2019-2020 (2020 only) |
+| NHIS before 2019 | `PERWEIGHT` (person file), `SAMPWEIGHT` (sample adult/child items) | | The weighting changed in 2019: IPUMS advises against comparing trends across 2019 |
+| MEPS | `PERWEIGHT` | | 0 for persons out of scope (about 3% of records): keep them in the file for the variance, out of every estimate. `SAQWEIGHT` for the adult self-administered questionnaire, `DIABWEIGHT` for the diabetes survey |
 
 Pooling several years for one estimate: either average the yearly estimates, or divide the weights by the number of years so that totals stay annual.
 
 **Standard errors.** Census recommends replicate weights.
 - **USA (ACS):** request `REPWTP` to get 80 columns. They add a lot of size to multi-year extracts; `stats.lin_se` with the automatic `STRATA` and `CLUSTER` is a fallback only: it can be far off for quantities the ACS weights are raked to (age, sex: median-age margins came out 3 to 13 times the replicate ones) and understate others. Prefer replicates; to save size, case-select a second extract with REPWTP to the areas compared.
 - **CPS ASEC:** request `REPWTP` to get 160 columns, then use `stats.rep_se` or `wls(se="replicate")`.
+- **NHIS, MEPS:** no replicate weights; Taylor linearization with the design variables (added automatically):
+  `lin_se(df, z, strata="STRATA", cluster="PSU")` for NHIS (one or many years: IPUMS's STRATA and PSU are
+  consistent within a design period, 2016 on), and `strata="STRATANN", cluster="PSUANN"` for one MEPS year,
+  `"STRATAPLD"`, `"PSUPLD"` when pooling MEPS years. Compute on the whole file with a domain mask
+  (`share_z`, `mean_z`) rather than on filtered rows. Check ✔: NHIS 2024 uninsured ages 18-64, 11.6% with
+  SE 0.34 points (NCHS: 11.6%); MEPS 2022 mean spending $6,765 per person, SE $178 (AHRQ: $6,765).
 
 **Extract gotchas (found in test runs):**
 - IPUMS adds the detailed version of a variable automatically (EDUC also brings EDUCD; EMPSTAT brings EMPSTATD).
@@ -193,3 +207,66 @@ release and say so; a share computed with `WTFINL` is low by about that much.
 - **Poverty (CPS ASEC):** AGE SEX OFFPOV SPMPOV FTOTVAL REPWTP (OFFPOV is IPUMS's corrected official status: use it rather than
   POVERTY; REPWTP gives the standard errors; `case_select_who: households` for family measures).
 - **Minimum wage exposure (CPS monthly ORG):** AGE SEX EDUC HOURWAGE2 PAIDHOUR EARNWEEK2 UHRSWORKT STATEFIP CLASSWKR (+ EARNWT), pooled over 12 months.
+- **Insurance and access (NHIS):** AGE SEX RACENEW HISPYN REGION POVERTY USBORN CITIZEN EDUC HINOTCOVE HIPRIVATEE HIMCAIDE HIMCAREE USUALPL DELAYCOST YBARCARE (+ SAMPWEIGHT, STRATA, PSU auto). No case selection in NHIS: filter after download.
+- **Chronic conditions and risk factors (NHIS):** AGE SEX RACENEW HISPYN EDUC POVERTY HYPERTENEV DIABETICEV ASTHMAEV BMICALC SMOKESTATUS2 HEALTH.
+- **Spending by payer (MEPS):** AGE SEX RACEA HISPYN REGIONMEPS POVCAT COVERTYPE HINOTCOV EXPTOT EXPSELFPAY EXPMCPAY EXPMAPAY EXPPRPAY RXEXPTOT HEALTH (+ PERWEIGHT, STRATANN, PSUANN auto).
+
+## 8. IPUMS NHIS variables
+**Technical (auto) ✔:** YEAR, SERIAL, STRATA, PSU, NHISHID, PERNUM, NHISPID, HHX, SAMPWEIGHT, ASTATFLG,
+CSTATFLG. From 2019 the extract holds only sample adults (`ASTATFLG` 1) and sample children (`CSTATFLG` 1):
+2024, 32,629 adults and 8,360 children. Adult-only items (EMPSTAT, EDUC, conditions) are NIU (0) for children.
+- **Design break:** the 2019 questionnaire and weighting redesign: don't compare trends across it. 2020 was
+  collected partly by telephone during the pandemic, with a partial panel (`PARTWEIGHT`, see section 3); some
+  2020-2021 items cover only some quarters (IPUMS: zero the missing quarters' weights and scale by 4 ÷ quarters).
+- **Demographics ✔:** AGE (85 = 85+; 997-999 unknown, blanked by `clean_missing`), SEX (1 male, 2 female, 7-9
+  unknown), RACENEW (100 White only, 200 Black only, 300 AIAN only, 400 Asian only, 510/520/540 other or
+  multiple, 997-999 unknown), HISPYN (1 no, 2 yes), REGION (1 Northeast, 2 Midwest, 3 South, 4 West).
+- **Nativity ✔:** `USBORN` 20 born in the U.S., 10 no (2024 has only 10 and 20; 11 territory and 12 abroad in
+  other years), 96-99 NIU/unknown; `CITIZEN` 1 not a citizen, 2 citizen, 7-9 unknown.
+  `stats.foreign_born(df, "nhis")` uses USBORN.
+- **Education ✔ (sample adults):** `EDUC` 100-116 less than high school, 200-202 diploma or GED, 300-303 some
+  college or associate, 400 bachelor's, 500 graduate (no detail), 510 master's, 520-522 professional or
+  doctorate, 530 other, 996-999 unknown. `stats.educ_group(df, "nhis")`.
+- **Employment ✔ (sample adults):** `EMPSTAT` from 2019 only 100 employed, 200 not employed, 999 unknown (no
+  unemployed vs. out of the labor force split); earlier years 110-122 employed, 210-217 unemployed, 220 not in
+  labor force. `stats.emp_status(df, "nhis")` returns "not employed" for 200.
+- **Income ✔:** `POVERTY` family income to poverty ratio in categories (11-14 below 1.00, 21-25 1.00-1.99,
+  31-38 2.00 and over, 98 undefinable, 99 unknown).
+- **Insurance ✔ (at the interview, all persons):** `HINOTCOVE` 1 covered, **2 uninsured**, 7-9 unknown (NCHS's
+  headline "uninsured at the time of interview"); `HIPRIVATEE`, `HIMCAIDE`, `HIMCAREE` 1 no, 2 yes, 3 yes without
+  detail (count 2 and 3 as covered), 7-9 unknown.
+- **Access ✔:** `USUALPL` usual place of care (1 none, 2 yes, 3 more than one place: count 2 and 3), `DELAYCOST`
+  delayed care because of cost and `YBARCARE` needed care but couldn't afford it (1 no, 2 yes).
+- **Conditions and risk ✔ (sample adults):** `HYPERTENEV`, `ASTHMAEV` (1 no, 2 yes), `DIABETICEV` (2 yes, 3
+  borderline), `SMOKESTATUS2` (10-13 current, 20 former, 30 never), `BMICALC` (0 NIU, 996 not calculable: both
+  blanked by `clean_missing`; 2020/2022/2024 include sample children ages 10-17), `HEALTH` (1 excellent ... 5 poor).
+- Benchmarks: NCHS Health Insurance Coverage (annual and early release) and the NHIS Interactive Summary
+  Health Statistics for Adults/Children.
+
+## 9. IPUMS MEPS variables
+**Technical (auto) ✔:** YEAR, PERNUM, DUID, PID, MEPSID, PANEL, PANELYR, RELYR, PSUANN, STRATANN, PSUPLD,
+STRATAPLD, PERWEIGHT, SAQWEIGHT, DIABWEIGHT. A year's file pools the panels in the field that year (2022:
+panels 24, 26 and 27). Spending, use and coverage are for the **whole calendar year**; dollars are nominal for
+that year (convert with a named price index; health spending usually with the PCE health index or CPI medical care).
+- **Not in IPUMS MEPS:** `EMPSTAT` and `CITIZEN` (the API rejects them); `INSCOV` and the NHIS `...E` insurance
+  names do not exist either: use the names below.
+- **Demographics ✔:** AGE (age on 31 December; 85 = 85+; 996 missing, blanked by `clean_missing`), SEX,
+  RACEA (100 White, 200 Black, 3xx AIAN, 4xx Asian/Pacific Islander), HISPYN (1 no, 2 yes), REGIONMEPS
+  (1 Northeast, 2 Midwest, 3 South, 4 West), USBORN (as NHIS).
+- **Education ✔:** `EDUC` uses the NHIS coding (section 8), but children carry their grade in school (101-116),
+  and 530 "other degree" is about 8% of persons: restrict to adults (25+ for attainment) and say how 530 is treated.
+- **Income ✔:** `POVCAT` 1 poor (<100% of poverty), 2 near poor (100-124%), 3 low (125-199%), 4 middle
+  (200-399%), 5 high (400%+), AHRQ's standard income groups. `POVLEV` continuous.
+- **Insurance over the year ✔:** `HINOTCOV` 1 covered, **2 uninsured all year**, 9 unknown (2022: 6.4%);
+  `COVERTYPE` 1 private, 2 Medicaid and other public, 3 other, 4 uninsured (AHRQ's hierarchy for persons under
+  65; `COVTYPEAGE` adds age 65+); `HIPRIVATE`, `HIMACHIP`, `HIMCARE` (1 no, 2 yes).
+- **Spending ✔ (annual dollars, no missing codes):** `EXPTOT` total payments; by payer `EXPSELFPAY`
+  (out-of-pocket), `EXPMCPAY` Medicare, `EXPMAPAY` Medicaid, `EXPPRPAY` private insurance (2022 shares of the
+  total: 13.6, 26.3, 12.4, 41.9 percent) and others (`EXPVAPAY`, `EXPTRIPAY`, `EXPOFPAY`, `EXPOLPAY`, `EXPWCPAY`,
+  `EXPOTHPAY`); prescription drugs `RXEXPTOT`. Other service groups (office-based, hospital, emergency room)
+  have their own variables: look them up on meps.ipums.org and test the names with `--dry-run` plus a submit.
+  `CHGTOT` is charges, not payments: never mix them.
+- **Skew:** spending is extremely concentrated (the top 1 percent hold about a fifth of the total; 2022 maximum
+  $1.3M). Report means with SEs, add medians or the share with any spending, and run `screen_outliers`.
+- **Access ✔:** `USUALPL` as in NHIS.
+- Benchmarks: AHRQ MEPS-HC summary tables and Statistical Briefs (for example #560: 2022 mean $6,765 per person).
