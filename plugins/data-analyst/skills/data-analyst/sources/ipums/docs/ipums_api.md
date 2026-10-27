@@ -62,7 +62,7 @@ After the download, `codebook.csv` holds the authoritative codes.
 
 ## Collections that support microdata extracts through the API
 `usa`, `cps`, `ipumsi`, `atus`, `ahtus`, `mtus`, `nhis`, `meps`, `dhs`. Case selection and monetary adjustment are
-available for usa, cps and ipumsi only (`--check` refuses them for the others: route `fix_spec`). NHIS and MEPS
+available for usa, cps and ipumsi only (`--check` refuses them for the others: route `fix_spec`). The API also refuses data quality flags for NHIS and attached characteristics for MEPS; it rectangularizes NHIS on person or injury records (`P`, `I`) and MEPS on person or round records (`P`, `R`), and both allow hierarchical extracts (developer.ipums.org, checked 2026-10). NHIS and MEPS
 variable names, weights and design variables are in `variables.md` sections 8-9. An unknown variable name returns
 HTTP 400 listing every invalid name ("Invalid variable name: EMPSTAT"), and a variable outside the chosen samples
 says so ("PARTWEIGHT: This variable is not available in any of the samples currently selected"): fix and resubmit.

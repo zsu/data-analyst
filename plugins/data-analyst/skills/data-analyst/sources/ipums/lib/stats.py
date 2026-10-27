@@ -18,8 +18,15 @@ Import from an analysis script:
 Every estimate is weighted. `grouped` also returns the unweighted cell size (`n_obs`) and a
 `low_n` flag (< 100 respondents) so thin cells can be suppressed or footnoted, as published statistics require.
 
+NHIS and MEPS (no case selection in the API, no replicate weights): keep the whole file, mark groups by mask
+    df["unins"] = uninsured(df, "nhis")             # 1 / 0 / NaN (unknown)
+    kw = survey_design(df, "nhis")                  # DSTRATA / DPSU for lin_se and se_estimate
+    dom = sample_adults(df) & df.AGE.between(18, 64) & df.unins.notna()
+    est, se = se_estimate(df, share_z(df, df.unins == 1, dom, "SAMPWEIGHT"), **kw)
+
 Accuracy helpers:
     rep_se(df, estimator, "usa")      replicate-weight standard error (ACS REPWTP1-80, CPS REPWTP1-160)
+    survey_design(df, collection)     strata / PSU columns for lin_se (ACS, NHIS, MEPS)
     screen_outliers(df, "INCWAGE", "ASECWT")    top-coded / implausible values report (col, weight, by=...)
     median_binned("EARN") / wmedian_binned(x, w)   Census-style interpolated median for dollar amounts
     facts = Facts(out_dir)            registry of every number cited in the text (see below)
@@ -60,7 +67,8 @@ MISSING = {
             "AHRSWORKT": [999]},
     # AGE has no value labels in the DDI: top code 85; unknown codes per the IPUMS AGE pages [2026-10]
     "nhis": {"AGE": [997, 998, 999], "BMICALC": [0, 996]},
-    "meps": {"AGE": [996]},
+    "meps": {"AGE": [996], "INCTOT": [9999999.96, 9999999.97, 9999999.98, 9999999.99],
+             "FTOTVAL": [999999]},                 # INCTOT may be negative (losses): a real value
 }
 HEALTH_SURVEYS = ("nhis", "meps")           # IPUMS Health Surveys: EDUC and USBORN share one coding
 _MISSING_LABEL = re.compile(r"\b(n/?a|niu|n\.i\.u\.?|not in universe|missing|unknown|blank|"
@@ -114,7 +122,12 @@ def missing_codes(codebook: str | pd.DataFrame) -> dict[str, list]:
 
 def clean_missing(df: pd.DataFrame, collection: str, codebook=None, columns=None,
                   keep: tuple = ("EMPSTAT", "LABFORCE", "NATIVITY", "SEX", "VETSTAT", "CLASSWKR",
-                                 "EDUC", "EDUCD", "CITIZEN", "MARST", "RACE", "HISPAN")) -> pd.DataFrame:
+                                 "EDUC", "EDUCD", "CITIZEN", "MARST", "RACE", "HISPAN",
+                                 # NHIS / MEPS categorical items, recoded by the helpers below
+                                 "USBORN", "HEALTH", "HINOTCOVE", "HINOTCOV", "HIPRIVATEE", "HIMCAIDE",
+                                 "HIMCAREE", "HIPRIVATE", "HIMACHIP", "HIMCARE", "COVERTYPE", "POVCAT",
+                                 "POORYN", "ASTATFLG", "CSTATFLG", "RACENEW", "RACEA", "HISPYN", "EDUCREC2",
+                                 "EDRECODE", "WORKEV")) -> pd.DataFrame:
     """Replace IPUMS missing / N/A codes with NaN in continuous variables.
 
     Categorical variables in `keep` are left as-is (their N/A codes are handled by the recode
@@ -368,6 +381,66 @@ def age_group(age: pd.Series, edges=(25, 35, 45, 55), labels=None) -> pd.Categor
     return pd.cut(age, bins=edges, right=False, labels=labels)
 
 
+def _yes_no(s: pd.Series, yes, no) -> pd.Series:
+    """1.0 / 0.0 / NaN, so share() leaves unknown answers out of the denominator."""
+    return pd.Series(np.where(s.isin(yes), 1.0, np.where(s.isin(no), 0.0, np.nan)), index=s.index)
+
+
+def uninsured(df: pd.DataFrame, collection: str) -> pd.Series:
+    """1.0 uninsured, 0.0 covered, NaN NIU or unknown.
+
+    NHIS HINOTCOVE (at interview): 2 no coverage, 1 has coverage; 0 NIU, 7-9 unknown.
+    MEPS HINOTCOV (all year): 2 no coverage, 1 has coverage; 0 NIU, 9 unknown.
+    USA HCOVANY: 1 no coverage, 2 covered. CPS coverage changed in 2014 and 2019: see docs/variables.md.
+    For a standard error, pass masks without NaN: share_z(df, u == 1, u.notna(), w).
+    """
+    c = _codes_for(collection, "uninsured", ("usa", "nhis", "meps"))
+    col, yes, no = {"nhis": ("HINOTCOVE", [2], [1]), "meps": ("HINOTCOV", [2], [1]),
+                    "usa": ("HCOVANY", [1], [2])}[c]
+    return _yes_no(df[col], yes, no)
+
+
+def fair_poor_health(df: pd.DataFrame) -> pd.Series:
+    """1.0 fair or poor (HEALTH 4, 5), 0.0 excellent to good (1-3), NaN NIU (0) or unknown (7-9). NHIS and MEPS.
+
+    MEPS HEALTH comes from the self-administered questionnaire (adults; 0 = NIU otherwise in 2022): use SAQWEIGHT.
+    """
+    return _yes_no(df["HEALTH"], [4, 5], [1, 2, 3])
+
+
+def sample_adults(df: pd.DataFrame) -> pd.Series:
+    """NHIS sample adults with a record (ASTATFLG 1): a domain mask; sample-adult items use SAMPWEIGHT."""
+    return df["ASTATFLG"] == 1
+
+
+def sample_children(df: pd.DataFrame) -> pd.Series:
+    """NHIS sample children with a record (CSTATFLG 1): a domain mask; sample-child items use SAMPWEIGHT."""
+    return df["CSTATFLG"] == 1
+
+
+def default_weight(collection: str, years=None, universe: str = "person") -> str:
+    """The usual weight; the variable's IPUMS page has the final say.
+
+    nhis: SAMPWEIGHT for sample-adult / sample-child items (universe "sample") and for every item from 2019;
+          PERWEIGHT for person-file items up to 2018.
+    meps: PERWEIGHT; SAQWEIGHT for self-administered questionnaire items (universe "saq", e.g. HEALTH).
+    usa: PERWT; cps: ASECWT (WTFINL for basic monthly, EARNWT for ORG earnings).
+    """
+    c = _codes_for(collection, "default_weight", ("usa", "cps") + HEALTH_SURVEYS)
+    if c == "nhis":
+        late = years is not None and max(int(y) for y in np.atleast_1d(years)) >= 2019
+        return "SAMPWEIGHT" if universe == "sample" or late else "PERWEIGHT"
+    if c == "meps":
+        return "SAQWEIGHT" if universe == "saq" else "PERWEIGHT"
+    return {"usa": "PERWT", "cps": "ASECWT"}[c]
+
+
+def pool_weight(df: pd.DataFrame, weight: str) -> pd.Series:
+    """Weight divided by the number of survey years in df, so pooled totals stay annual averages
+    (the NHIS and MEPS pooling rule; also for pooled ACS or CPS years)."""
+    return df[weight] / df["YEAR"].nunique()
+
+
 def to_constant_dollars(amount: pd.Series, cpi99: pd.Series, target_cpi99: float) -> pd.Series:
     """Convert nominal dollars to a target year using IPUMS CPI99.
 
@@ -398,8 +471,7 @@ def rep_se(df: pd.DataFrame, estimator: Callable, collection: str, weight: str |
     """
     if collection not in ("usa", "cps"):
         raise ValueError(f"rep_se(): no replicate weights for collection {collection!r}; use lin_se() with the "
-                         "survey's strata and PSU (NHIS: STRATA, PSU; MEPS: STRATANN, PSUANN, or STRATAPLD, "
-                         "PSUPLD for pooled years)")
+                         "survey's strata and PSU: lin_se(df, z, **survey_design(df, collection))")
     if not weight:                   # CPS: ASECWT on ASEC records, WTFINL on basic monthly ones (ASECWT empty)
         asec = "ASECWT" in df and df["ASECWT"].notna().any()
         weight = {"usa": "PERWT", "cps": "ASECWT" if asec else "WTFINL"}[collection]
@@ -411,6 +483,47 @@ def rep_se(df: pd.DataFrame, estimator: Callable, collection: str, weight: str |
     theta = estimator(df, weight)
     th = np.array([estimator(df, r) for r in reps])
     return theta, float(np.sqrt(4.0 / len(reps) * np.sum((th - theta) ** 2)))
+
+
+# NHIS sample-design periods: strata and PSUs are comparable only within a period
+# (nhis.ipums.org/nhis/userNotes_variance.shtml). 1995-96 and 1997-2005 are treated as independent.
+NHIS_DESIGN_PERIODS = ((1963, 1972), (1973, 1984), (1985, 1994), (1995, 1996), (1997, 2005), (2006, 2015),
+                       (2016, 9999))
+
+
+def survey_design(df: pd.DataFrame, collection: str) -> dict:
+    """Add unique stratum and PSU columns (DSTRATA, DPSU) to df and return {"strata": ..., "cluster": ...}
+    for lin_se / se_estimate(**kw) and wls(se="cluster", cluster="DPSU"). Pass the whole file.
+
+    usa:  STRATA (made unique by year) and CLUSTER.
+    nhis: STRATA and PSU, with strata kept apart across design periods (pooled years inside one period
+          share their PSUs). Warns when the years span the 2019 redesign: IPUMS advises against pooling
+          or comparing trends across it.
+    meps: STRATANN and PSUANN for one year; STRATAPLD and PSUPLD (request them) for pooled years.
+    cps:  use rep_se with REPWTP instead.
+    """
+    c = _codes_for(collection, "survey_design", ("usa",) + HEALTH_SURVEYS)
+    years = df["YEAR"]
+    if c == "usa":
+        strata, psu = years.astype("int64") * 10**6 + df["STRATA"], df["CLUSTER"]
+    elif c == "nhis":
+        period = np.select([years.between(a, b) for a, b in NHIS_DESIGN_PERIODS],
+                           range(len(NHIS_DESIGN_PERIODS)), -1)
+        strata, psu = pd.Series(period, index=df.index) * 10**6 + df["STRATA"], df["PSU"]
+        if years.min() < 2019 <= years.max():
+            import warnings
+            warnings.warn("NHIS years span the 2019 redesign: IPUMS advises against pooling or comparing across it")
+    elif years.nunique() > 1:          # meps, pooled years
+        if not {"STRATAPLD", "PSUPLD"} <= set(df.columns):
+            raise ValueError("Pooled MEPS years need STRATAPLD and PSUPLD (pooled variance structure): add them "
+                             "to the extract")
+        strata, psu = df["STRATAPLD"], df["PSUPLD"]
+    else:
+        strata, psu = df["STRATANN"], df["PSUANN"]
+    if c in HEALTH_SURVEYS:            # PSUs are numbered within strata: make the id unique for wls clusters
+        psu = strata.astype("int64") * 10**6 + psu
+    df["DSTRATA"], df["DPSU"] = strata.to_numpy(), psu.to_numpy()
+    return {"strata": "DSTRATA", "cluster": "DPSU"}
 
 
 def _z_ratio(y, x, w):
@@ -426,10 +539,9 @@ def lin_se(df: pd.DataFrame, z: np.ndarray, strata: str = "STRATA", cluster: str
 
     ACS (IPUMS-USA) provides STRATA and CLUSTER automatically. For the CPS ASEC, use rep_se() instead; CPS
     basic monthly has no design variables: pass a constant strata column and cluster="CPSID" (approximate).
-    NHIS: strata="STRATA", cluster="PSU" (also across pooled years); MEPS: "STRATANN"/"PSUANN" for one
-    year, "STRATAPLD"/"PSUPLD" for pooled years. Keep the whole file and mark the sub-population with the
-    domain mask (share_z / mean_z): filtering rows first drops design information.
-    When pooling several ACS years, make strata unique by year: df["STRATA"] = df.YEAR * 10**6 + df.STRATA.
+    For ACS, NHIS and MEPS pass **survey_design(df, collection): it picks the design variables and keeps strata
+    apart across pooled years (ACS) or NHIS design periods. Keep the whole file and mark the sub-population
+    with the domain mask (share_z / mean_z): filtering rows first drops design information.
     Vectorized: about one second per 4 million records.
     """
     d = pd.DataFrame({"h": df[strata].to_numpy(), "c": df[cluster].to_numpy(), "z": np.asarray(z, float)})
@@ -547,7 +659,8 @@ def wls(df: pd.DataFrame, y: str, numeric: list[str] = (), categorical: list[str
 
     se="replicate": successive-difference replicate weights (REPWTP1..R), the Census method (preferred
                     when REPWTP was extracted); se="cluster": cluster-robust by `cluster` (e.g. CLUSTER
-                    for ACS); se="hc1": heteroskedasticity-robust.
+                    for ACS; for NHIS and MEPS, which have no replicate weights, cluster="DPSU" after
+                    survey_design()); se="hc1": heteroskedasticity-robust.
     Use it for regression-adjusted gaps (the standard federal-vs-private pay method: log hourly wage on a sector dummy
     plus education, experience, demographics, occupation, region...) and for linear probability models
     of employment or participation. Returns coef, se, t, p (normal), ci90_low, ci90_high, n_obs.
@@ -566,7 +679,8 @@ def wls(df: pd.DataFrame, y: str, numeric: list[str] = (), categorical: list[str
     if se == "replicate":
         reps = [c for c in d.columns if re.fullmatch(rf"{rep_prefix}\d+", c)]
         if not reps:
-            raise ValueError("se='replicate' needs REPWTP1..n columns in the extract")
+            raise ValueError("se='replicate' needs REPWTP1..n columns in the extract (NHIS and MEPS have none: "
+                             "use se='cluster' with cluster='DPSU' from survey_design())")
         B = np.array([fit(d[r].to_numpy(float)) for r in reps])
         V = 4.0 / len(reps) * ((B - b) ** 2).sum(axis=0)
         ses = np.sqrt(V)

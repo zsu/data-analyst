@@ -32,7 +32,7 @@ There is no variable-metadata endpoint for microdata: variable names and verifie
 `docs/variables.md` (sections 4-7, ready-made variable sets by topic); after a download,
 `data/ipums/codebook.csv` is the authority. API body details, timing and errors: `docs/ipums_api.md`.
 Collections with API extracts: usa, cps, ipumsi, atus, ahtus, mtus, nhis, meps, dhs (case selection and
-monetary adjustment only for usa, cps, ipumsi: `--check` refuses them elsewhere, so filter after download;
+monetary adjustment only for usa, cps, ipumsi: `--check` refuses them elsewhere, so mark the group with a domain mask and deflate with CPI-U after download; NHIS has no data quality flags, MEPS no attached characteristics;
 dhs needs an account approved by The DHS Program, so a 401/403 there usually means that approval is
 missing). Codes, weights and recodes are documented for usa, cps, nhis and meps; for the others, work from
 the collection's website and `codebook.csv`, and the recode helpers refuse them.
@@ -118,8 +118,8 @@ weights, terms).
   replicate one in a 2024 tenure check): prefer `rep_se` when the replicates are in the extract; CPS ASEC `rep_se` with REPWTP (160)
   for person estimates, or REPWT (160) with `weight="ASECWTH", prefix="REPWT"` on householders
   (`RELATE == 101`) for household estimates such as median household income (P60 tables). NHIS and MEPS have
-  no replicate weights: `lin_se` with STRATA/PSU (NHIS) or STRATANN/PSUANN (MEPS; STRATAPLD/PSUPLD pooled),
-  on the whole file with a domain mask (`share_z`, `mean_z`). CPS basic monthly has
+  no replicate weights: `lin_se(df, z, **survey_design(df, collection))`, on the whole file with a domain mask
+  (`share_z`, `mean_z`); helpers `uninsured`, `fair_poor_health`, `sample_adults`, `default_weight`, `pool_weight`. CPS basic monthly has
   no replicate weights and no design variables in the public files: an SE clustered by household is
   approximate, and the answer says so: `lin_se(df, z, strata=<a constant column>, cluster="CPSID")`. BLS's
   CPS variance parameters do not apply to union or earnings estimates. Union membership (`UNION`, with

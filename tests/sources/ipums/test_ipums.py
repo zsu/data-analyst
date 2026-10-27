@@ -309,6 +309,29 @@ class TestIpums(PackTest):
                                   cluster="PSU")
         self.assertAlmostEqual(r, 8000 / 15000)
         self.assertGreater(se, 0)
+        # survey_design: same SE for one year; strata kept apart across NHIS design periods
+        z = stats.share_z(d, d.y == 1, stats.sample_adults(d), "SAMPWEIGHT")
+        self.assertAlmostEqual(stats.se_estimate(d, z, **stats.survey_design(d, "nhis"))[1], se)
+        p = pd.DataFrame({"YEAR": [2014, 2017], "STRATA": [5, 5], "PSU": [1, 1]})
+        stats.survey_design(p, "nhis")
+        self.assertEqual(p.DSTRATA.nunique(), 2)
+        self.assertEqual(p.DPSU.nunique(), 2)
+        with self.assertWarns(UserWarning):
+            stats.survey_design(p.assign(YEAR=[2018, 2019]), "nhis")
+        mp = pd.DataFrame({"YEAR": [2021, 2022], "STRATANN": [1, 1], "PSUANN": [1, 2]})
+        with self.assertRaises(ValueError):
+            stats.survey_design(mp, "meps")                              # pooled MEPS needs STRATAPLD/PSUPLD
+        self.assertEqual(stats.survey_design(mp.iloc[:1].copy(), "meps"), {"strata": "DSTRATA", "cluster": "DPSU"})
+        # uninsured: 1 / 0 / NaN; HINOTCOVE survives clean_missing even when the codebook labels 0 NIU
+        self.assertEqual(list(stats.uninsured(df, "nhis").fillna(-1)), [0.0, 1.0, -1, 0.0])
+        self.assertEqual(list(stats.uninsured(pd.DataFrame({"HCOVANY": [1, 2]}), "usa")), [1.0, 0.0])
+        cb = pd.DataFrame({"variable": ["HINOTCOVE"], "value": ["0"], "value_label": ["NIU"]})
+        self.assertEqual(stats.clean_missing(pd.DataFrame({"HINOTCOVE": [0]}), "nhis", codebook=cb).loc[0, "HINOTCOVE"], 0)
+        self.assertTrue(pd.isna(stats.clean_missing(pd.DataFrame({"INCTOT": [9999999.98]}), "meps").loc[0, "INCTOT"]))
+        self.assertEqual(stats.default_weight("nhis", [2018, 2024]), "SAMPWEIGHT")
+        self.assertEqual(stats.default_weight("meps", universe="saq"), "SAQWEIGHT")
+        with self.assertRaises(ValueError):
+            stats.uninsured(df, "cps")
 
     def test_health_survey_spec_and_ingest(self):
         bad = dict(SPEC_NHIS, case_selections={"AGE": {"min": 18, "max": 64}}, adjust_monetary_values=["X"])
@@ -316,6 +339,18 @@ class TestIpums(PackTest):
         self.assertEqual(r["route"], "fix_spec", r)
         self.assertEqual(sum("available only for usa, cps, ipumsi" in p for p in json.dumps(r).split("\\n")), 1)
         self.assertIn("case_selections", json.dumps(r))
+        self.assertIn("domain mask", json.dumps(r))
+        self.assertIn("CPI-U", json.dumps(r))
+        # options the API refuses for one health survey but not the other
+        for spec, word in ((dict(SPEC_NHIS, data_quality_flags=True), "data_quality_flags"),
+                           (dict(SPEC_NHIS, collection="meps", samples=["mp2022"],
+                                 attached_characteristics={"EDUC": ["spouse"]}), "attached_characteristics"),
+                           (dict(SPEC_NHIS, data_structure={"rectangular": {"on": "R"}}), "rectangular on 'R'")):
+            code, r = self.check(spec)
+            self.assertEqual(r["route"], "fix_spec", r)
+            self.assertIn(word, json.dumps(r))
+        code, r = self.check(dict(SPEC_NHIS, data_structure={"rectangular": {"on": "I"}}), env=FAKE_KEY)
+        self.assertNotEqual(r["route"], "fix_spec", r)
         sp, out = self.write_spec(SPEC_NHIS)
         up = os.path.join(self.tmp.name, "uploads_nhis")
         os.makedirs(up)
@@ -333,6 +368,10 @@ class TestIpums(PackTest):
         f = load_pack_module("ipums", "fetch.py")
         self.assertEqual((f.sample_label("ih2024"), f.sample_label("mp2022")), ("2024 NHIS", "2022 MEPS"))
         self.assertEqual(f.approx_rows(["ih2024", "mp2022"]), 45_000 + 25_000)
+        self.assertIn("0 = NIU", readme)                                  # NHIS missing-code hint, not USA's
+        rounds = f.build_body(dict(SPEC_NHIS, collection="meps", samples=["mp2022"],
+                                   data_structure={"rectangular": {"on": "R"}}))
+        self.assertIn("**Rectangular (round)**", f.web_section("meps", rounds))
 
     def test_list_samples_health(self):
         import subprocess

@@ -43,6 +43,8 @@ spec.json (friendly format, converted to the IPUMS API v2 body):
   "data_quality_flags": ["INCWAGE"],           # or true for all variables
   "adjust_monetary_values": ["INCWAGE"]        # CPI-adjust to a common year (usa/cps/ipumsi)
 }
+Case selection and monetary adjustment exist only for usa/cps/ipumsi; NHIS refuses data quality flags and
+MEPS attached characteristics (API_LIMITS). --check returns fix_spec for them, with what to do instead.
 
 Output (OUTDIR/data/ipums/):
   ipums_extract.csv     one row per person, uppercase IPUMS mnemonics, raw IPUMS codes  (never shared)
@@ -90,6 +92,12 @@ APPROX_ROWS = {
     "nhis": 45_000, "nhis_pre2019": 100_000, "meps": 25_000,   # NHIS 2024: 41k sample adults and children; MEPS 2022: 22k
 }
 SELECTABLE = ("usa", "cps", "ipumsi")      # collections with case selection and monetary adjustment
+# Other options the microdata API refuses, by collection (developer.ipums.org/docs/v2/apiprogram/apis/microdata/,
+# checked 2026-10). Hierarchical extracts are allowed for both.
+API_LIMITS = {
+    "nhis": {"unsupported": ("data_quality_flags",), "rect_on": ("P", "I")},        # person or injury records
+    "meps": {"unsupported": ("attached_characteristics",), "rect_on": ("P", "R")},  # person or round records
+}
 CITATIONS = {
     "usa": ("Steven Ruggles, Sarah Flood, Matthew Sobek, et al. IPUMS USA [dataset]. "
             "Minneapolis, MN: IPUMS. Use the exact version and DOI cited at https://usa.ipums.org/usa/cite.shtml "
@@ -97,27 +105,51 @@ CITATIONS = {
     "cps": ("Sarah Flood, Miriam King, Renae Rodgers, Steven Ruggles, J. Robert Warren, et al. "
             "IPUMS CPS [dataset]. Minneapolis, MN: IPUMS. Use the exact version and DOI cited at "
             "https://cps.ipums.org/cps/citation.shtml (the unversioned DOI does not resolve)"),
-    "nhis": ("IPUMS NHIS [dataset]. Minneapolis, MN: IPUMS. Use the exact version and DOI cited at "
-             "https://nhis.ipums.org/nhis/citation.shtml, and acknowledge NCHS as the source of the NHIS"),
-    "meps": ("IPUMS MEPS [dataset]. Minneapolis, MN: IPUMS. Use the exact version and DOI cited at "
-             "https://meps.ipums.org/meps/citation.shtml, and acknowledge AHRQ as the source of the MEPS"),
+    "nhis": ("Lynn A. Blewett, Julia A. Rivera Drew, Andrew Fenelon, Miriam L. King, Kari C.W. Williams, et al. "
+             "IPUMS Health Surveys: National Health Interview Survey [dataset]. Minneapolis, MN: IPUMS. Use the "
+             "exact version and DOI cited at https://nhis.ipums.org/nhis/citation.shtml, and acknowledge NCHS "
+             "as the source of the NHIS"),
+    "meps": ("Lynn A. Blewett, Julia A. Rivera Drew, Andrew Fenelon, Daniel Backman, Etienne Breton, et al. "
+             "IPUMS Health Surveys: Medical Expenditure Panel Survey [dataset]. Minneapolis, MN: IPUMS. Use the "
+             "exact version and DOI cited at https://meps.ipums.org/meps/citation.shtml, and acknowledge AHRQ "
+             "as the source of the MEPS"),
 }
 SOURCE_LINE = {"usa": "IPUMS-USA (American Community Survey / decennial census)",
                "cps": "IPUMS-CPS (Current Population Survey)",
                "nhis": "IPUMS NHIS (National Health Interview Survey, NCHS)",
                "meps": "IPUMS MEPS (Medical Expenditure Panel Survey, AHRQ)"}
+# By collection: the same name can mean different things (PERWEIGHT in NHIS and MEPS).
 WEIGHT_HINTS = {
-    "PERWT": "person weight (USA): use for person-level estimates",
-    "HHWT": "household weight (USA): use for household-level estimates (one row per household, PERNUM==1)",
-    "ASECWT": "ASEC person weight (CPS March supplement): use for annual income/insurance/poverty",
-    "WTFINL": "final basic monthly weight (CPS): use for monthly labor-force estimates",
-    "EARNWT": "earnings weight (CPS outgoing rotation groups): use for EARNWEEK2/HOURWAGE2 and UNION",
-    "ASECWTH": "ASEC household weight (CPS)",
-    "SAMPWEIGHT": "sample adult / sample child weight (NHIS): the only person weight from 2019 on",
-    "PERWEIGHT": "person weight (MEPS annual weight; NHIS person file before 2019)",
-    "PARTWEIGHT": "2020 NHIS sample adults: use instead of SAMPWEIGHT when pooling 2019-2020",
-    "SAQWEIGHT": "MEPS self-administered questionnaire weight: use for SAQ items (adults)",
-    "DIABWEIGHT": "MEPS diabetes care survey weight",
+    "usa": {
+        "PERWT": "person weight (USA): use for person-level estimates",
+        "HHWT": "household weight (USA): use for household-level estimates (one row per household, PERNUM==1)",
+    },
+    "cps": {
+        "ASECWT": "ASEC person weight (CPS March supplement): use for annual income/insurance/poverty",
+        "WTFINL": "final basic monthly weight (CPS): use for monthly labor-force estimates",
+        "EARNWT": "earnings weight (CPS outgoing rotation groups): use for EARNWEEK2/HOURWAGE2 and UNION",
+        "ASECWTH": "ASEC household weight (CPS)",
+    },
+    "nhis": {
+        "SAMPWEIGHT": "sample adult / sample child weight (NHIS): sample-adult and sample-child items, and the "
+                      "only person weight from 2019 on (each variable page names its weight)",
+        "PERWEIGHT": "person weight (NHIS person file, to 2018): all persons; there is none from 2019",
+        "PARTWEIGHT": "2020 NHIS sample adults: use instead of SAMPWEIGHT when pooling 2019-2020",
+        "HHWEIGHT": "household weight (NHIS, to 2018)",
+        "FWEIGHT": "family weight (NHIS, to 2018)",
+    },
+    "meps": {
+        "PERWEIGHT": "full-year person weight (MEPS): use for person-level estimates (expenditures, insurance); "
+                     "0 = out of scope",
+        "SAQWEIGHT": "self-administered questionnaire weight (MEPS adults): use for SAQ items",
+        "DIABWEIGHT": "diabetes care survey weight (MEPS)",
+    },
+}
+MISSING_HINT = {
+    "usa": "e.g. INCWAGE 999999 = N/A, 999998 = missing; EMPSTAT 0 = N/A",
+    "cps": "e.g. INCWAGE 99999999 = NIU, 99999998 = missing; EMPSTAT 0 = NIU",
+    "nhis": "e.g. 0 = NIU; 7/8/9, 97-99 and 997-999 = unknown (refused, not ascertained, don't know)",
+    "meps": "e.g. AHRQ's negative codes appear as labelled NIU/unknown values; INCTOT 9999999.96-.99 = NIU/unknown",
 }
 TERMS_LINE = ("The extract is for the user's own use under the IPUMS terms of use: it must not be shared, "
               "attached to a report or reposted. Share extract_spec.json and the reproduce scripts instead; "
@@ -170,10 +202,24 @@ def spec_problems(spec: dict) -> list[str]:
         bad.append('"case_select_who" must be "individuals" or "households"')
     c = spec.get("collection")
     if isinstance(c, str) and c not in SELECTABLE:       # IPUMS would refuse the extract with HTTP 400
-        for k in ("case_selections", "adjust_monetary_values"):
+        only = f"is available only for {', '.join(SELECTABLE)}"
+        if spec.get("case_selections") or spec.get("case_select_who"):
+            bad.append(f'"case_selections" {only}: remove it (and "case_select_who"), keep the selection variables '
+                       f'in "variables", and select the group in analysis on the whole {c} file with a domain mask '
+                       "(share_z / mean_z): dropping rows first loses design information for standard errors")
+        if spec.get("adjust_monetary_values"):
+            bad.append(f'"adjust_monetary_values" {only}: remove it; there is no CPI99 for {c}, so deflate in '
+                       "analysis with the BLS CPI-U annual average (cite the series) and state the dollar year")
+    lim = API_LIMITS.get(c) if isinstance(c, str) else None
+    if lim:
+        for k in lim["unsupported"]:
             if spec.get(k):
-                bad.append(f'"{k}" is available only for {", ".join(SELECTABLE)}: remove it and filter the '
-                           f"{c} extract after download")
+                bad.append(f'"{k}" is not supported by the IPUMS API for {c}: remove it')
+        ds = spec.get("data_structure") or {}
+        on = (ds.get("rectangular") or {}).get("on") if isinstance(ds, dict) else None
+        if on and on not in lim["rect_on"]:
+            bad.append(f'"data_structure" rectangular on {on!r} is not available for {c} '
+                       f'(use {" or ".join(map(repr, lim["rect_on"]))}, or {{"hierarchical": {{}}}})')
     return bad
 
 
@@ -394,7 +440,8 @@ def package_files(collection: str, number, data_path: str, ddi_path: str | None,
                    "spec": spec, "api_body": body}, f, indent=2)
 
     labels = {r["variable"]: r["label"] for r in var_rows}
-    weights = [c for c in columns if c in WEIGHT_HINTS]
+    hints = WEIGHT_HINTS.get(collection) or {k: v for h in WEIGHT_HINTS.values() for k, v in h.items()}
+    weights = [c for c in columns if c in hints]
     citation = ddi_cite or CITATIONS.get(collection, "Cite IPUMS per https://www.ipums.org/about/citation")
     lines = [
         f"# IPUMS extract {collection.upper()} #{number}",
@@ -416,7 +463,7 @@ def package_files(collection: str, number, data_path: str, ddi_path: str | None,
            if "caseSelections" in v] or ["- none (full sample)"]),
         "",
         "## Weights",
-        *([f"- `{w}`: {WEIGHT_HINTS[w]}" for w in weights] or
+        *([f"- `{w}`: {hints[w]}" for w in weights] or
           ["- No weight variable in extract. Estimates will NOT be population-representative."]),
         "",
         "## Reading the data",
@@ -425,8 +472,8 @@ def package_files(collection: str, number, data_path: str, ddi_path: str | None,
         "df = pd.read_csv('ipums_extract.csv')",
         "cb = pd.read_csv('codebook.csv', dtype={'value': str})",
         "```",
-        "Watch for IPUMS missing/top codes (e.g. INCWAGE 999999 = N/A, 999998 = missing; "
-        "EMPSTAT 0 = N/A). Check `codebook.csv` before computing means.",
+        f"Watch for IPUMS missing/top codes ({MISSING_HINT.get(collection, MISSING_HINT['usa'])}). "
+        "Check `codebook.csv` before computing means.",
         "",
         "## Citation",
         citation,
@@ -488,9 +535,9 @@ the analysis relies on them.
    IPUMS adds technical variables (such as YEAR, SERIAL, PERNUM and the weights) by itself. Keep them.
 4. Click **View Cart**, then **Create Data Extract**.
 @CASES@@OPTIONS_EXTRA@5. **Data format:** click *Change* and choose **Comma delimited (.csv)**. Keep the structure
-   **Rectangular (person)**.
+   **@STRUCTURE@**.
 6. Add the description "@DESCRIPTION@" and click **Submit Extract**. IPUMS emails you when the
-   extract is ready (minutes for CPS, up to about 30 minutes for multi-year ACS).
+   extract is ready (minutes for CPS, NHIS or MEPS, up to about 30 minutes for multi-year ACS).
 7. On **My Data** (@MYDATA@), download the **data file** (`.csv.gz`) and the **DDI codebook**: right-click
    the *DDI* link and choose *Save link as*, so it is saved as an `.xml` file.
 
@@ -504,7 +551,7 @@ Do not paste it into the chat.
 
 The extract definition is built into the script (`extract_spec.json` holds the same definition, for
 reference and for the curl steps below). The script submits the extract, waits until IPUMS has built
-it (minutes for CPS, up to about 30 minutes for multi-year ACS), and saves the data file (`.csv.gz`)
+it (minutes for CPS, NHIS or MEPS, up to about 30 minutes for multi-year ACS), and saves the data file (`.csv.gz`)
 and the codebook (`.xml`) next to itself. If it is interrupted, run it again: it continues with the
 same extract. To submit a new extract instead (for example after IPUMS deleted the files, about 72
 hours after they were built), add `--new` (bash) or `-New` (PowerShell).
@@ -659,7 +706,12 @@ def web_section(collection: str, body: dict) -> str:
         case_text = ("   **Select cases:** click *Select cases*, check these variables, pick the codes, and keep "
                      f"{keep}:\n" + "\n".join(cases) + "\n")
     extra_text = ("   **Options** (on the same page):\n" + "\n".join(extra) + "\n") if extra else ""
-    return (WEB_TEMPLATE.replace("@SITE@", site).replace("@BROWSE@", browse).replace("@MYDATA@", mydata)
+    ds = body.get("dataStructure") or {}
+    on = (ds.get("rectangular") or {}).get("on", "P")
+    structure = ("Hierarchical" if "hierarchical" in ds else "Household only" if "householdOnly" in ds else
+                 {"P": "Rectangular (person)", "I": "Rectangular (injury)", "R": "Rectangular (round)",
+                  "A": "Rectangular (activity)"}.get(on, f"Rectangular ({on})"))
+    return (WEB_TEMPLATE.replace("@STRUCTURE@", structure).replace("@SITE@", site).replace("@BROWSE@", browse).replace("@MYDATA@", mydata)
             .replace("@SAMPLES@", samples).replace("@VARIABLES@", variables)
             .replace("@CASES@", case_text).replace("@OPTIONS_EXTRA@", extra_text)
             .replace("@DESCRIPTION@", body.get("description", "")))
