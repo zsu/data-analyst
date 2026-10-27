@@ -7,8 +7,8 @@
 #   - Asks for your IPUMS API key (hidden input), or uses $IPUMS_API_KEY when it is set.
 #     The key is never shown, saved, or put on a command line.
 #   - Submits the extract defined in this file, waits until IPUMS has built it
-#     (minutes for CPS, up to about 30 minutes for multi-year ACS), and downloads the data file
-#     (.csv.gz) and the DDI codebook (.xml) into the folder that holds this script.
+#     (minutes for CPS, NHIS or MEPS, up to about 30 minutes for multi-year ACS), and downloads
+#     the data file (.csv.gz) and the DDI codebook (.xml) into the folder that holds this script.
 #   - Run it again after an interruption: it continues with the same extract instead of submitting
 #     a new one. EXTRACT_NUMBER overrides that number; --new submits a new extract.
 #   - Needs only curl, which macOS and most Linux systems have.

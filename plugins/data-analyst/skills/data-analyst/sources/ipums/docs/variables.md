@@ -55,9 +55,9 @@ Pooling several years for one estimate: either average the yearly estimates, or 
 - **USA (ACS):** request `REPWTP` to get 80 columns. They add a lot of size to multi-year extracts; `stats.lin_se` with the automatic `STRATA` and `CLUSTER` is a fallback only: it can be far off for quantities the ACS weights are raked to (age, sex: median-age margins came out 3 to 13 times the replicate ones) and understate others. Prefer replicates; to save size, case-select a second extract with REPWTP to the areas compared.
 - **CPS ASEC:** request `REPWTP` to get 160 columns, then use `stats.rep_se` or `wls(se="replicate")`.
 - **NHIS, MEPS:** no replicate weights; Taylor linearization with the design variables (added automatically):
-  `lin_se(df, z, strata="STRATA", cluster="PSU")` for NHIS (one or many years: IPUMS's STRATA and PSU are
-  consistent within a design period, 2016 on), and `strata="STRATANN", cluster="PSUANN"` for one MEPS year,
-  `"STRATAPLD"`, `"PSUPLD"` when pooling MEPS years. Compute on the whole file with a domain mask
+  `lin_se(df, z, **survey_design(df, "nhis"))`. For NHIS it uses STRATA and PSU, kept apart across design
+  periods (IPUMS's STRATA and PSU are consistent only within a period, such as 2006-2015 or 2016 on). For one
+  MEPS year it uses STRATANN and PSUANN; for pooled MEPS years, STRATAPLD and PSUPLD. Compute on the whole file with a domain mask
   (`share_z`, `mean_z`) rather than on filtered rows. Check ✔: NHIS 2024 uninsured ages 18-64, 11.6% with
   SE 0.34 points (NCHS: 11.6%); MEPS 2022 mean spending $6,765 per person, SE $178 (AHRQ: $6,765).
 
@@ -207,7 +207,7 @@ release and say so; a share computed with `WTFINL` is low by about that much.
 - **Poverty (CPS ASEC):** AGE SEX OFFPOV SPMPOV FTOTVAL REPWTP (OFFPOV is IPUMS's corrected official status: use it rather than
   POVERTY; REPWTP gives the standard errors; `case_select_who: households` for family measures).
 - **Minimum wage exposure (CPS monthly ORG):** AGE SEX EDUC HOURWAGE2 PAIDHOUR EARNWEEK2 UHRSWORKT STATEFIP CLASSWKR (+ EARNWT), pooled over 12 months.
-- **Insurance and access (NHIS):** AGE SEX RACENEW HISPYN REGION POVERTY USBORN CITIZEN EDUC HINOTCOVE HIPRIVATEE HIMCAIDE HIMCAREE USUALPL DELAYCOST YBARCARE (+ SAMPWEIGHT, STRATA, PSU auto). No case selection in NHIS: filter after download.
+- **Insurance and access (NHIS):** AGE SEX RACENEW HISPYN REGION POVERTY USBORN CITIZEN EDUC HINOTCOVE HIPRIVATEE HIMCAIDE HIMCAREE USUALPL DELAYCOST YBARCARE (+ SAMPWEIGHT, STRATA, PSU auto). No case selection in NHIS: mark the group with a domain mask after download.
 - **Chronic conditions and risk factors (NHIS):** AGE SEX RACENEW HISPYN EDUC POVERTY HYPERTENEV DIABETICEV ASTHMAEV BMICALC SMOKESTATUS2 HEALTH.
 - **Spending by payer (MEPS):** AGE SEX RACEA HISPYN REGIONMEPS POVCAT COVERTYPE HINOTCOV EXPTOT EXPSELFPAY EXPMCPAY EXPMAPAY EXPPRPAY RXEXPTOT HEALTH (+ PERWEIGHT, STRATANN, PSUANN auto).
 

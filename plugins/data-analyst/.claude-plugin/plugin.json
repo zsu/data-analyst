@@ -1,6 +1,6 @@
 {
   "name": "data-analyst",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Answer questions with official U.S. government data (BEA, BLS, FRED, Census, Treasury, OPM, USAspending, CDC, Congress.gov, EPA and 35+ more): CSV data plus an audited short answer, or an audited HTML report.",
   "author": {
     "name": "zsu"
