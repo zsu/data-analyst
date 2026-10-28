@@ -276,6 +276,7 @@ def _norm(s: str) -> str:
 NUMBER_WORDS = {w: i for i, w in enumerate("zero one two three four five six seven eight nine ten eleven twelve".split())}
 DOWN_WORDS = re.compile(r"(?i)\b(?:fell|fall(?:s|ing|en)?|declin\w*|decreas\w*|drop\w*|down|lower\w*|less|loss\w*|"
                         r"lost|negative|shr[ai]nk\w*|shrunk|contract\w*|slow\w*|below|cut|reduc\w*|minus|deficit\w*|"
+                        r"behind|short(?:fall)?|trail\w*|lagg\w*|"
                         r"weak\w*|slid\w*|sank|sunk|tumbl\w*|plung\w*|gap|narrow\w*|smaller|fewer|worse|"
                         r"subtract\w*|drag\w*|detract\w*|held back|hold\w* back|offset\w*|outflow\w*|"
                         r"withdr[ae]w\w*|erod\w*|deduct\w*|refund\w*|deficit|shortfall|net of)\b")
@@ -352,6 +353,9 @@ def _forms(v) -> set[str]:
     short = re.sub(r"^(?:the\s+|u\.?s\.?\s+|(?:house|senate)\s+)?(?:committee\s+on\s+(?:the\s+)?|department\s+of\s+(?:the\s+)?)", "", v)
     short = re.sub(r"\s+(?:committee|department|agency|administration|bureau|office|county|state)$", "", short)
     alias = {"u.s."} if v in ("united states", "u.s. total", "united states total") else set()
+    party = {"democratic": {"democrat", "democrats"}, "democrat": {"democrats", "democratic"},
+             "republican": {"republicans"}, "independent": {"independents"}}   # "Democrats split" is the D row
+    alias |= party.get(v, set())
     return {v} | alias | ({short} if short != v and len(short) >= 4 and re.search(r"[a-z]{3}", short) else set())
 
 
@@ -420,6 +424,141 @@ def _misnamed(sents: list[str], n: dict, fhits: list, ents: dict) -> str | None:
         if any(k in f["where"] for _, keys in named for k in keys for f in fhits):
             return ents[named[-1][0]][1]
     return None
+
+
+_OTHER = re.compile(r"(?i)\b(?:than|compar\w*|versus|vs\.?|against|above|below|average|whereas|while|relative|"
+                    r"ratio|share|of\s+(?:the|its|their)\s+\w+|percent\s+of)\b")
+
+
+def _row_name(v) -> str | None:
+    """A where value that names a row (Colorado, 117th, Energy), not a period, code or number."""
+    v = _cell_key(v)
+    if 2 <= len(v) <= 60 and (re.search(r"[a-z]{3}", v) and not re.search(r"\d", v)
+                              or re.fullmatch(r"\d{1,3}(?:st|nd|rd|th)(?:\s+[a-z]+)?", v)):
+        return v
+    return None
+
+
+def _clause_owner(sents: list[str], n: dict, fhits: list, facts: dict) -> str | None:
+    """A clause about one row ("the 117th (2021-2022) enacted 344 public laws") must cite that row's figure: the
+    number's facts are all keyed by other rows of one key, the clause names exactly one row of that key and no
+    comparison word stands between the name and the number, and a fact of the named row gives the same measure
+    (its label with the row name swapped) with another value. Returns the named row, else None."""
+    if not fhits or not all(isinstance(f.get("where"), dict) and f["where"] for f in fhits):
+        return None
+    keys = set.intersection(*({k for k, v in f["where"].items() if _row_name(v)} for f in fhits))
+    for k in keys:
+        rows = {_row_name(f2.get("where", {}).get(k)) for f2 in (facts or {}).values()
+                if isinstance(f2, dict) and isinstance(f2.get("where"), dict)} - {None}
+        own = {_row_name(f["where"][k]) for f in fhits}
+        pat = lambda e: r"(?i)(?<![\w-])" + re.escape(e) + r"(?![\w-])"      # noqa: E731
+        for x in sents:
+            i = _at(x, n["tok"])
+            if i < 0:
+                continue
+            named = {r for r in rows for form in _forms(r) if re.search(pat(form), x)}
+            if len(named) != 1 or named & own:
+                continue
+            row = next(iter(named))
+            m = [m for form in _forms(row) for m in re.finditer(pat(form), x[:i])
+                 if m.group(0)[0].isupper() or m.group(0)[0].isdigit()]   # a name, not a phrase ("all civilian workers")
+            if not m or _OTHER.search(x[max(mm.end() for mm in m):i]):
+                continue            # the name comes after the number, or a comparison sits between them
+
+            def stem(f, name):
+                return re.sub(pat(name), "", _cell_key(f.get("label", ""))).strip()
+
+            sib = [g for g in (facts or {}).values() if isinstance(g, dict) and isinstance(g.get("where"), dict)
+                   and _row_name(g["where"].get(k)) == row
+                   and any({a: b for a, b in g["where"].items() if a != k} ==
+                           {a: b for a, b in f["where"].items() if a != k}
+                           and stem(g, row) == stem(f, _row_name(f["where"][k])) for f in fhits)]
+            if sib and not any(_value(g) == _value(f) for g in sib for f in fhits):
+                return row
+    return None
+
+
+_GENERIC_ACR = {"GDP", "USA", "BLS", "BEA", "OPM", "FRED", "IPUMS", "CPS", "ACS", "OMB", "CBO", "GAO", "MTS", "API",
+                "NSA", "SA", "SAAR", "FY", "CY", "NAICS", "MOE", "SE", "CI", "USD", "DC"}
+
+
+def _measure_named(sents: list[str], n: dict, fhits: list, facts: dict) -> str | None:
+    """A measure named by its acronym right before the number ("CPI-U, up 26.9 percent", "the ECI rose 3.3") must be
+    a fact of that measure: when some facts' labels carry the acronym and none of the number's facts does, the
+    number belongs to another measure. Acronyms that most labels share (GDP, BLS) say nothing and are skipped."""
+    labels = [str(f.get("label") or "") for f in (facts or {}).values() if isinstance(f, dict)]
+    if not fhits or not labels or not all(f.get("label") for f in fhits):
+        return None
+    for x in sents:
+        i = _at(x, n["tok"])
+        if i < 0:
+            continue
+        # the acronym is the number's subject: right before it, with punctuation or one linking word between
+        m = re.search(r"\b([A-Z][A-Z0-9]{1,}(?:-[A-Z0-9]+)?)\s*[,:(]?\s*(?:(?:was|is|at|of|up|down|rose|fell|grew|"
+                      r"increased|decreased|declined|by|=)\s+){0,2}[+\-−]?\$?$", x[max(0, i - 40):i])
+        if not m:
+            continue
+        before = x[max(0, i - 40 - 30):max(0, i - 40) + m.start()]
+        if re.search(r"(?i)\b(?:instead\s+of|rather\s+than|except|excluding|without|not|than|vs\.?|versus)\s*$",
+                     before):
+            continue                       # "CPI-W instead of CPI-U, +$21": the acronym is not the number's measure
+        for a in [m.group(1)]:
+            if a in _GENERIC_ACR or len(a) < 3:
+                continue
+            pat = re.compile(r"(?<![\w-])" + re.escape(a) + r"(?![\w-])")
+            carry = [lab for lab in labels if pat.search(lab)]
+            if not carry or len(carry) > len(labels) / 2:
+                continue
+            if not any(pat.search(str(f.get("label"))) for f in fhits):
+                return a
+    return None
+
+
+def _column_misfits(block: str, facts: dict) -> list[str]:
+    """A table's columns each hold one measure: a cell whose facts (by label, with the row's names and years taken
+    out) give another column's measure and not its own was moved across columns ("| -13.5 | -15.1 |" swapped).
+    Judged only where facts carry labels and a column has at least three cells that agree."""
+    lines = [l for l in block.strip().splitlines() if l.lstrip().startswith("|")]
+    if len(lines) < 5:
+        return []
+    named = {k: f for k, f in (facts or {}).items() if isinstance(f, dict) and f.get("label")}
+    if not named:
+        return []
+    shown = [(k, fact_display(f), f) for k, f in named.items() if fact_display(f)]
+
+    def stem(f):
+        s = _cell_key(f["label"])
+        for v in (f.get("where") or {}).values():
+            s = s.replace(_cell_key(v), " ")
+        return re.sub(r"\s+", " ", re.sub(r"[^a-z0-9 ]", " ", s)).strip()
+
+    cols: dict[int, list] = {}
+    for l in lines[2:]:
+        cells = [c.strip() for c in l.strip().strip("|").split("|")]
+        for k, c in enumerate(cells[1:], start=1):
+            for n in answer_numbers(c):
+                n["table"] = True
+                stems = {stem(f) for _, d, f in shown if _matches(n, *d)}
+                if stems:
+                    cols.setdefault(k, []).append((n["tok"], stems))
+    mode = {}
+    for k, cells in cols.items():
+        if len(cells) < 3:
+            continue
+        counts: dict[str, int] = {}
+        for _, st in cells:
+            for s in st:
+                counts[s] = counts.get(s, 0) + 1
+        top, n_top = max(counts.items(), key=lambda kv: kv[1])
+        if n_top >= max(3, len(cells) - 1) and list(counts.values()).count(n_top) == 1:
+            mode[k] = top
+    out = []
+    for k, cells in cols.items():
+        if k not in mode:
+            continue
+        others = {m for j, m in mode.items() if j != k and m != mode[k]}
+        out += [tok for tok, st in cells if mode[k] not in st and st & others]
+    return out
 
 
 def _unbound_table(block: str, shown: list, facts: dict) -> str | None:
@@ -566,11 +705,14 @@ def _period_misfits(block: str, shown: list, facts: dict) -> list[str]:
         cells = [c.strip() for c in l.strip().strip("|").split("|")]
         rk = _period_key(re.sub(r"\s*\(.*\)\s*$", "", cells[0])) if cells else None
         for k, c in enumerate(cells[1:], start=1):
-            hm = re.match(r"(?i)\s*\**\s*((?:fy\s?)?\d{4}(?:-\d{2})?|[a-z]{3,9}\.?\s+\d{4})\b", head[k]) if k < len(head) else None
+            base = r"(?!\s*(?:dollars|prices|\$|=\s*100))"   # "2024 dollars" is a price base, not the column's period
+            hm = re.match(r"(?i)\s*\**\s*((?:fy\s?)?\d{4}(?:-\d{2})?|[a-z]{3,9}\.?\s+\d{4})\b" + base,
+                          head[k]) if k < len(head) else None
             if hm is None and k < len(head) and not re.search(
                     r"(?i)\b(?:since|from|vs\.?|versus|change|minus|relative|compared|than|over)\b", head[k]):
                 # one period anywhere in the header: "Share, 2026 (%)", but not "Change since September 2024"
-                found = re.findall(r"(?i)(?<![\w-])((?:fy\s?)?(?:19|20)\d\d(?:-\d{2})?)(?![\w-]|\s*[–-]\s*\d)", head[k])
+                found = re.findall(r"(?i)(?<![\w-])(?<!constant\s)(?<!chained\s)((?:fy\s?)?(?:19|20)\d\d(?:-\d{2})?)"
+                                   r"(?![\w-]|\s*[–-]\s*\d)" + base, head[k])
                 hm = re.search(re.escape(found[0]), head[k]) if len(found) == 1 else None
                 hm = re.match(r"(.*)", found[0]) if hm else None
             hk = _period_key(hm.group(1)) if hm else None      # a header that begins with its period
@@ -595,6 +737,9 @@ def _period_misfits(block: str, shown: list, facts: dict) -> list[str]:
     for k, cells in cols.items():
         if len(cells) == 2 and any(0 in lags for _, lags in cells):
             out += [tok for tok, lags in cells if 0 not in lags]   # "FY2025 | FY2026": each row its own period
+            continue
+        if len(cells) == 2 and all(lags for _, lags in cells) and not set.intersection(*(lags for _, lags in cells)):
+            out += [tok for tok, _ in cells]      # two rows with no lag in common: their values were swapped
             continue
         if len(cells) < 3:
             continue
@@ -622,9 +767,11 @@ def _year_before(before: str, after: str = "") -> str:
     """ "for 2025 (men 20.2": a year that dates the number from just before it, as " in 2025" for _wrong_year;
     empty when another number, a comma or a from/to/than comparison word stands between them, or when a year
     follows the number ("146 in 2025 (143 in 2024)", "$1,177.1 billion for 2025, $404.3 billion for 2019")."""
-    m = re.search(r"(?i)\b(?:in|for|during)\s+((?:fy\s?)?(?:17|18|19|20)\d\d)\b([^\d.;,:]{0,25})$", before)
+    m = re.search(r"(?i)\b(?:in|for|during)\s+((?:fy\s?)?(?:17|18|19|20)\d\d)\b([^\d.;,:]{0,25})$", before) or \
+        re.search(r"(?i)(?<![\w-])((?:fy\s?)?(?:17|18|19|20)\d\d)()\s*\(\s*(?:about\s+)?[$+\-−]?$", before)  # "1929 (0.55"
+    own = re.split(r"[,;]", after[:50], maxsplit=1)[0]      # the number's own clause: a year after a comma is the next one's
     if not m or re.search(r"(?i)\b(?:to|from|than|vs|versus|compared|since|over|until|through|and)\b", m.group(2)) \
-            or re.search(r"(?<!\d)(?:17|18|19|20)\d\d(?!\d)", after[:50]):
+            or re.search(r"(?<!\d)(?:17|18|19|20)\d\d(?!\d)", own):
         return ""
     return f" in {m.group(1)}"
 
@@ -640,12 +787,47 @@ def _wrong_year(after: str, fhits: list) -> bool:
     keys = []
     for f in fhits:
         ks = _fact_periods(f)
+        if not ks:                            # a sensitivity fact keyed by its alternative: the one year its label names
+            ys = set(re.findall(r"(?<!since )(?<!from )(?<!to )(?<!through )(?<!until )(?<!before )(?<!after )"
+                                r"(?<![\d-])(?:fy\s?)?((?:19|20)\d\d)(?![\d-])", str(f.get("label") or ""), re.I))
+            ks = [int(ys.pop()) * 100] if len(ys) == 1 else []
         if not ks:
             return False                      # a fact without a period could be any year
         keys += ks
     if mon and all(k % 100 for k in keys):    # month-level facts and a month in the text: the month must match
         return year * 100 + mon not in keys
     return bool(keys) and year not in [k // 100 for k in keys]
+
+
+def _dated(sents: list[str], n: dict, fhits: list) -> list:
+    """The facts of the year the sentence gives for the number ("fell 2.5 percent in 2020"), when some match it:
+    a number that also matches another year's fact is judged by its own year's fact. Otherwise all of fhits."""
+    for x in sents:
+        i = _at(x, n["tok"])
+        if i < 0:
+            continue
+        after = x[i + len(n["tok"]):]
+        m = YEAR_AFTER.match(after[:40]) or YEAR_AFTER.match(_year_before(x[:i], after))
+        if m:
+            year = int(m.group(2) or m.group(3))
+            own = [f for f in fhits if year in [k // 100 for k in _fact_periods(f)]]
+            if own:
+                return own
+    return fhits
+
+
+def _pub_year_fits(period: str, spots: list, tok: str) -> bool:
+    """Does a published figure's period hold every year the text gives for the number? (A benchmark row of 2014
+    does not excuse "19.5 percent in 2024".) True when the row names no year."""
+    have = set(re.findall(r"(?<!\d)((?:17|18|19|20)\d\d)(?!\d)", period))
+    if not have:
+        return True
+    for x, i in spots:
+        after = x[i + len(tok):]
+        m = YEAR_AFTER.match(after[:40]) or YEAR_AFTER.match(_year_before(x[:i], after))
+        if m and (m.group(2) or m.group(3)) not in have:
+            return False
+    return True
 
 
 def _value(f: dict) -> float:
@@ -785,14 +967,19 @@ def check_answer(base: str, facts: dict, D: dict) -> tuple[list[tuple], str]:
             if kind == "pubpct" and re.search(r"(?i)\bpoints?\b|\bpp\b", desc):
                 kind = "pubpp"
             dec = round(-math.log10(2 * b[1])) if b[1] < 0.5 else 0
-            shown.append((f"published {r.get('measure', '')}", (b[0], kind, dec),
-                          {"_source": f"{r.get('source', '')} {r.get('url', '')}",
-                           "_measure": " ".join(str(r.get(c) or "") for c in ("measure", "geography", "geo",
-                                                "area", "state", "name", "label", "item", "series", "group"))}))
+            meta = {"_source": f"{r.get('source', '')} {r.get('url', '')}", "_period": str(r.get("period") or ""),
+                    "_measure": " ".join(str(r.get(c) or "") for c in ("measure", "geography", "geo",
+                                         "area", "state", "name", "label", "item", "series", "group"))}
+            shown.append((f"published {r.get('measure', '')}", (b[0], kind, dec), meta))
+            # a figure published in thousands (or millions) may be written out: -179 thousand as "179,000"
+            per = re.search(r"(?i)\b(thousands|millions)\b", f"{r.get('measure', '')} {r.get('units', '')}")
+            if per and kind != "pubpct":
+                k = 3 if per.group(1).lower() == "thousands" else 6
+                shown.append((f"published {r.get('measure', '')}", (b[0] * 10 ** k, "pubnum", max(0, dec - k)), meta))
     fact_toks = {n["tok"].lower() for _, _, f in shown for n in answer_numbers(str(f.get("text", "")))}
     allowed = {_allow_key(str(a.get("value") if isinstance(a, dict) else a)) for a in D.get("audit_allow") or ()}
     bad, unlabelled, unsigned, unattributed, misrow, wrongyear = [], {}, [], [], [], []
-    misnamed, ents, unbound = [], _entities(facts), []
+    misnamed, ents, unbound, cited = [], _entities(facts), [], set()
     scan = text
     lead = "\n".join(b for b, _ in _blocks(text)[:2])   # a label in the opening (title + first paragraph) covers all
     for block, ctx in _blocks(scan):
@@ -806,20 +993,31 @@ def check_answer(base: str, facts: dict, D: dict) -> tuple[list[tuple], str]:
             n["table"] = is_table or n.get("table", False)    # a table under a caption line too
             if _allow_key(n["tok"]) in allowed:
                 continue
-            hits = [(name, f) for name, d, f in shown if _matches(n, *d) and not (n["plus"] and _below0(f))]
+            # a count with its noun ("3 months", "12 states") is no percent: it cannot be a pct, pp or bp fact
+            counted = not n["unit"] and bool(n.get("counts"))
+            hits = [(name, f) for name, d, f in shown if _matches(n, *d) and not (n["plus"] and _below0(f))
+                    and not (counted and name in (facts or {}) and d[1] in ("pct", "pp", "bp"))]
             if not hits and n["tok"].lower() not in fact_toks:
                 bad.append(n["tok"])
             fhits = [f for name, f in hits if name in (facts or {})]
+            if len(fhits) == 1:                         # the one fact this number prints
+                cited.update(name for name, f in hits if name in (facts or {}))
             if hits and not fhits and n["tok"].lower() not in fact_toks and not _attributed(block, n, is_table, [f.get("_source", "") for _, f in hits]):
                 unattributed.append(n["tok"])              # a published figure passed off as the analysis's own
             sent0 = [x for x in _sentences(block) if _has(x, n["tok"])]
+            spots = [(x, m.start()) for x in sent0          # every place the number stands, not only the first
+                     for m in re.finditer(r"(?<![\w.,$-])" + re.escape(n["tok"]) + r"(?![\d])", x)]
             if fhits and not is_table and not n.get("table") and any(
-                    _wrong_year(x[_at(x, n["tok"]) + len(n["tok"]):][:40], fhits)
-                    or _wrong_year(_year_before(x[:_at(x, n["tok"])], x[_at(x, n["tok"]) + len(n["tok"]):]), fhits)
-                    for x in sent0):
+                    _wrong_year(x[i + len(n["tok"]):][:40], fhits)
+                    or _wrong_year(_year_before(x[:i], x[i + len(n["tok"]):]), fhits)
+                    for x, i in spots) and not (              # a credited published figure of that year ("BLS: 4.0 in 2024")
+                    (pub := [f.get("_source", "") for name, f in hits if name not in (facts or {})
+                             and _pub_year_fits(f.get("_period", ""), spots, n["tok"])])
+                    and _attributed(block, n, False, pub)):
                 wrongyear.append(n["tok"])
             if fhits and not is_table and not n.get("table"):
-                who = _misnamed(sent0, n, fhits, ents)
+                who = (_misnamed(sent0, n, fhits, ents) or _clause_owner(sent0, n, fhits, facts)
+                       or _measure_named(sent0, n, fhits, facts))
                 if who and not any(form in _cell_key(f.get("_measure", "")) for name, f in hits
                                    if name not in (facts or {}) for form in _forms(who)):
                     misnamed.append(f"{n['tok']} (next to {who})")
@@ -831,18 +1029,21 @@ def check_answer(base: str, facts: dict, D: dict) -> tuple[list[tuple], str]:
             if (is_table and fhits and not _row_ok(n, fhits, facts)
                     and not (pub_srcs and _attributed(block, n, True, pub_srcs))):
                 misrow.append(n["tok"])
-            if (fhits and not n["neg"] and not n.get("table") and all(_value(f) > 0 for f in fhits)
+            dhits = _dated(sent0, n, fhits) if fhits and not n.get("table") else fhits   # the sentence's year
+            if (fhits and not n["neg"] and not n.get("table") and all(_value(f) > 0 for f in dhits)
                     and (any(re.search(r"(?i)\b(?:down|fell|fallen|declined|decreased|dropped|(?:an?\s+)?(?:decline|"
                                        r"drop|fall|decrease|reduction|loss)\s+of)\s+(?:by\s+)?(?:about\s+)?$",
                                        x[max(0, _at(x, n["tok"]) - 25):_at(x, n["tok"])]) for x in sent0)
-                         or (all(_is_change(f) for f in fhits)
+                         or (all(_is_change(f) for f in dhits)
                              and any(re.match(r"(?i)\s*(?:percentage\s+points?|points?|pp|basis\s+points?)?\s*"
                                               r"(?:below|lower|less|down|fewer|smaller|under)\b",
                                               x[_at(x, n["tok"]) + len(n["tok"]):]) for x in sent0)))
-                    and not any(re.search(r"(?i)declin|decreas|drop|fall|fell|loss|fewer|reduc|lower|cut|down",
-                                          str(f.get("label", ""))) for f in fhits)):
+                    and not any(re.search(r"(?i)declin|decreas|drop|fall|fell|loss|fewer|reduc|lower|cut|down|"
+                                          r"\bgap\b|differen|shortfall|spread|margin|premium|\bminus\b|\bvs\.?\b|"
+                                          r"\bbelow\b|\bbehind\b|\bshort\b",   # a size: "0.1 point below the raise"
+                                          str(f.get("label", "")) + " " + str(f.get("derivation", ""))) for f in dhits)):
                 unsigned.append(n["tok"])                   # "down 0.8" for a rise of 0.8
-            if (fhits and not n["neg"] and not n.get("table") and all(_negative(f) for f in fhits)
+            if (fhits and not n["neg"] and not n.get("table") and all(_negative(f) for f in dhits)
                     and n["num"] != 0 and not (n["unit"] == "" and n["num"] <= 12 and n["num"] == int(n["num"]))):
                 sent = [x for x in _sentences(block) if _has(x, n["tok"])] or [block]
                 # the words just before the number say its direction ("Virginia rose 25,600"); else the sentence
@@ -871,21 +1072,43 @@ def check_answer(base: str, facts: dict, D: dict) -> tuple[list[tuple], str]:
                 if (up_near and not cmp_after) or up_after or (not down and not size):   # "rose 4.2" for -4.2
                     unsigned.append(n["tok"])
             elif (fhits and not n["neg"] and not n.get("table") and n["num"] != 0
-                  and all(_below0(f) and "abs" in str(f.get("fmt") or "").split(":") for f in fhits)):
+                  and all(_below0(f) and "abs" in str(f.get("fmt") or "").split(":") for f in dhits)):
                 # a fall printed without its sign (fmt ...:abs) may carry no fall word, but never a rise word
                 close = [x[max(0, _at(x, n["tok"]) - 25):_at(x, n["tok"])] for x in _sentences(block) if _has(x, n["tok"])]
                 if any(UP_WORDS.search(w) and not DOWN_WORDS.search(w) for w in close):
                     unsigned.append(n["tok"])                # "up $70.7 billion" for a fall of 70.7
+            if fhits and n["neg"] and not n.get("table") and any(
+                    re.search(r"(?i)\b(?:fell|falls?|fallen|falling|declined|declines?|decreased|decreases?|dropped|"
+                              r"drops?|down|lost|shr[ai]nk|shrunk)\s+(?:by\s+)?(?:about\s+|nearly\s+|almost\s+)?$",
+                              x[max(0, _at(x, n["tok"]) - 30):_at(x, n["tok"])]) for x in sent0):
+                unsigned.append(n["tok"])                    # "fell -8.3 percent": a fall word and a minus sign
             for flag, pat in FLAG_WORDS.items():         # every reading of this number is flagged: say so here
                 # "these figures are preliminary" in the opening covers the answer; a vintage or a projection is
                 # named where its number is
                 near = ctx + ("\n" + lead if flag == "preliminary" else "")
                 flagged = (any if flag == "preliminary" else all)(f.get(flag) for f in fhits)
+                pub = [f.get("_source", "") for name, f in hits if name not in (facts or {})]
+                if pub and _attributed(block, n, n.get("table", False), pub):
+                    # another publisher's figure, credited ("GAO: about 1 percent"): our facts count only when they
+                    # print at the number's own precision (not 1.31 read as "1")
+                    exact = [f for f in fhits if ((fact_display(f) or (0, "", 0))[2] or 0) <= n.get("dec", 0)]
+                    flagged = (any if flag == "preliminary" else all)(f.get(flag) for f in exact) if exact else False
                 if fhits and flagged and not re.search(pat, near, re.I):
                     unlabelled.setdefault(flag, []).append(n["tok"])
+    from facts import rounding_tie
+    ok_ties = {str(t.get("fact") if isinstance(t, dict) else t) for t in D.get("rounding_ties_ok") or ()}
+    ties = sorted(n for n in cited if n not in ok_ties and (facts[n] or {}).get("source")
+                  and rounding_tie(float(facts[n]["value"]), repr(float(facts[n]["value"])), str(facts[n].get("fmt") or "")))
+    out.append(("answer", not ties, "no cited figure sits on an unexplained rounding tie" if not ties else
+                f"answer.md cites {', '.join(ties)}, stored on a rounding tie (one digit past the format, ending in 5): "
+                "the printed figure depends on digits the CSV dropped. Save the exhibit at full precision (no .round()) "
+                "and register again, or, when the value is exact at that precision (published so), list it in "
+                "decisions.json \"rounding_ties_ok\": [{\"fact\": \"<name>\", \"reason\": \"...\"}]"))
     out.append(("answer", not bad, "every number in answer.md is a registered fact or allowed" if not bad else
                 f"answer.md: {', '.join(dict.fromkeys(bad))} not found among the facts (as their formats show them): "
-                "register each number with facts.add (a difference in percentage points takes fmt pp or pp100, in basis points bp or bp100), fix "
+                "register each number with facts.add (a difference in percentage points takes fmt pp or pp100, in basis points bp or bp100; "
+                "a number written \"44,347 thousand\" or \"$1.2 billion\" is read in base units, so a fact stored in "
+                "thousands takes fmt thousands:0, and a published figure counts as benchmark.csv gives it), fix "
                 "the typo, or list it in decisions.json audit_allow {\"value\", \"reason\"} when it is not a "
                 "statistic (the value as written, with its unit: \"90 percent\")"))
     unsigned += _from_to_misreads("\n".join(b for b, _ in _blocks(scan)
@@ -909,6 +1132,11 @@ def check_answer(base: str, facts: dict, D: dict) -> tuple[list[tuple], str]:
     out.append(("answer", not misrow, "every table cell is a fact of its own row" if not misrow else
                 f"answer.md: table cells {', '.join(dict.fromkeys(misrow))} match facts of other rows only (their labels "
                 "name another row): check the row, or register the cell's fact with where= the row's label"))
+    miscol = [tok for block, _ in _blocks(scan) if all(l.lstrip().startswith("|") for l in block.strip().splitlines())
+              for tok in _column_misfits(block, facts)]
+    out.append(("answer", not miscol, "every table cell is a fact of its own column" if not miscol else
+                f"answer.md: table cells {', '.join(dict.fromkeys(miscol))} hold the measure of another column (their "
+                "facts' labels match that column's other cells): check the column order"))
     out.append(("answer", not unattributed, "every published figure is credited to its source" if not unattributed
                 else f"answer.md: {', '.join(dict.fromkeys(unattributed))} match only a published figure in "
                 "benchmark.csv, not one of this analysis's facts: say whose figure it is (\"BLS publishes ...\", a "
@@ -1062,10 +1290,13 @@ def main(argv=None) -> int:
     ap_ = os.path.join(a.out, "answer.md")
     low = open(ap_, encoding="utf-8-sig").read().lower() if os.path.exists(ap_) else ""
     for r in results:                          # what the answer must disclose
-        if r[1] and ("disclose" in r[2] or "first line of the answer" in r[2]):
+        if r[1] and ("disclose" in r[2] or "opening paragraph of the answer" in r[2]):
             line = r[2].split("disclose in the answer: ", 1)[-1].strip().lower() if "disclose in the answer: " in r[2] else ""
             if line and line in low:
                 continue                       # already there
+            if "opening paragraph of the answer" in r[2] and low and not any(
+                    not x[1] for x in results if x[0] == "disclosures"):
+                continue                       # the disclosures check found it in the opening already
             print(f"note: {r[2]}")
     print("AUDIT " + ("PASSED" if not fails else f"FAILED ({len(fails)} problems)"))
     return 0 if not fails else 1

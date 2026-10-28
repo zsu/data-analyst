@@ -33,7 +33,11 @@ real GDP (millions of chained 2017 dollars, SAAR); T10105 line 1 nominal GDP; T1
 real GDP change; T10102 contributions; T20100 lines 1/27/37/35/40 personal income / DPI / real DPI / saving
 rate / population; T20804 lines 1/25 PCE / core PCE price index (monthly; published changes: T20807 month over month, not
 annualized, T20811 lines 32/37 over 12 months); T70100 lines 1/3 GDP and income
-per capita. Regional: SAGDP2/SAGDP9 line 1 all-industry total (current / chained 2017 dollars); SAINC1 and
+per capita (BEA divides by unrounded population: real GDP over T70100's population, published in thousands,
+can miss the published per-capita level by just over 0.5 dollars; allow for that rounding in the benchmark and
+say so). Federal civilian wages per FTE (T60600D) jump in 2024-2025: Deferred Resignation staff on paid
+administrative leave stayed on the payroll while BEA cut the quantity of federal labor (FAQ 1479,
+bea.gov/help/faq/1479): never read those years as federal pay raises; use OPM pay or the GS raise. Regional: SAGDP2/SAGDP9 line 1 all-industry total (current / chained 2017 dollars); SAINC1 and
 CAINC1 lines 1/2/3 personal income / population / per capita income; SAINC4/CAINC4 lines 10/20/30; SARPP
 and MARPP line 1 all-items RPP. API names may carry an `N` (`SAGDP9N`); the bulk files drop it: both work.
 BEA marks nothing as preliminary in the data, but the latest quarter or year of every table is an early
@@ -77,7 +81,9 @@ Output in `<out>/data/bea/`: `bea_data.csv` (tidy: `request_id, dataset, table, 
 description, geo_fips, geo_name, geo_level, industry, time_period, date, year, subperiod, frequency, value,
 flag, unit, metric, unit_mult, note_ref, dims`), `notes.csv` (BEA's footnotes: units, reference year, what
 the U.S. row means, flag codes), `request.json` (calls without the key, bulk files, route, vintage,
-checksums) and `README.md`. Read the README and `notes.csv` before analysing. `line` is text (BEA's line
+checksums) and `README.md`. Read the README and `notes.csv` before analysing (the NIPA bulk files carry no
+footnotes: on the `bulk` route `notes.csv` has only the pack's own note; read a table's footnotes on its
+apps.bea.gov page, or fetch it by the `api` route with a key). `line` is text (BEA's line
 numbers can carry letters): select with `pick()` or compare strings, not integers.
 - **Units:** `value` is as BEA prints it; base units = value x 10^`unit_mult` (`stats.load()` adds `amount`).
   Check `unit` and `metric` (current dollars, chained dollars, index, percent change) for every series.
@@ -107,7 +113,7 @@ numbers can carry letters): select with `pick()` or compare strings, not integer
   annual_average, q4_over_q4, share, per_capita, index_to, deflate, check_against_published, rank_areas,
   near_ties, sensitivity, Facts`); the shared `scripts/analysis/factfmt.py` formats facts (`pct100:1`, `dollars_b:1`, `dollars_t:1`).
   ```python
-  sys.path.insert(0, r"<skill>/sources/bea/lib"); from stats import *
+  sys.path.insert(0, r"<skill>/sources/bea/lib"); from stats import *   # with opm/ipums: pack_lib("bea", "stats", OUT, SKILL)
   df = load(f"{OUT}/data/bea/bea_data.csv")
   g = growth(series(df, table="T10106", line=1, frequency="Q"))
   check_against_published(g, series(df, table="T10101", line=1, frequency="Q"))

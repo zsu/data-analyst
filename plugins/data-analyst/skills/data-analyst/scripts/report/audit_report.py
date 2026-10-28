@@ -141,12 +141,16 @@ def exempt(text: str) -> str:
     # survey variable codes: RELATE 1, OWNERSHP in (1, 2), GQ = 2 (two-letter names need the operator); REPWT1-80
     t = re.sub(r"\b[A-Z]{2,}\d+\s*[-–]\s*\d+\b", " ", t)
     t = re.sub(r"\b(?:(?!(?:USA|GDP|GNP|CPI|PCE|PPI|ECI|EITC|ACS|CPS|BLS|BEA|OPM|FRED)\b)[A-Z][A-Z0-9_]{2,15}"
-               r"(?:\s*==?\s*|\s+(?:in|is)\s+|\s+)|[A-Z]{2}(?:\s*==?\s*|\s+in\s+))\(?\d{1,3}(?:\s*,\s+\d{1,3})*\)?"
-               r"(?![\d.%/]|[,–-]\d|\s*(?:%|percent|points?|million|billion|thousand))", " ", t)
-    t = re.sub(r"(?i)\b(?:version|vintage|edition|wave|release)\s+\d+\b(?!\s*(?:%|percent))", " ", t)   # version 1
+               r"(?:\s*==?\s*|\s+(?:in|is)\s+|\s+)|[A-Z]{2}(?:\s*==?\s*|\s+in\s+))\(?\d{1,3}(?:\s*(?:,|,?\s+(?:or|and))\s+\d{1,3})*\)?"
+               r"(?![\d%/]|\.\d|[,–-]\d|\s*(?:%|percent|points?|million|billion|thousand))", " ", t)
+    t = re.sub(r"(?i)\b(?:versions?|vintages?|editions?|waves?|releases?)\s+\d+(?:\s*(?:,|,?\s*(?:and|or))\s*\d+)*\b"
+               r"(?!\s*(?:%|percent))", " ", t)   # version 1; file versions 4, 4 and 3
     t = re.sub(r"(?i)\bcongress(?:es)?\s*(?:=\s*)?\d{2,3}\b(?!\s*(?:%|percent))", " ", t)       # congress 118
     t = re.sub(r"(?i)\b(?:foot)?notes?\s+\d+[a-z]?(?:\s*(?:,|and|to|–|-)\s*\d+[a-z]?)*\b", " ", t)  # footnote 5
     t = re.sub(r"(?i)(?:=|equals?)\s*100\b(?!\s*(?:%|percent))", " ", t)   # an index base: (U.S. = 100), 2017=100
+    # a confidence level is a convention, not a statistic: "90 percent margin of error", "significant at 90%"
+    t = re.sub(r"(?i)\b(?:90|95|99)\s*(?:%|percent)(?=\s+(?:confidence|margins?|level|MOE|CI)\b)|"
+               r"\b(?:significant|confidence)\s+(?:at|level\s+of)\s+(?:the\s+)?(?:90|95|99)\s*(?:%|percent)", " ", t)
     t = re.sub(r"(?i)\bin\s+sample\s+\d+(?:\s*(?:,|and|or)\s*\d+)*", " ", t)    # CPS months in sample 4 and 8
     t = re.sub(r"(?i)\b(?:IPUMS\s+\w+\s+)?extract\s+(?:no\.\s*|number\s+|#)?\d+\b", " ", t)   # IPUMS extract 30
     # ages define a universe: "aged 16", "ages 25 to 64", "65 and older", "children under 15 who"
@@ -172,7 +176,10 @@ def exempt(text: str) -> str:
                " ", t)
     # statute and regulation citations: 2 U.S.C. 653, 42 USC § 1983, 40 CFR 60.5, 138 Stat. 2687, 89 FR 12345
     t = re.sub(r"\b\d+\s+(?:U\.?\s?S\.?\s?C\.?(?:A\.?)?|C\.?\s?F\.?\s?R\.?|Stat\.|F\.?\s?R\.?|Fed\.\s?Reg\.)\s*"
-               r"(?:§+\s*|part\s+|pt\.\s*)?\d[\w.\-()]*", " ", t)
+               r"(?:§+\s*|part\s+|pt\.\s*)?\d[\w.\-()]*(?:\s*(?:,|,?\s*(?:and|or|through|to))\s*\d[\w.\-()]*(?!\w)"
+               r"(?!\s*(?:U\.?\s?S\.?\s?C|C\.?\s?F\.?\s?R|Stat\.|F\.?\s?R\b|Fed\.|%|percent|points?|million|billion|"
+               r"thousand|(?!(?:and|or|through|to)\b)[a-z]{3,})))*", " ", t)   # not the next cite's title, nor a statistic ("and 12 percent")
+    t = re.sub(r"\b\d{1,4}(?:\([a-zA-Z0-9]{1,4}\))+", " ", t)      # provisions: INA 236(c), 241(a)(2)
     t = re.sub(r"(?i)\b(?:status\s+|error\s+)?codes?\s+\d[\d\-.]*(?:\s*\([^)\n]{0,60}\))?"
                r"(?:\s*(?:,|and|or)\s*\d[\d\-.]*(?:\s*\([^)\n]{0,60}\))?)*", " ", t)   # code 2 (...), 4 (...) or 5
     t = re.sub(r"(?i)\b(?:issues?|volume)\s+(?:no\.\s*)?\d+(?:\s*(?:[–-]|to|through|and)\s*\d+)?\b"
@@ -187,6 +194,8 @@ def exempt(text: str) -> str:
     t = re.sub(r"(?i)\b(?:line|section|sec\.|§|session|roll(?: call)?(?: vote)?|vote|no\.|http(?: error)?|error code|"
                r"status code|function)"
                r"\s*\d[\d.\-/]*", " ", t)                            # line 32, roll 404, HTTP 403, session 2
+    t = re.sub(r"(?i)\b(?:roll(?:\s+calls?)?(?:\s+votes?)?|votes?|lines|sections)\s+(?:nos?\.?\s*)?\d+\s*(?:to|through|[–-])\s*"
+               r"\d+\b(?!\s*(?:%|percent))", " ", t)                 # "votes 1 to 659": a range of numbers
     # bill and law numbers, ranges too (H.R. 1-10,564). Case-sensitive, and a lone "S" needs its period and no
     # letter or dot before it: "Somerset's 10.7" and "U.S. 4.1" are statistics, "S. 5" is a bill
     t = re.sub(r"(?<![\w.'’])(?:H\.\s?R\.?|HR|S\.|H\.\s?J\.\s?Res\.?|S\.\s?J\.\s?Res\.?|H\.\s?Con\.\s?Res\.?|"
@@ -210,12 +219,16 @@ def exempt(text: str) -> str:
     t = re.sub(r"(?i)(?<![\d.])\b(?:1|2|3|4|5|6|7|8|9|10|12|13|14|15|17|18|20|21|24|25|26|28|30|31|36|40|45|"
                r"50|52|60|75|90|100|120|180|270|360|365)-(?:day|week|month|quarter|year)s?\b", " ", t)
     # standard terms and windows (4-week bill, 10-year note, 30-day average); "43-day shutdown" is a statistic
-    t = re.sub(r"(?i)\b(?:1|3|6|12|24|36)[ -]months?\b", " ", t)     # standard change windows
+    t = re.sub(r"(?i)\b(?:1|3|6|12|24|36)[ -]months?\b(?!\s+(?:earlier|later|before|after|ahead|ago|lag|"
+               r"lead|behind)\b)", " ", t)     # standard change windows; "the yield 8 months earlier" is a lag to check
     t = re.sub(r"\bU-[1-6]\b|\b\d{4}(?:-\d{2,4})?\s*=\s*100\b|\b[MQS]\d{2}\b|\bQ[1-4]\b", " ", t)
     t = re.sub(r"\b(?:19|20)\d\d\s?[QM]\d{1,2}\b", " ", t)           # periods such as 2026Q2 or 2026M09
     t = re.sub(r"\b[A-Za-z]+-\d+\b", " ", t)                         # names with a number: COVID-19, H-1
     t = re.sub(r"\b\d{1,2}\s+" + MONTHS + r"\b", " ", t)              # "30 September 2026"
-    # "March 31, 2026", "October 1-3", "January 17 and 21, 2025"
+    # "March 31, 2026", "October 1-3", "January 17 and 21, 2025", "January 9, 13, 17 and 20, 2025"
+    # a comma list of days is dates only when it closes with "and 20" or a year ("On March 3, 12 states" is not)
+    t = re.sub(MONTHS + r"\.?\s+\d{1,2}(?:\s*,\s*\d{1,2}\b)+(?:\s*,?\s*(?:and|or|&)\s*\d{1,2}\b(?:,?\s+\d{4}\b)?|"
+               r",?\s+\d{4}\b)", " ", t)
     t = re.sub(MONTHS + r"\.?\s+\d{1,2}(?:\s*(?:[–-]|and|&|or)\s*\d{1,2}\b(?!\.\d))*\b,?", " ", t)
     # FY2024-25, FY2020 to FY2026, fiscal years 2024 and 2025; the second part must look like a year, so
     # "FY2024 and 146,482" keeps its number

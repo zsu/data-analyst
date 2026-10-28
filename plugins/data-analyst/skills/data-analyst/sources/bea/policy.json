@@ -39,7 +39,10 @@
     "fixed assets",
     "input-output",
     "services trade",
-    "gdi"
+    "gdi",
+    "share of gdp", "wages per full-time equivalent", "compensation per employee",
+    "percent of gdp",
+    "gdp deflator"
   ],
   "questions": [
     "real GDP growth by quarter",

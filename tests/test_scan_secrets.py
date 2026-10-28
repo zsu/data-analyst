@@ -42,6 +42,16 @@ class TestHex32Scope(unittest.TestCase):
         self.assertTrue(any("answer.md" in h for h in hits), hits)
         self.assertTrue(any("errors.txt" in h for h in hits), hits)
 
+    def test_pdf_document_ids_are_not_keys(self):
+        # a saved agency PDF ends with /ID[<32 hex><32 hex>]; a real key value in it still counts
+        pdf = os.path.join(self.out, "published", "raw", "statement.pdf")
+        os.makedirs(os.path.dirname(pdf))
+        with open(pdf, "wb") as f:
+            f.write(b"%PDF-1.7\n1 0 obj\n<<>>\nendobj\ntrailer\n<</ID[<" + HEX.upper().encode() + b"><"
+                    + HEX.encode() + b">]>>\n%%EOF\n")
+        self.assertEqual(self.scan(), [])
+        self.assertTrue(scan_secrets.scan_tree([self.out], [HEX.encode()], hex32=True)[0])
+
     def test_zip_members_follow_the_same_rule(self):
         z = os.path.join(self.out, "replication_package.zip")
         with zipfile.ZipFile(z, "w") as f:

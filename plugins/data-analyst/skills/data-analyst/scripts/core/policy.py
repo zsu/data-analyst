@@ -25,7 +25,9 @@ policy.json is where a source's rules live so code can enforce them, not just do
                when_data: {glob, column, pattern?} (optional: only when some row of those CSVs has that column
                set, or with pattern, a value matching it),
                when_columns: [name parts] (optional: only when data/<id>/request.json's spec fetched such a
-               column, or all columns)}]
+               column, or all columns),
+               when_facts: regex (optional: only when a registered fact of this source has a matching period or
+               label, e.g. a year whose data are incomplete)}]
   clarify      [questions to settle before fetching when the request leaves them open]
   formats      [what the API returns: json, csv, xml, xlsx, parquet, zip, ...]
   aliases      [other names a report's source line may use for this source, e.g. "Bureau of Labor Statistics"]
@@ -207,6 +209,20 @@ def _data_flagged(out: str, cond: dict) -> bool:
     return False
 
 
+def _facts_touch(facts: dict | None, source: str, pattern: str) -> bool:
+    """Does a registered fact of this source (its `pack`, or any fact without one) have a period or label matching
+    the pattern? Without facts the hook applies (it cannot be ruled out)."""
+    if not facts:
+        return True
+    rx = re.compile(pattern, re.I)
+    for f in facts.values():
+        if not isinstance(f, dict) or (f.get("pack") and source not in str(f.get("pack"))):
+            continue
+        if rx.search(json.dumps({"where": f.get("where"), "label": f.get("label")}, ensure_ascii=False, default=str)):
+            return True
+    return False
+
+
 def run_audit_hooks(p: dict, out: str, report: dict | None, facts: dict | None,
                     html: str | None = None) -> list[tuple[str, str, str]]:
     """audit_report: (status, hook id, message) per hook; status PASS or FAIL. require_text searches the
@@ -226,6 +242,9 @@ def run_audit_hooks(p: dict, out: str, report: dict | None, facts: dict | None,
         if h.get("when_data") and not _data_flagged(out, h["when_data"]):   # e.g. only if a value is preliminary
             res.append(("PASS", hid, f"not needed: no row of {h['when_data'].get('glob')} has "
                                      f"{h['when_data'].get('column')} set ({h['why']})"))
+            continue
+        if h.get("when_facts") and not _facts_touch(facts, p.get("id", ""), h["when_facts"]):
+            res.append(("PASS", hid, f"not needed: no {p.get('id', '')} fact is about {h['when_facts']} ({h['why']})"))
             continue
         if kind == "require_file":
             import glob
@@ -251,6 +270,22 @@ def local_day(stamp) -> str:
     except ValueError:
         return s[:10]
     return (d.astimezone() if d.tzinfo else d).date().isoformat()
+
+
+def local_stamp(stamp) -> str:
+    """A retrieval time as the user's clock reads it, with the UTC original: "2026-10-27 23:10 local time
+    (2026-10-28 03:10 UTC)". request.json keeps UTC; READMEs and messages show this, so an evening
+    run does not read as tomorrow's. A plain date is kept."""
+    from datetime import datetime
+    s = str(stamp or "")
+    try:
+        d = datetime.fromisoformat(s.replace("Z", "+00:00"))
+    except ValueError:
+        return s
+    if not d.tzinfo:
+        return s
+    from datetime import timezone
+    return f"{d.astimezone():%Y-%m-%d %H:%M} local time ({d.astimezone(timezone.utc):%Y-%m-%d %H:%M} UTC)"
 
 
 def citation(p: dict, **vals) -> str:

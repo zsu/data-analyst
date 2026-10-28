@@ -143,8 +143,25 @@ class TestTreasury(PackTest):
         ts = load("treasury_pack_tstats", os.path.join(PACK, "lib", "tstats.py"))
         df = ts.load(out, "debt")
         self.assertEqual(len(df), 21)
+        # the helpers travel with the data, so analysis.py reruns without the skill folder (SKILL.md section 4)
+        self.assertTrue(os.path.exists(os.path.join(out, "lib", "treasury", "tstats.py")))
+        self.assertTrue(os.path.exists(os.path.join(out, "lib", "facts.py")))
         self.assertEqual(str(df["record_calendar_month"].dtype), "Int64")
         self.assertAlmostEqual(float(df["tot_pub_debt_out_amt"].iloc[0]), 40112464593206.30, places=2)
+
+    def test_fy_gdp_reads_the_bea_pack(self):
+        # GDP fetched with the bea pack (routing's treasury + bea pairing), no --context gdp file
+        import tempfile
+        ts = load("treasury_pack_tstats", os.path.join(PACK, "lib", "tstats.py"))
+        with tempfile.TemporaryDirectory() as out:
+            os.makedirs(os.path.join(out, "data", "bea"))
+            rows = ["series_code,frequency,date,value,unit_mult"] + [
+                f"A191RC,Q,{d},{v},6" for d, v in (("2023-10-01", 28000000), ("2024-01-01", 28400000),
+                                                   ("2024-04-01", 28800000), ("2024-07-01", 29200000))]
+            open(os.path.join(out, "data", "bea", "bea_data.csv"), "w").write("\n".join(rows) + "\n")
+            r = ts.fy_gdp(out).set_index("fiscal_year")
+        self.assertAlmostEqual(r.loc[2024, "gdp_billions"], 28600.0)      # Oct 2023-Sep 2024, billions
+        self.assertTrue(r.loc[2024, "complete"])
 
 
 class TestTreasuryUnits(unittest.TestCase):

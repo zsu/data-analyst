@@ -92,6 +92,30 @@ def fiscal_year(yyyymm) -> pd.Series:
     return (y + (m >= 10)).astype("Int64")
 
 
+def _fill_department(d: pd.DataFrame) -> None:
+    """Some records carry "NO DATA REPORTED" as department but a valid agency (HUD's HU, 410-435 employees a month
+    in Dec 2024-Mar 2025): left missing, they drop out of department totals. Every agency code belongs to one
+    department in the files, so take the department the agency's other records report, and say how many."""
+    if not {"department_code", "agency_code"} <= set(d.columns):
+        return
+    miss = d["department_code"].isna() & d["agency_code"].notna()
+    if not miss.any():
+        return
+    known = d.loc[d["department_code"].notna() & d["agency_code"].notna()]
+    one = known.groupby("agency_code")["department_code"].nunique()
+    m = known[known["agency_code"].isin(one[one == 1].index)].drop_duplicates("agency_code").set_index("agency_code")
+    fill = miss & d["agency_code"].isin(m.index)
+    if not fill.any():
+        return
+    for c in ("department_code", "department"):
+        if c in d and c in m:
+            d.loc[fill, c] = d.loc[fill, "agency_code"].map(m[c])
+    count =int(pd.to_numeric(d.loc[fill, "headcount"], errors="coerce").sum()) if "headcount" in d else int(fill.sum())
+    print(f"[opm stats] note: department missing on {int(fill.sum())} rows ({count} employees, agencies "
+          f"{', '.join(sorted(d.loc[fill, 'agency_code'].unique())[:8])}): filled from the department their agency's "
+          "other records report. Say so where department totals are given.", file=sys.stderr)
+
+
 def clean(df: pd.DataFrame) -> pd.DataFrame:
     """Normalize strings, turn sentinels into NaN, add numeric and period columns (see module doc)."""
     d = df.copy()
@@ -101,6 +125,7 @@ def clean(df: pd.DataFrame) -> pd.DataFrame:
         if d[c].dtype == object or pd.api.types.is_string_dtype(d[c]):
             s = d[c].astype("string").str.strip()
             d[c] = s.mask(s.str.upper().isin(SENTINELS))
+    _fill_department(d)
     if pay_raw is not None:
         pr = pay_raw.astype("string").str.strip().str.upper()
         d["pay_redacted"] = pr.eq("REDACTED").fillna(False).astype(bool)

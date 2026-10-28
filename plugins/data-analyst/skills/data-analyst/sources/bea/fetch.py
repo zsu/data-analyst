@@ -79,6 +79,7 @@ import os
 import re
 import shutil
 import sys
+sys.dont_write_bytecode = True  # never write __pycache__ into the skill folder
 import zipfile
 from datetime import date, datetime, timezone
 
@@ -90,7 +91,7 @@ for _p in (HERE, os.path.join(SKILL_DIR, "scripts")):
 
 from bea_api import (DATASETS, KEY_VAR, SIGNUP_URL, UA, BeaClient, BeaError, dataset_problems,  # noqa: E402
                      find_api_key, first_error, redact, scrub_response, value_key)
-from core import keys, manual, routes  # noqa: E402
+from core import keys, manual, package as core_package, routes  # noqa: E402
 from core import policy as pol  # noqa: E402
 from core.env import cache_root, detect_environment, setup_command, upload_dirs  # noqa: E402
 from core.http import SOURCES, Client, DataError, reachable  # noqa: E402
@@ -1022,13 +1023,14 @@ def package(out: str, reqs: list[dict], spec: dict, rows: list[dict], notes: lis
         "- Notes from BEA: `notes.csv`; exact request and checksums: `request.json`", "",
         "## Requests",
         *[f"- `{q['id']}`: {q['dataset']} {q['table']}" + (f", frequency {q['frequency']}" if q['frequency'] else "")
-          + f", years {q['years']}" + (f", lines {','.join(q['line_codes'])}" if q['line_codes'] else "")
+          + f", years {'ALL' if str(q['years']).upper() == 'X' else q['years']}" + (f", lines {','.join(q['line_codes'])}" if q['line_codes'] else "")
           + (f", areas {q['geo']}" if q['geo'] else "") for q in reqs], "",
         "## Columns",
         "- `value` is numeric as BEA publishes it; multiply by 10**`unit_mult` for base units (for example "
         "unit_mult 6 = millions of dollars). `stats.load()` adds `amount` = value x 10**unit_mult.",
-        "- `unit` / `metric`: BEA's unit and measure (current dollars, chained dollars, Fisher quantity or "
-        "price index, percent change at an annual rate ...). Check them before combining series.",
+        "- `unit` is BEA's kind of figure (Level, Percent change, annual rate, Index ...) and `metric` the measure "
+        "(Current Dollars, Chained Dollars, Persons, Fisher Quantity Index; Ratio is a percent or dollars per "
+        "person, as the line description says). Check both before combining series.",
         "- `flag` holds BEA's non-numeric codes ((D), (NA), (NM), (L) ...); `value` is then empty. Never treat a "
         "flagged cell as zero.",
         "- `time_period`: 2024, 2024Q1 or 2024M01; `date` is the first day of that period (for dashboards); "
@@ -1041,7 +1043,9 @@ def package(out: str, reqs: list[dict], spec: dict, rows: list[dict], notes: lis
         *([f"- {k}: {v.get('url', '')} (Last-Modified {v.get('last_modified', '')}; cached at {v.get('path', '')})"
            for k, v in manifest.items()] or ["- none (API or upload)"]), "",
         "## Units by table",
-        *[f"- {t}: {u or '(see notes)'}" + (f" (unit_mult {m})" if m not in ("", "0") else "") for t, u, m in units[:40]],
+        *[f"- {t}: " + "; ".join(f"{u or '(see notes)'}" + (f" (unit_mult {m})" if m not in ("", "0") else "")
+                                 for t2, u, m in units if t2 == t)
+          for t in list(dict.fromkeys(t for t, _, _ in units))[:40]],
         "", "## Special values found",
         *([f"- `{k}` x {v:,}: {FLAG_TEXT.get(k, 'see the table notes')}" for k, v in flags.items()] or ["- none"]),
         "", "## Vintage",
@@ -1058,6 +1062,7 @@ def package(out: str, reqs: list[dict], spec: dict, rows: list[dict], notes: lis
         lines += ["", f"Required notice for products built with the API: \"{API_NOTICE}\""]
     with open(os.path.join(ddir, "README.md"), "w", encoding="utf-8") as f:
         f.write("\n".join(lines) + "\n")
+    core_package.copy_pack_lib(os.path.dirname(os.path.dirname(ddir)), SOURCE)   # analysis.py reruns alone
     return {"status": "ok", "source": SOURCE, "route": route, "rows": len(rows), "rows_by_request": by_req,
             "data_dir": ddir, "csv": csv_path, "notes": os.path.join(ddir, "notes.csv"),
             "readme": os.path.join(ddir, "README.md"), "flags": flags, "citation": cite,
@@ -1238,7 +1243,7 @@ def write_download_scripts(d: str, bulk: list[str], api: list[tuple]) -> dict:
 
 SEND_BUNDLE = ("Send INSTRUCTIONS.md, both download scripts (download_scripts: download_bea.sh for macOS/Linux, "
                "download_bea.ps1 for Windows) and spec.json (request_spec, the request the scripts have built in) with "
-               "SendUserFile / present_files when available, and print their full paths. Give the user the one command "
+               "your file-sending tool when available, and print their full paths. Give the user the one command "
                "for their system (user_commands; both when unsure): the script asks for the BEA key with hidden input "
                "and downloads every file. Never ask for the key in the chat. Wait for the upload, then run "
                "next_command.")

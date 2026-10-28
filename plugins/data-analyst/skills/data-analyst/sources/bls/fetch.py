@@ -63,6 +63,7 @@ import os
 import re
 import shutil
 import sys
+sys.dont_write_bytecode = True  # never write __pycache__ into the skill folder
 from datetime import date, datetime, timezone
 
 PACK = os.path.dirname(os.path.abspath(__file__))
@@ -194,7 +195,7 @@ def route_check(s: dict, out: str, env: str, force: bool = False, spec_path: str
         stale = ex["age_days"] is not None and ex["age_days"] >= 7
         r["existing_data"] = {k: ex[k] for k in ("path", "retrieved", "route", "latest_period")}
         return done("reuse_existing",
-                    f"The data for this request are already in {ex['path']} (retrieved {ex['retrieved'][:10]}, "
+                    f"The data for this request are already in {ex['path']} (retrieved {cpol.local_day(ex['retrieved'])}, "
                     f"latest period {ex.get('latest_period')})." +
                     (" BLS has probably published newer data or revisions since then." if stale else ""),
                     "Skip the download and continue with the analysis." +
@@ -212,7 +213,9 @@ def route_check(s: dict, out: str, env: str, force: bool = False, spec_path: str
                f"{LIMITS['v1']['daily']} allowed per day")
     lost = r["v2_only_options_requested"]
     lost_note = (f" Without a key BLS does not return {', '.join(lost)}; the analysis computes them from the "
-                 "monthly data and says so." if lost else "")
+                 "monthly data and says so (not for medians or productivity: CPS median earnings, LE series, and PR "
+                 "annual values are not means of their quarters; take BLS's annual table into published/, or FRED's "
+                 "annual series '<id>A')." if lost else "")
     key_benefit = (f" A free key ({REGISTER_URL}) raises the limits to 500 queries a day, 50 series and 20 years "
                    "per query, and adds published annual averages and BLS's own net and percent changes.")
 
@@ -358,7 +361,7 @@ download scripts remove the key from the reply themselves).
 DOWNLOAD_SCRIPTS = {"bash": "download_bls.sh", "powershell": "download_bls.ps1"}
 SEND_FILES = ("INSTRUCTIONS.md", "download_bls.sh", "download_bls.ps1", "spec.json")
 SEND_ACTION = ("Send INSTRUCTIONS.md, download_bls.sh, download_bls.ps1 and spec.json from the bundle to the user "
-               "(present_files / SendUserFile when available; print the full paths), wait for the upload, then "
+               "(your file-sending tool when available; print the full paths), wait for the upload, then "
                "run next_command.")
 QUERIES_MARK = "# @QUERIES@"
 
@@ -642,7 +645,7 @@ def write_readme(d: str, s: dict, meta: list[dict], rows: list[dict], req: dict)
     lines = [
         f"# BLS time series: {s.get('description') or ', '.join(m['series_id'] for m in meta)}",
         "",
-        f"- Retrieved: {req['retrieved']} from the BLS Public Data API {req['api_version']} ({req['acquired']}; "
+        f"- Retrieved: {cpol.local_stamp(req['retrieved'])} from the BLS Public Data API {req['api_version']} ({req['acquired']}; "
         f"route `{req['route']}`)",
         f"- Years requested: {s['start_year']} to {s['end_year']}; latest period in the data: {req['latest_period']}",
         f"- Rows: {len(rows):,} in `bls_series.csv` (one per series and period); series details in `series.csv`",
@@ -902,7 +905,7 @@ def main():
 
         ex = existing_data(out, fingerprint(s))
         if ex and ex["csv_exists"] and ex["matches"] and not ex["problems"] and not a.force:
-            print(f"[bls] reusing {ex['path']} (retrieved {ex['retrieved']}); pass --force to download again",
+            print(f"[bls] reusing {ex['path']} (retrieved {cpol.local_stamp(ex['retrieved'])}); pass --force to download again",
                   file=sys.stderr)
             emit({"status": "reused_existing", "route": "reuse_existing", "data_dir": data_dir(out),
                   "csv": ex["path"], "retrieved": ex["retrieved"], "latest_period": ex["latest_period"]})

@@ -66,7 +66,8 @@ official definition of all 72 fields and which datasets carry each one.
    year-over-year comparison).
    Read the map's state values: the dashboard's state table puts the D.C. commuting area in its own "D.C.
    AREA" row, so its MD, VA and WV rows leave out their D.C.-area employees (Aug 2026: MD 54,097 in the
-   table, 121,612 on the map). The location map counts employees in pay status, 1 to 2 percent below the
+   table, 121,612 on the map). The map has a "table view" (states 25 to a page) that lists the map's values;
+   the dashboard is a live app with no JSON to fetch, so read that view in a browser. The location map counts employees in pay status, 1 to 2 percent below the
    files' on-board count; the Demographics dashboard (age, education, veteran status by department) and
    Table Builder match the files exactly (Aug 2026), so they benchmark shares and headcounts by department.
    Headcounts by department, occupation, grade, age, education and so on are complete — only pay and
@@ -98,7 +99,9 @@ official definition of all 72 fields and which datasets carry each one.
 7. **Missing agency submissions.** An agency that misses a month shows a dip and a rebound. Check the
    FWD Data Quality page ("Missing EHRI files") before reporting a one-month change.
 8. **Sentinel values.** `NO DATA REPORTED`, `INVALID`, `UNSPECIFIED`, `*` appear in coded fields;
-   `clean()` turns them into missing. Report how many records are missing for the fields you use.
+   `clean()` turns them into missing. Report how many records are missing for the fields you use. A department
+   code reported as missing on records with a valid agency code is filled from that agency's department (each
+   agency code belongs to one department), so department totals add up to the governmentwide total.
 9. **Pay oddities.** Pay is annualized basic pay plus locality or special-rate supplement, after the
    pay cap — not total compensation (no overtime, awards, benefits). Records with pay 0 (without
    compensation), hourly or per-diem pay bases, intermittent and seasonal schedules distort means.
@@ -123,7 +126,7 @@ official definition of all 72 fields and which datasets carry each one.
 |---|---|---|
 | `snapshot_yyyymm` | E | month of the status snapshot |
 | `personnel_action_effective_date_yyyymm` | A, S | effective month of the action |
-| `department_code` / `department` | all | e.g. DOD, VA, HS (DHS), DJ (Justice), TR (Treasury), AG, HE (HHS), IN (Interior), SZ (SSA) |
+| `department_code` / `department` | all | the 15 executive departments: AG Agriculture, CM Commerce, DOD Defense, ED Education, DN Energy, HE HHS, HS Homeland Security, HU HUD, DJ Justice, DL Labor, ST State, IN Interior, TR Treasury, TD Transportation, VA Veterans Affairs; independent agencies have their own codes (SZ SSA, EP EPA, ...) |
 | `agency_code` / `agency` | all | e.g. AR Army, NV Navy, AF Air Force, VA, HS |
 | `agency_subelement_code` | all | bureau or component, e.g. IN05 Bureau of Land Management, TR93 IRS |
 | `cfo_act_agency_indicator` | all | CFO ACT AGENCY (24 large agencies) / OTHER AGENCY |

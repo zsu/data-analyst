@@ -20,7 +20,7 @@ agency publications catalogued by GPO.
 | `related_collection` | related package of one collection (an enrolled bill's public law) | `accessId`, `collection` |
 | `granules` | granule in a package (CREC articles, FR documents, CFR parts) | `packageId` |
 | `related` | related collection for a package (bill versions, status, reports, CREC, signing statements) | `accessId` |
-| `text` | one row: package_id, title, date_issued, pages, characters, text | `packageId`, or `congress` + `billtype` + `number` (+ `version`, default `enr`), `max_chars` |
+| `text` | one row: package_id, title, date_issued, pages, characters, text (+ granule_id, granule_class with `granuleId`) | `packageId`, or `congress` + `billtype` + `number` (+ `version`, default `enr`); `granuleId` for one granule (a Record article: packages of over 25 granules have no whole text); `max_chars` |
 | `sections` | section of a public law (USLM XML): identifier, num, heading, within (enclosing titles), usc_amended, usc_cited, usc_classified, amending_actions, characters, text | `packageId` (PLAW, 113th Congress on), `max_chars` (per section) |
 
 Collections (catalog aliases, `--search "reports"`): BILLS, BILLSTATUS, BILLSUM, PLAW, STATUTE, USCODE,
@@ -125,8 +125,14 @@ chamber), enr enrolled (passed both).
   `-i64`/`-i65`. Chamber sections are granules of class SENATE, HOUSE, EXTENSIONS and DAILYDIGEST (the
   summary's `download.pdfSenateLink` / `pdfHouseLink` too). Early-January issues of a calendar year
   belong to the outgoing Congress (volume and congress differ; `CREC-2015-01-02` is volume 160 but is
-  labelled congress 114), and an issue can be missing. `pages` counts PDF pages (Daily Digest and front
+  labelled congress 114), and an issue can be missing. Proceedings print under the legislative day, not the calendar day: a
+  Senate session that runs on (July 1, 2025, a continuation of June 30's legislative day) has no issue of its
+  own, so `granules` for that date returns no rows; find the issue with `search` (CREC, a phrase from the
+  proceedings) instead. `pages` counts PDF pages (Daily Digest and front
   matter included), so it runs about 1 percent above the Résumé of Congressional Activity's numbered pages.
+- "How many pages is the law": the convention is its Statutes at Large pages (first page to the last
+  `[[Page ... STAT. ...]]` marker of `text`, e.g. 139 Stat. 72-401 is 330 pages); the slip-law and enrolled-bill
+  PDFs differ by a page or so (cover, signatures). Say which measure the answer uses.
 - CPD (Compilation of Presidential Documents, 1993 on; daily from 2009-01-20): one package per document,
   docClass PRESDOC plus a few DIGEST, ACTSAPPROVED, CHECKLIST and NOMINATIONS rows (in a transition year the
   outgoing President's supplements, `DCPD-2025DIGEST-BIDEN` and the like, are docClass PRESDOC too: count
@@ -144,13 +150,21 @@ chamber), enr enrolled (passed both).
   `-NN` series suffix; a few prints have two classes or none). `published` with collection CPRT also returns
   packages of other collections (GPO-PLUMBOOK-2024, collectionCode GPO): keep `collectionCode` CPRT.
   GovInfo's browse pages count documents (errata included), not packages.
-- STATUTE: one package per volume and volume = a session of Congress, not a calendar year (vol. 127
-  holds Pub. L. 113-74, signed in January 2014, and prints 113-73 in vol. 128). Count laws by granules
+- STATUTE: one package per volume and volume = a session of Congress, not a calendar year. A law goes in
+  the volume of the session that passed it, not the year it was signed: laws signed in early January after
+  a session ends are in the closing session's volume (116-344, signed 2021-01-13, in vol. 134; 118-274,
+  2025-01-06, in vol. 138), and numbering can interleave (113-74, signed 2014-01-16, closes vol. 127 while
+  113-73 opens vol. 128). Assign laws to volumes from the granules, never by date. Granule `dateIssued` can
+  be wrong by a year (117-343's granule says 2022-01-05; signed 2023-01-05). Count laws by granules
   with `granuleClass` PUBLICLAW (granules also hold proclamations and concurrent resolutions). Older
   summaries (vol. 127) have no `pages`; `pages` counts front matter too. A granule id carries its start page
   (`STATUTE-136-Pg6299`; a continuation adds a suffix, `STATUTE-135-Pg2531-2`). Each volume prints public
-  laws, then private laws, then concurrent resolutions and proclamations: the laws' pages run from the first
-  law's page to the first concurrent resolution's.
+  laws, then private laws, then concurrent resolutions and proclamations, with a few blank pages between the
+  parts. The public laws' pages run from the first law's start page to the **last law's last page**: the last
+  `[[Page N STAT. M]]` marker in that law's `text` (`packageId` PLAW-...). The next granule's start page
+  overstates it by 3 or 4 pages (6 more in vol. 136, where private laws come first); with the end from the
+  text, the 116th-118th Congresses give 8,432, 8,742 and 4,350 pages, the figures in Brookings' Vital
+  Statistics on Congress (Table 6-4).
 - BUDGET: one package per volume (`BUDGET-2027-BUD` main volume, `-PER` Analytical Perspectives, `-APP`
   Appendix). Summaries report collectionCode GPO (FY2017 and FY2027 alike) although `published` with
   collection BUDGET lists them. Recent summaries' `pages` equals the PDF's page count; older ones (FY2017)

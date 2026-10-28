@@ -116,9 +116,10 @@ def merged(base: str, R: dict | None = None) -> dict:
         R.setdefault("data_needs", D.get("data_needs", []))
     if D.get("data_needs_note") and not R.get("data_needs_note"):
         R["data_needs_note"] = D["data_needs_note"]
-    if D.get("audit_allow"):
-        have = list(R.get("audit_allow", []))
-        R["audit_allow"] = have + [x for x in D["audit_allow"] if x not in have]
+    for k in ("audit_allow", "rounding_ties_ok"):
+        if D.get(k):
+            have = list(R.get(k, []))
+            R[k] = have + [x for x in D[k] if x not in have]
     return R
 
 
@@ -200,7 +201,7 @@ def check_method(R: dict, base: str, facts: dict) -> list[tuple]:
         if q.get("blocking"):
             ok = bool(q.get("rationale")) and (how != "skipped" or not q.get("asked", True) or q.get("followed_up"))
             res("questions", ok, f"question {qid}: blocking, decided without the user by {q.get('rationale')!r}; "
-                                 "state it in the first line of the answer" if ok else
+                                 "state it in the opening paragraph of the answer, its disclosures line word for word" if ok else
                 f"question {qid}: blocking (what the user means): ask one follow-up after a skip "
                 "(\"followed_up\": true), then record the literal reading as \"rationale\"")
 
@@ -325,6 +326,9 @@ _NUM = re.compile(r"^[^\d\-+.]*([-+]?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?)\s*(%|
 _SAYS = ("match", "matches", "matched")      # a benchmark.csv column that states the verdict
 
 
+_BOUND = re.compile(r"(?i)^\s*(>=|<=|>|<|≥|≤|over|more than|above|at least|under|below|less than|at most)\s*(.+)$")
+
+
 def bench_number(s) -> tuple[float, float] | None:
     """A benchmark cell as (value, rounding tolerance): "$72,380" -> (72380, 5), "0.3" -> (0.3, 0.05),
     "1992473.0" -> (1992473, 0.5). None when the cell is not one number ("219 D / 24 R", "not checked").
@@ -410,6 +414,18 @@ def check_benchmark(base: str, facts: dict | None = None) -> list[tuple]:
         if not pub.strip():
             out.append(("benchmark", False, f"{label}: the published column is empty: give the published figure, "
                                             "or write \"not checked\" in it (and say why in the note)"))
+            continue
+        bound = _BOUND.match(pub)               # "over 45", ">= 45", "at most 2": a published bound, not a figure
+        if bound and bench_number(r.get("computed")) and bench_number(bound.group(2)):
+            c0, b0 = bench_number(r.get("computed"))[0], bench_number(bound.group(2))[0]
+            if c0 < 0 and b0 < 0:                 # a fall "over 45 percent" written -45: compare sizes
+                c0, b0 = -c0, -b0
+            up = bound.group(1).lower() in (">", ">=", "≥", "over", "more than", "above", "at least")
+            if (c0 >= b0) if up else (c0 <= b0):
+                compared += 1
+            else:
+                out.append(("benchmark", False, f"{label}: computed {r.get('computed')} is outside the published "
+                                                f"bound {pub}: find the cause or explain it in the note"))
             continue
         c, pb = bench_number(r.get("computed")), bench_number(pub)
         note = str(r.get("note") or r.get("notes") or "").strip()

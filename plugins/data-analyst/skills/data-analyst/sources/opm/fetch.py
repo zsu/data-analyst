@@ -63,6 +63,7 @@ import os
 import re
 import shutil
 import sys
+sys.dont_write_bytecode = True  # never write __pycache__ into the skill folder
 import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -438,7 +439,9 @@ def write_readme(out: str, M: dict):
               "Never average pay over the unredacted records and call it a governmentwide figure.",
               "- Coverage: EHRI excludes USPS, the intelligence agencies (CIA, NSA, DIA, NGA, ODNI), the White House "
               "Office, Foreign Service at State, TVA, the Fed Board of Governors, PHS Commissioned Corps, "
-              "nonappropriated-fund staff, foreign nationals overseas, and the legislative and judicial branches.",
+              "nonappropriated-fund staff, foreign nationals overseas, and most of the legislative and judicial "
+              "branches (the Government Publishing Office, `LP`, and some judicial-branch records, `JL`, do appear: "
+              "drop them by `agency_code` for an executive-branch count).",
               "- Accession and separation files hold actions processed in the file month; some are effective in "
               "earlier months (`personnel_action_effective_date_yyyymm`). Recent months gain late actions in later files.",
               "- OPM revises files: `manifest.json` records each version; `fetch.py --source opm spec.json --pin` "
@@ -456,6 +459,7 @@ def write_readme(out: str, M: dict):
               "figure (`coverage.csv`)."]
     with open(os.path.join(data_dir(out), "README.md"), "w", encoding="utf-8") as f:
         f.write("\n".join(lines) + "\n")
+    core_package.copy_pack_lib(out, "opm")         # analysis.py reruns without the skill folder
 
 
 def run_download(spec: dict, spec_path: str, out: str, plan: dict, no_cache: bool, route="api",
@@ -869,12 +873,13 @@ def main():
                         "--check again.", "next_command": ""}, 2)
     n_emp = sum(1 for f in plan["files"] if f["dataset"] == "employment")
     cdir = raw_cache_root()
-    cached = sum(1 for f in plan["files"] if cached_fresh(os.path.join(cdir, f["filename"] + ".parquet")))
+    hit = [cached_fresh(os.path.join(cdir, f["filename"] + ".parquet")) for f in plan["files"]]
+    cached = sum(hit)
     todo = len(plan["files"]) - cached                 # cached files take a fraction of a second each
-    share = todo / len(plan["files"]) if plan["files"] else 0
-    est_min = round(max(0.2, (plan["est_mb"] * share / 15 + todo * 3 + cached * 0.2) / 60), 1)  # ~15 MB/s plus processing
+    new_mb = sum(EST_MB[f["dataset"]] for f, h in zip(plan["files"], hit) if not h)   # only files not cached
+    est_min = round(max(0.2, (new_mb / 15 + todo * 3 + cached * 0.2) / 60), 1)  # ~15 MB/s plus processing
     summary = {"files": len(plan["files"]), "employment_files": n_emp, "already_cached": cached,
-               "est_download_mb": plan["est_mb"], "est_minutes": est_min, "missing_periods": plan["missing"],
+               "est_download_mb": new_mb, "est_minutes": est_min, "missing_periods": plan["missing"],
                "first": plan["files"][0]["filename"] if plan["files"] else None,
                "last": plan["files"][-1]["filename"] if plan["files"] else None}
     if a.dry_run:
@@ -897,8 +902,8 @@ def main():
               "fallback_commands": [f'"{sys.executable}" -m pip install {x}' for x in ("fastparquet", "duckdb", "polars")],
               "manual_bundle": bundle, "plan": summary}, 3)
     if a.check:
-        msg = (f"data.opm.gov is reachable; no key is needed. {summary['files']} file(s), about {plan['est_mb']} MB "
-               f"({cached} already cached), roughly {est_min} minutes.")
+        msg = (f"data.opm.gov is reachable; no key is needed. {summary['files']} file(s) ({cached} already cached): "
+               f"about {new_mb} MB to download, roughly {est_min} minutes.")
         if plan["missing"]:
             msg += f" Not available and skipped: {plan['missing']}."
         if n_emp > 6 and not spec.get("columns") and not spec.get("aggregate"):

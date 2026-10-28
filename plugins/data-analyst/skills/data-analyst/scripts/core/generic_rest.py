@@ -357,6 +357,22 @@ def fetch_request(client: Client, ep: dict, params: dict, max_rows: int | None =
     return _clean(rows, ep), meta
 
 
+def _fetch_patiently(c: Client, ep: dict, params: dict, max_rows, waits=(20, 60)):
+    """fetch_request, waiting out a server that stays busy past the client's own retries (Congress.gov answered
+    HTTP 503 for a minute at a time in a 1,244-call for_each, Oct 2026): one bad minute must not lose the run."""
+    for wait in (*waits, None):
+        try:
+            return fetch_request(c, ep, params, max_rows)
+        except DataError as e:
+            if wait is None or e.kind != "http" or e.status not in (500, 502, 503, 504) \
+                    or os.environ.get("DATA_ANALYST_FIXTURES"):
+                raise
+            import sys
+            import time
+            print(f"[{c.name}] HTTP {e.status}: waiting {wait} s, then trying again", file=sys.stderr, flush=True)
+            time.sleep(wait)
+
+
 def fetch(pack, spec: dict, client: Client | None = None) -> tuple[dict, list[str]]:
     """Every request in the spec. Returns ({name: rows}, notes)."""
     c = client or client_for(pack)
@@ -373,7 +389,7 @@ def fetch(pack, spec: dict, client: Client | None = None) -> tuple[dict, list[st
         if pack.has("before_request"):
             params = pack.adapter.before_request(r, ep, params) or params
         try:
-            rows, meta = fetch_request(c, ep, params, r.get("max_rows"))
+            rows, meta = _fetch_patiently(c, ep, params, r.get("max_rows"))
         except DataError as e:                  # say which request failed (a spec can hold hundreds)
             if e.kind == "not_found":           # no such item: run the rest, then name every missing one
                 if r.get("allow_empty"):

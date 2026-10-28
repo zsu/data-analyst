@@ -158,6 +158,16 @@ class TestCensus(PackTest):
             rows = a.parse_upload(pack, req, [c])
             self.assertEqual([(r["geography"], r["measure"], r["value"]) for r in rows],
                              [("Alabama", "Estimate", 29.9), ("Alabama", "Margin of Error", 0.4)])
+            # the table JSON names its year and product: kept on each row, and a 5-year file is no 1-year request
+            v = os.path.join(t, "b19013.json")
+            json.dump({"response": {"dataAPIURI": "https://api.census.gov/data/2024/acs/acs5?get=group(B19013)",
+                                    "objectId": "ACSDT5Y2024.B19013",
+                                    "data": [["GEO_ID", "NAME", "B19013_001E"], ["0400000US51", "Virginia", "1"]]}},
+                      open(v, "w"))
+            r5 = {"name": "inc", "params": {"dataset": "acs5", "get": ["NAME", "B19013_001E"]}}
+            self.assertEqual(a.parse_upload(pack, r5, [v])[0]["vintage"], "2024")
+            with self.assertRaises(DataError):
+                a.parse_upload(pack, dict(r5, params={**r5["params"], "dataset": "acs1"}), [v])
             b = os.path.join(t, "bad.json")
             json.dump({"x": 1}, open(b, "w"))
             with self.assertRaises(DataError):          # never an empty table that looks fine

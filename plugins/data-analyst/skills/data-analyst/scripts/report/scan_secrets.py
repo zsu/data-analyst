@@ -123,7 +123,10 @@ def scan_file(path: str, keys=None, hex32: bool = False, quiet: set[str] | None 
     keys = [keys] if isinstance(keys, bytes) else [k.lower() for k in (keys or []) if k]
     quiet = quiet or set()
     with open(path, "rb") as f:
-        hits = scan_stream(f, path, keys, hex32 and not other_source_data(rel or path, quiet))
+        # a PDF's trailer /ID holds two 32-hex document ids: only real key values count in one
+        pdf = f.read(5) == b"%PDF-"
+        f.seek(0)
+        hits = scan_stream(f, path, keys, hex32 and not pdf and not other_source_data(rel or path, quiet))
     if zipfile.is_zipfile(path):                   # members are compressed: scan them decompressed too
         try:
             with zipfile.ZipFile(path) as z:

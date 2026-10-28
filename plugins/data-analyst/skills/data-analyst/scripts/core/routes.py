@@ -30,6 +30,7 @@ import os
 import sys
 
 from core import keys, package
+from core import policy as pol
 from core.env import network_note, setup_command
 from core.http import reachable
 
@@ -39,7 +40,7 @@ HERE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
 
 # What the model does with a manual-download bundle (every pack says the same).
 SEND_BUNDLE = ("Send INSTRUCTIONS.md, both download scripts (download_scripts: .sh for macOS/Linux, .ps1 for Windows) and "
-               "the request (request_spec) with present_files / SendUserFile when available, and print their full "
+               "the request (request_spec) with your file-sending tool when available, and print their full "
                "paths. Give the user the one command for their system (user_commands; both when unsure): it runs the "
                "script, which asks for any key with hidden input and downloads every file. Never ask for a key in the "
                "chat. Wait for the upload, then run next_command.")
@@ -103,11 +104,19 @@ def route_check(pack, spec: dict, spec_path: str, out: str, env: str, force: boo
     if ex and ex["matches"] and ex["complete"] and not ex["problems"] and not force:
         stale = ex["age_days"] is not None and ex["age_days"] >= 7
         return done("reuse_existing",
-                    f"The data for this request are already in {ex['path']} (retrieved {ex['retrieved'][:10]} by the "
+                    f"The data for this request are already in {ex['path']} (retrieved {pol.local_day(ex['retrieved'])} by the "
                     f"{ex['route']} route)." + (" The source has probably published newer data since." if stale else ""),
                     "Skip the download and continue with the analysis." +
                     (" Ask whether to refresh (--force) if the latest value matters." if stale else ""))
 
+    if failed and failed.get("kind") == "blocked":    # the host answers but refuses scripts: a browser can still save
+        b = bundle("a host refused automated requests")
+        err = keys.redact(str(failed.get("error", "")))[:600]
+        return done("manual_download", f"{err}. Retrying from here will not help, and the download scripts may be "
+                    "refused too: open the links in INSTRUCTIONS.md" + (f" ({b})" if b else "") + " in a web browser, "
+                    "save each file and upload them." + ("" if b else " " + P["routes"]["manual"]["how"]),
+                    SEND_BUNDLE + " Say the scripts may be refused like this request; saving from a browser works.",
+                    ingest)
     pr = probe(pack)
     if failed and failed.get("kind") == "network" and failed.get("route") in pr:
         pr[failed["route"]] = {**pr[failed["route"]], "reachable": False,

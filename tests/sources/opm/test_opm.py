@@ -286,6 +286,13 @@ class TestOpm(PackTest):
         self.assertEqual(len(cov), 1)
         # aggregated rows stand for n actions: late shares are weighted by n, not by rows
         import pandas as pd
+        # a department reported as missing on a valid agency's rows is that agency's department (HUD, Jan 2025)
+        emp = stats.clean(pd.DataFrame({"snapshot_yyyymm": ["202501"] * 3,
+                                        "department_code": ["HU", "No Data Reported", "VA"],
+                                        "department": ["DEPARTMENT OF HOUSING", "NO DATA REPORTED", "VETERANS"],
+                                        "agency_code": ["HU", "HU", "VA"], "headcount": ["8375", "416", "9"]}))
+        h = stats.headcount(emp, ["department_code"]).set_index("department_code")["headcount"]
+        self.assertEqual((h["HU"], h.sum()), (8791, 8800))
         agg = pd.DataFrame({"period": [202509] * 3, "file_period": [202509, 202510, 202511], "n": [90, 8, 2]})
         t = stats.late_reporting(agg)
         self.assertEqual((int(t["same_month"][0]), int(t["later"][0])), (90, 10))

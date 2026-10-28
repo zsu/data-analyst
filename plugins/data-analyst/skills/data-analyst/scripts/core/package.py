@@ -28,6 +28,28 @@ from core import policy as pol
 LABEL_ONLY = ("description", "label", "labels", "notes", "source_note")
 
 
+SKILL_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+
+def copy_pack_lib(out: str, source: str) -> str | None:
+    """Copy sources/<source>/lib/ into <out>/lib/<source>/ and the shared analysis helpers into <out>/lib/, so
+    analysis.py (which puts <out>/lib first on sys.path, SKILL.md section 4) reruns without the skill folder."""
+    import shutil
+    src = os.path.join(SKILL_DIR, "sources", source, "lib")
+    if not os.path.isdir(src):
+        return None
+    lib = os.path.join(os.path.abspath(out), "lib", source)
+    os.makedirs(lib, exist_ok=True)
+    for f in os.listdir(src):
+        if os.path.isfile(os.path.join(src, f)) and not f.endswith(".pyc"):
+            shutil.copy2(os.path.join(src, f), os.path.join(lib, f))
+    shared = os.path.join(SKILL_DIR, "scripts", "analysis")
+    for f in os.listdir(shared):
+        if f.endswith(".py"):
+            shutil.copy2(os.path.join(shared, f), os.path.join(os.path.dirname(lib), f))
+    return lib
+
+
 def data_dir(out: str, source: str) -> str:
     return os.path.join(os.path.abspath(out), "data", source)
 
@@ -159,7 +181,7 @@ def write(out: str, pack, tables: dict, spec: dict, route: str, acquired: str = 
     local_day = datetime.now().astimezone().date().isoformat()
     cite = pol.citation(P, retrieved=local_day, vintage=vintage, dataset=spec.get("description", ""))
     if earlier:
-        listed = [f"- {e['retrieved']} ({e['route']}): " + ", ".join(f"`{t['file']}`" for t in e["tables"])
+        listed = [f"- {pol.local_stamp(e['retrieved'])} ({e['route']}): " + ", ".join(f"`{t['file']}`" for t in e["tables"])
                   + "; spec and requests in request.json `earlier_fetches`" for e in earlier]
         extra_readme = "\n\n".join(x for x in (extra_readme, "## Earlier fetches into this folder\n\n"
                                                + "\n".join(listed)) if x)
@@ -190,7 +212,7 @@ def write_readme(d, pack, tables, cite, retrieved, acquired, notes, problems, ex
     P = pack.policy
     rd = P["redistribution"]
     lines = [f"# {P['title']}: downloaded data", "",
-             f"Retrieved {retrieved} by the `{acquired}` route. Values are exactly as published; missing values are "
+             f"Retrieved {pol.local_stamp(retrieved)} by the `{acquired}` route. Values are exactly as published; missing values are "
              "empty cells. Column types and examples are in `data_dictionary.csv`; every request is in "
              "`request.json` (URLs without keys).", "", "## Files", ""]
     lines += [f"- `{t['file']}`: {t['rows']:,} rows; columns {', '.join(t['columns'][:12])}"

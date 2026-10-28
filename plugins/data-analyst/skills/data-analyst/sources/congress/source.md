@@ -154,6 +154,25 @@ and Senate XML need no key. Manual route: INSTRUCTIONS.md lists Congress.gov JSO
 `api_key=DEMO_KEY` and the vote XML links (clerk.house.gov/evs/<year>/roll<NNN>.xml;
 www.senate.gov/legislative/LIS/roll_call_votes/vote<congress><session>/vote_<c>_<s>_<NNNNN>.xml);
 for `bill_votes` the bill's actions JSON lists each vote's XML link. Upload the files for `--ingest`.
+senate.gov sometimes refuses scripts (HTTP 403, seen from some networks in Oct 2026; `--check` tries it when
+the spec needs Senate votes): the route is then `manual_download`. Without a user to save the XML, the
+Congressional Record prints each Senate roll call's names. The reliable path is the page: the vote's
+`bill_actions` text cites it ("Record Vote Number: 7 ... (CR S250-251)"); list that day's issue with govinfo
+`granules` (`packageId` CREC-<date>), take the Senate granule whose id holds the page (`...-PgS250`, or the
+last one starting before it), and read it with govinfo `text` (`packageId` + `granuleId`); check the
+`[Rollcall Vote No. 7 Leg.]` line in it. A `search` (collection CREC, `phrase: "Rollcall Vote No. 7 Leg"`)
+can find it too but missed 2 of 4 votes in Jan 2025 tests: never treat an empty search as "no vote". The
+Record lists names only (YEAS / NAYS / NOT VOTING): take party and state from `members_congress`, and say the
+split came from the Record. Votes print under the legislative day, which can be an earlier date (the Senate's
+July 1, 2025 votes are in `CREC-2025-06-30`). Request House votes alone (`"chamber": "house"`) so a Senate
+block does not stop them. A whole session of Senate votes (counts, shares by question) comes from the Daily
+Digest: govinfo `published` CREC for the session's dates, `granules` for_each, keep the Daily Digest Senate
+granules, `text` for_each, then parse "(Vote No. N)" and the running "(Total--N)". Traps seen in 2025: a few
+votes are not numbered in the Digest (take them from the Record's Senate pages), the form "(Vote 569)" and page
+markers inside a reference, a misprinted number (the running total proves the right one), and Digests that
+reprint earlier votes (deduplicate by number). "Ex."/"Leg." marks the session the vote was taken in, not its
+subject: classify nominations by the question text. Benchmark the count with the Résumé of Congressional
+Activity (Daily Digest, early January: 659 Senate yea-and-nay votes in 2025).
 
 ## Citation and terms
 "Library of Congress, Congress.gov API, <query>, api.congress.gov, retrieved <date>"; for votes add

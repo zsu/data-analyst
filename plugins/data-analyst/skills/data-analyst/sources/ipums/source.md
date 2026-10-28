@@ -82,7 +82,7 @@ person), `codebook.csv` (variable, value, value_label), `variables.csv`, the DDI
 `extract_spec.json` (spec + exact API body + extract number), `request.json`, `README.md` (citation,
 weights, terms).
 - **Weights on every estimate**: PERWT / HHWT (USA; household measures on PERNUM == 1), ASECWT (CPS
-  ASEC; WTFINL is not offered for ASEC samples: the API refuses it with HTTP 400, verified 2026-10), WTFINL (CPS monthly), EARNWT (earnings questions, outgoing
+  ASEC; WTFINL is not offered for ASEC samples: the API refuses it with HTTP 400, verified 2026-10), WTFINL (CPS monthly; COMPWT for employment levels that match BLS), EARNWT (earnings questions, outgoing
   rotation groups), SAMPWEIGHT (NHIS 2019 on: sample adults `ASTATFLG == 1` and sample children
   `CSTATFLG == 1`, never summed across items of different universes), PERWEIGHT (MEPS; 0 = out of scope).
   Pooling years: average yearly estimates or divide weights by the number of years.
@@ -107,8 +107,9 @@ weights, terms).
   match them, multiply by ADJUST (without it, medians come out about 1.5 percent low, inside the margins of
   error, so the benchmark check would not show the bias). State the dollar year.
 - **Codes differ by collection**: CPS EDUC is one detailed 3-digit variable (73 high school, 111
-  bachelor's); USA uses EDUCD for degree groups. USA NATIVITY does not exist in ACS: foreign born =
-  CITIZEN 2-5. CPS EMPSTAT 10/12 employed, 20-22 unemployed. Check `codebook.csv`.
+  bachelor's); USA uses EDUCD for degree groups. Foreign born (not a citizen at birth): CPS CITIZEN 4-5
+  (not NATIVITY 5, which adds people born in outlying areas or abroad of American parents); ACS CITIZEN 2-5
+  (USA has no NATIVITY for ACS). `foreign_born()` applies both. CPS EMPSTAT 10/12 employed, 20-22 unemployed. Check `codebook.csv`.
 - **Extract gotchas**: IPUMS adds detailed versions automatically (EDUC brings EDUCD); a data-quality
   flag or case-selection code that a sample lacks returns HTTP 400 (fix spec.json and resubmit);
   ACS 2020 1-year has experimental weights.
@@ -144,7 +145,7 @@ Analysis helpers: `sources/ipums/lib/stats.py` (`load`, `clean_missing`, `groupe
 import sys, os
 OUT = os.path.dirname(os.path.abspath(__file__))
 sys.path[:0] = [os.path.join(OUT, "lib"), os.path.join(OUT, "lib", "ipums"), r"<skill>/sources/ipums/lib"]  # SKILL.md section 4
-from stats import *
+from stats import *     # alone; with bea, ipums or opm too: st = pack_lib("ipums", "stats", OUT, SKILL)
 D, C = f"{OUT}/data/ipums", "cps"                # "usa" (ACS), "cps", "nhis" or "meps"; codes differ
 df = clean_missing(load(f"{D}/ipums_extract.csv"), C, codebook=f"{D}/codebook.csv")
 df["emp"] = emp_status(df, C)

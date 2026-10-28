@@ -186,7 +186,7 @@
   "text": {
    "path": "/packages/{packageId}/htm",
    "method": "GET",
-   "description": "Plain text of a bill version, law, report or other package (one row: package_id, title, date_issued, characters, text). Give packageId, or congress + billtype + number (+ version, default enr) for a bill.",
+   "description": "Plain text of a bill version, law, report or other package (one row: package_id, title, date_issued, characters, text). Give packageId, or congress + billtype + number (+ version, default enr) for a bill; add granuleId for one granule.",
    "params": {
     "packageId": {
      "desc": "e.g. PLAW-118publ201 or BILLS-117hr5376enr"
@@ -202,6 +202,9 @@
     },
     "version": {
      "desc": "version code, default enr (enrolled)"
+    },
+    "granuleId": {
+     "desc": "one granule of the package (from endpoint granules): a Congressional Record article, CFR part, report part; e.g. CREC-2025-06-30-pt1-PgS4067"
     },
     "max_chars": {
      "desc": "cut the text at this many characters (default: no cut)"

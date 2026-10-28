@@ -344,6 +344,11 @@ class Client:
             return r
         self.error_budget.spend()
         if r.status in (401, 403):
+            if not self.auth.get("env"):                 # this host gets no key: a bot filter or IP block, not a key
+                host = urllib.parse.urlsplit(r.url).netloc
+                raise DataError(f"{self.name}: HTTP {r.status} from {host}: the host refused this request (access "
+                                "denied, usually a bot filter or a network block; no API key is involved)",
+                                kind="blocked", status=r.status)
             if not self.key and self.auth.get("env"):
                 raise DataError(f"{self.name}: API key required (HTTP {r.status}). Set the {self.auth['env']} "
                                 "environment variable or run the setup script.", kind="key_missing", status=r.status)
