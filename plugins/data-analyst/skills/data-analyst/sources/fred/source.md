@@ -73,7 +73,10 @@ fiscal_year, first/last date, n_obs, n_missing, n_future, source, release, copyr
   `wide()` drops periods that have not ended (2026 Q4 on 2026-10-20) unless `include_future=True`.
 - **Fiscal years** (October to September): dollar series are dated at the fiscal year's end (2025-09-30 =
   FY2025), ratio series at January 1 of the fiscal year's number; `fiscal_year_label` maps both. FRED's
-  FY*GDA188S ratios divide by calendar-year GDP; a fiscal-year-GDP ratio differs by a few hundredths.
+  FY*GDA188S ratios divide by calendar-year GDP, and are updated about once a year (OMB data), so their GDP
+  can predate BEA's latest annual update (FYOIGDA188S FY2025, updated April 2026: 3.15 against 3.18 on
+  fiscal-year GDP of the September 2026 vintage): a fiscal-year-GDP ratio differs by a few hundredths;
+  name both causes, with the series' `last_updated`, when the benchmark misses.
 - **Vintages**: compare growth rates and ratios across vintages, not levels (real GDP was in 2012 dollars
   before September 2023, 2017 dollars since); `units` in series.csv is FRED's label today. First release
   needs the whole real-time window (else HTTP 400 "No vintage dates exist"); an as-of vintage ends where that

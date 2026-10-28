@@ -295,8 +295,10 @@ def emp_status(df: pd.DataFrame, collection: str) -> pd.Series:
 def foreign_born(df: pd.DataFrame, collection: str | None = None) -> pd.Series:
     """True if foreign born (Census definition: not a U.S. citizen at birth).
 
-    CPS: NATIVITY 5 = foreign born, 1-4 = native (0 = unknown -> NaN).
-         Fallback CITIZEN 4/5 = foreign born (1-3 native, incl. PR/outlying areas, born abroad of US parents).
+    CPS: CITIZEN 4 naturalized / 5 not a citizen = foreign born; 1-3 native (born in the U.S., in outlying
+         areas, or abroad of American parents). NATIVITY 5 is NOT this: it also holds CITIZEN 2 and 3 (about 8
+         percent of its earners in 2014-2024), and BLS's foreign-born medians match CITIZEN 4/5 (2024 full-time
+         weekly: 1,003 against BLS's 1,001; NATIVITY 5 gives 1,012). NATIVITY is used only without CITIZEN.
     USA (ACS): NATIVITY is not available for ACS samples; use CITIZEN: 0 N/A (born in US), 1 born abroad
          of American parents -> native; 2-5 (naturalized, not a citizen, ...) -> foreign born;
          8 illegible, 9 missing -> NaN.
@@ -316,13 +318,17 @@ def foreign_born(df: pd.DataFrame, collection: str | None = None) -> pd.Series:
         else:
             raise ValueError("foreign_born(): cannot tell the collection from the columns: pass collection='usa' or 'cps'")
     _codes_for(collection, "foreign_born")
-    if "NATIVITY" in df and df["NATIVITY"].between(1, 5).any():
-        n = df["NATIVITY"]
+    if collection == "cps" and "CITIZEN" not in df and "NATIVITY" in df:
+        n = df["NATIVITY"]                          # birthplace only: a CITIZEN 2/3 person counts as foreign
+        print("[stats] WARNING: foreign_born: CPS without CITIZEN; NATIVITY 5 includes people born in outlying "
+              "areas or abroad of American parents. Add CITIZEN to the extract for the BLS definition.",
+              file=sys.stderr)
         return pd.Series(np.where(n == 5, True, np.where(n.between(1, 4), False, None)),
                          index=df.index, dtype="object")
     c = df["CITIZEN"]
     if collection == "cps":
-        return c.isin([4, 5])
+        return pd.Series(np.where(c.isin([4, 5]), True, np.where(c.between(1, 3), False, None)),
+                         index=df.index, dtype="object")
     return pd.Series(np.where(c.between(2, 5), True, np.where(c.between(0, 1), False, None)),   # USA coding
                      index=df.index, dtype="object")
 

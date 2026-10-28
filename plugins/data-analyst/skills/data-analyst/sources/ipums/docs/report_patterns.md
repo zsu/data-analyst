@@ -53,7 +53,7 @@ state agencies, research institutes), so there is usually a precedent to follow 
 - **Earnings:** say whose earnings are averaged. Usually it is workers with positive wages, sometimes full-time, full-year workers only. Also say whether self-employment income is included (INCWAGE excludes it; INCEARN in the ACS includes it).
 
 **Estimation**
-- Always weight. In the USA collection use PERWT (HHWT for household measures). In the CPS ASEC use ASECWT, in CPS basic monthly use WTFINL, and in the CPS outgoing rotation groups use EARNWT. In NHIS (2019 on) use SAMPWEIGHT on sample adults or sample children; in MEPS use PERWEIGHT (SAQWEIGHT for questionnaire items).
+- Always weight. In the USA collection use PERWT (HHWT for household measures). In the CPS ASEC use ASECWT, in CPS basic monthly use WTFINL (COMPWT for labor-force levels that match BLS), and in the CPS outgoing rotation groups use EARNWT. In NHIS (2019 on) use SAMPWEIGHT on sample adults or sample children; in MEPS use PERWEIGHT (SAQWEIGHT for questionnaire items).
 - Report the unweighted cell size internally. Suppress or footnote cells with fewer than about 100 respondents; unstable estimates are not published.
 - **Dollars:** convert to a single year's dollars and name the year and index ("in 2023 dollars, using the CPI-U-RS"; the PCE price index is a common choice for earnings and income), with CPI99 or `adjustMonetaryValues`. CPS ASEC income is for the **previous calendar year** (ASEC 2023 means 2022 income). ACS income is for the past 12 months, and IPUMS expresses it in survey-year dollars.
 - **Top-coding:** INCWAGE is top-coded, which mostly matters for means at high education levels. Mention it.

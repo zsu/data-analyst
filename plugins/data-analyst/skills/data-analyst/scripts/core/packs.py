@@ -80,7 +80,8 @@ def all_packs() -> list[Pack]:
 
 # ---------------------------------------------------------------------- routing a question to packs
 _STOP = set("a an the of in on for to and or by with from what how much many is are was were did does do "
-            "since between over last year years data show chart compare trend latest".split())
+            "since between over last year years data show chart compare trend latest per has have had than more "
+            "after only those each who which this that its their it be been".split())
 
 
 def _tokens(s: str) -> list[str]:
@@ -92,8 +93,15 @@ def _tokens(s: str) -> list[str]:
         for w in ([term] if len(parts) > 1 else []) + parts:
             if w in _STOP or len(w) < 2:
                 continue
-            out.append(w[:-1] if len(w) > 3 and w.endswith("s") and w.isalpha() else w)
+            w = w[:-1] if len(w) > 3 and w.endswith("s") and w.isalpha() else w
+            out.append(_SAME.get(w, w))
     return out
+
+
+# word forms a question and a keyword write differently ("earn per week" vs "weekly earnings")
+_SAME = {"weekly": "week", "monthly": "month", "hourly": "hour", "yearly": "annual", "annually": "annual",
+         "quarterly": "quarter", "earn": "earning", "earned": "earning", "paid": "pay", "salarie": "salary",
+         "employed": "employment"}
 
 
 _FIELDS = (("keywords", 3), ("questions", 2), ("domains", 2), ("title", 2), ("agency", 1))
@@ -134,12 +142,13 @@ def route(question: str, limit: int = 6) -> list[dict]:
             # a word of a phrase the question does not contain ("motor" of "motor vehicle crashes") counts half;
             # a whole keyword ("cpi") or a whole phrase counts in full
             whole = {t for _, toks in V[field] if len(toks) == 1 or toks <= q for t in toks}
-            score += w * sum(idf.get(t, 0.0) * (1 if t in whole else 0.5) for t in hit)
+            # a bare number from a phrase ("10" of "10-k") says nothing on its own
+            score += w * sum(idf.get(t, 0.0) * (1 if t in whole else 0 if t.isdigit() else 0.5) for t in hit)
             for v, toks in V[field]:
                 if len(toks) > 1 and toks <= q:                      # a whole multi-word keyword or phrase
                     score += w * sum(idf.get(t, 0.0) for t in toks) / 2
                     why.insert(0, f"{field}: {v}")
-                elif toks & q:                                      # only some words: say which
+                elif {t for t in toks & q if not t.isdigit()}:       # only some words: say which
                     why.append(f"{field}: {v}" if len(toks) == 1 else
                                f"{field}: {' '.join(sorted(toks & q))} (one word of {v!r})")
         if p.id in q or p.id.replace("-", " ") in question.lower():

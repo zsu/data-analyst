@@ -184,6 +184,7 @@ def html_to_text(raw: str) -> str:
     t = re.sub(r"(?is)<(script|style)[^>]*>.*?</\1>", "", raw)
     t = re.sub(r"(?i)<br\s*/?>|</p>|</div>|</h\d>", "\n", t)
     t = html.unescape(re.sub(r"<[^>]+>", "", t))
+    t = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f]", "", t)     # NULs in Daily Digest renditions (2025)
     t = re.sub(r"[ \t]+\n", "\n", t)
     return re.sub(r"\n{3,}", "\n\n", t).strip()
 
@@ -226,8 +227,10 @@ def _granule_texts(api, pid: str) -> tuple[list[str], list[str], list[str]]:
     got = api.get_json(f"/packages/{urllib.parse.quote(pid)}/granules", {"offsetMark": "*", "pageSize": "100"})
     grans = got.get("granules") or []
     if len(grans) > MAX_GRANULES:
-        raise DataError(f"govinfo: package {pid} has {len(grans)} granules and no package-level text; ask for "
-                        "the granules you need (endpoint granules) instead of the whole text", kind="bad_request")
+        n = got.get("count") or f"over {len(grans)}"
+        raise DataError(f"govinfo: package {pid} has {n} granules and no package-level text: list them (endpoint "
+                        "granules), then ask endpoint text for the ones you need with packageId and granuleId "
+                        "(for_each over the granules table)", kind="bad_request")
     texts, links, committees = [], [], []
     for g in grans:
         gs = api.get_json(f"/packages/{urllib.parse.quote(pid)}/granules/{urllib.parse.quote(g['granuleId'])}/summary")
@@ -245,6 +248,18 @@ def _fetch_text(pack, req) -> list[dict]:
     p = req.get("params") or {}
     pid = bill_package_id(p)
     api = gr.client_for(pack)
+    if p.get("granuleId"):                          # one granule: a Record article, a CFR part, a report part
+        gid = str(p["granuleId"])
+        gs = api.get_json(f"/packages/{urllib.parse.quote(pid)}/granules/{urllib.parse.quote(gid)}/summary")
+        d = gs.get("download") or {}
+        link = d.get("txtLink") or d.get("htmlLink") or ""
+        if not link:
+            raise DataError(f"govinfo: granule {gid} has no text rendition (PDF only); see its pdfLink",
+                            kind="bad_request")
+        text, shown = _link_text(api, link)
+        row = _text_row(pid, gs, text, shown, p.get("max_chars"),
+                        "; ".join(c.get("committeeName", "") for c in gs.get("committees") or [] if c.get("committeeName")))
+        return [{"granule_id": gid, "granule_class": gs.get("granuleClass", ""), **row}]
     try:
         summary = api.get_json(f"/packages/{urllib.parse.quote(pid)}/summary")
     except DataError as e:
@@ -315,6 +330,10 @@ def _child_text(el, name: str) -> str:
     return _plain(c) if c is not None else ""
 
 
+AMEND_WORDS = re.compile(r"\b(?:is|are)\s+(?:hereby\s+)?(?:further\s+)?amended\b|\bby\s+(?:striking|inserting|adding|"
+                         r"redesignating)\b")
+
+
 def _usc(refs) -> list[str]:
     return [r.get("href", "") for r in refs if _local(r.tag) == "ref" and r.get("href", "").startswith("/us/usc/")]
 
@@ -323,7 +342,9 @@ def _section_row(pid: str, sec, path: list[str], max_chars) -> dict:
     cited = list(dict.fromkeys(_usc(_walk(sec))))
     amended = []
     for b in _walk(sec):
-        if _local(b.tag) in BLOCKS and any(_local(x.tag) == "amendingAction" for x in _walk(b)):
+        # GPO marks most actions <amendingAction>, but not every one ("as amended by this Act, is further amended")
+        if _local(b.tag) in BLOCKS and (any(_local(x.tag) == "amendingAction" for x in _walk(b))
+                                        or AMEND_WORDS.search(" ".join(_plain(x) for x in [b]))):
             amended += _usc(_walk(b))
     amended = list(dict.fromkeys(amended))
     classified = [h for h in dict.fromkeys(_usc(_walk(sec, ("quotedContent",)))) if h not in cited]
@@ -399,7 +420,9 @@ def _calls(spec) -> int:
     for r in spec.get("requests") or []:
         ep = eps.get(r.get("endpoint") or "", {})
         size = int((ep.get("paging") or {}).get("size") or 1000)
-        n += 4 if r.get("endpoint") == "text" else 1 if r.get("endpoint") == "sections" else max(1, math.ceil(int(r.get("max_rows") or size) / size))
+        text = r.get("endpoint") == "text"
+        n += (2 if (r.get("params") or {}).get("granuleId") else 4) if text else 1 if r.get("endpoint") == "sections" \
+            else max(1, math.ceil(int(r.get("max_rows") or size) / size))
     return n
 
 

@@ -33,7 +33,7 @@ field meanings and the numbered gotchas: `docs/api_guide.md`; framing and conven
 | Monthly receipts, outlays, deficit since FY1981 | `v1/accounting/mts/mts_receipts_outlays_deficit_surplus` | `amt_category` | flow | $M |
 | Receipts, outlays, deficit since FY2015 | `v1/accounting/mts/mts_table_1` | months: latest `record_date`, `record_type_cd` MTH; full FY: the September release's "Year-to-Date" row (`record_type_cd` SL, `data_type_cd` T) in the current-year block (`sequence_number_cd` 2.13; 1.13 is the prior year) | flow | $ |
 | Receipts by source, outlays by function | `v1/accounting/mts/mts_table_9` | September `record_date`; `data_type_cd` D components, T "Total" | flow | $ |
-| Outlays by agency, bureau, program | `v1/accounting/mts/mts_table_5` | `record_type_cd` A agency totals; D rows sum to "Total Outlays" | flow | $ |
+| Outlays by agency, bureau, program | `v1/accounting/mts/mts_table_5` | `record_type_cd` A agency totals; D rows sum to "Total Outlays". A program account is a `classification_desc` line under its agency (Medicaid: "Grants to States for Medicaid" under HHS, `record_type_cd` P; FY2019 $409.4 billion = OMB Table 8.5): fetch the agency's rows and match the line by name (`--values` shows only examples) | flow | $ |
 | Gross interest expense | `v2/accounting/od/interest_expense` | all rows (detail only) sum to the total; MTS leaves out the GAS "Restoration of Interest" line (FY2025 on); TIPS lines include inflation compensation, a separate GAS "Inflation Compensation" line is not TIPS (docs/datasets.md) | flow | $ |
 | Outlays by budget function (Social Security 650, Medicare 570, defense 050, net interest 900 ...) | MTS Table 9 (`v1/accounting/mts/mts_table_9`) | function rows add to total outlays; a function is not CBO's program measure (Social Security 650 includes administration; CBO reports benefits; Medicare 570 is gross of some offsetting receipts CBO nets) | flow | $M |
 | Individual income tax refunds | DTS Table V `v1/accounting/dts/income_tax_refunds_issued` (cash, checks + EFT, refundable credits included, Treasury Offset Program offsets excluded); MTS Table 4 refunds (budget basis: refundable credits above liability are outlays) | the two differ by tens of billions a year and peak in different months (DTS February, MTS April): name the basis | flow | $M |
@@ -128,10 +128,18 @@ negative amounts.
   independent one. cbo.gov refuses scripted downloads (HTTP 403), and a browser pane may only download its
   PDF: when no one can open it, record CBO's Monthly Budget Review as "not checked" in benchmark.csv (with a
   data_needs entry), or ask the user to upload the PDF.
+- **Identity gaps:** in `mts_receipts_outlays_deficit_surplus`, receipts minus outlays misses the deficit line by
+  a few million in some months (Sep 2022 by $10 million, Mar 2024 by $270 million, as published): use the
+  deficit line for deficits, check an identity with a tolerance of a few hundred million, and tie fiscal-year
+  totals to the September MTS.
 - **Coverage:** MTS Tables 1 to 9 start in March 2015, so FY2015 is their first full year; a filter from an
   earlier date returns rows from 2015 on without an error. For earlier years use
   `mts_receipts_outlays_deficit_surplus` (totals from FY1981) or OMB's Historical Tables through FRED
   (`FYOINT` net interest, `FYFSD` deficit, `FYONET` outlays, in millions), and say where the series join.
+  FRED carries only those totals: a receipt or outlay line before FY2015 (customs duties, a function) comes from
+  OMB's Historical Tables workbooks (Table 2.5 receipts by source, 3.2 outlays by function, 10.1 GDP; FY1940 on),
+  linked from whitehouse.gov/omb/information-resources/budget/historical-tables/ (file names carry the budget
+  year: `hist02z5_fy2027.xlsx`): save the rows you use in `published/` (SKILL.md section 2).
 
 ## Access
 - No key, no registration, GET only, no documented rate limit (the client keeps 4 requests a second and

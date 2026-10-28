@@ -66,6 +66,7 @@ import os
 import re
 import shutil
 import sys
+sys.dont_write_bytecode = True  # never write __pycache__ into the skill folder
 import xml.etree.ElementTree as ET
 from datetime import date, datetime, timezone
 
@@ -487,6 +488,7 @@ def package_files(collection: str, number, data_path: str, ddi_path: str | None,
     ]
     with open(os.path.join(d, "README.md"), "w", encoding="utf-8") as f:
         f.write("\n".join(lines) + "\n")
+    core_package.copy_pack_lib(os.path.dirname(os.path.dirname(d)), "ipums")   # analysis.py reruns alone
 
     files = [{"name": "ipums_extract", "file": "ipums_extract.csv", "rows": nrows, "columns": columns,
               "sha256": core_package.sha256(csv_path)},
@@ -755,7 +757,7 @@ def _bundle_fields(r: dict, bundle: str) -> None:
 # What the model does with the hand-download bundle (every manual route says the same).
 SEND_BUNDLE = ("Send INSTRUCTIONS.md, both download scripts (download_scripts: download_ipums.sh for macOS/Linux, "
                "download_ipums.ps1 for Windows) and extract_spec.json (request_body, the extract definition the "
-               "scripts have built in) with present_files / SendUserFile when available, and print their full paths. "
+               "scripts have built in) with your file-sending tool when available, and print their full paths. "
                "Give the user the one command for their system (user_commands; both when unsure): the script asks "
                "for the IPUMS key with hidden input, submits, waits and downloads the .csv.gz and .xml. Never ask for "
                "the key in the chat. Wait for the upload, then run next_command.")

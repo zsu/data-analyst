@@ -178,7 +178,7 @@ class TestMethodRules(MethodBase):
         D["questions"][0].update(followed_up=True)
         r = self.check(D)
         self.assertEqual(fails(r), [])
-        self.assertTrue(any("first line of the answer" in m for _, ok, m in r if ok))
+        self.assertTrue(any("opening paragraph of the answer" in m for _, ok, m in r if ok))
 
     def test_literature_required(self):
         D = copy.deepcopy(GOOD)
@@ -685,6 +685,137 @@ class TestAnswerGate(MethodBase):
         write(os.path.join(self.out, "facts.json"), F)
         write(os.path.join(self.out, "answer.md"), "The 2024 slope was 0.5, matching the published figure.\n")
         self.assertFalse(any("households" in m for m in bad()))
+
+    def test_answer_round28_rules(self):
+        A = audit_answer
+        # a clause about one row must cite that row's figure, not a sibling row's ("the 2nd ... enacted 41")
+        facts = {f"n_{k}": {"value": v, "fmt": "num:0", "where": {"district": k}, "label": f"Permits issued, {k}"}
+                 for k, v in (("Northside", 41), ("Southside", 57))}
+        facts["n_all"] = {"value": 98, "fmt": "num:0", "label": "Permits issued, all districts"}
+        for txt, who in (("Southside (2023-2024) issued 41 permits", "southside"),
+                         ("Southside issued 57 permits", None),
+                         ("Southside issued 57 permits, more than the 41 elsewhere", None),   # a comparison
+                         ("Northside and Southside issued 41 and 57", None),                 # two rows named
+                         ("In southside terms, permits reached 41", None)):                  # a phrase, not the name
+            n = [m for m in A.answer_numbers(txt) if m["tok"] in ("41", "57")][0]
+            fh = [f for f in facts.values() if A._matches(n, *A.fact_display(f))]
+            self.assertEqual(A._clause_owner([txt], n, fh, facts), who, txt)
+        # two period rows with their values swapped; a "2020 dollars" header is a price base, not a period
+        facts = {f"{c}{y}": {"value": v, "fmt": "dollars:0", "where": {"year": str(y)}}
+                 for c, y, v in (("a", 2012, 512), ("a", 2022, 640), ("r", 2012, 601), ("r", 2022, 640))}
+        shown = [(k, A.fact_display(f), f) for k, f in facts.items()]
+        table = "| Year | Pay | Pay, 2022 dollars |\n|---|---|---|\n| 2012 | {} | $601 |\n| 2022 | {} | $640 |\n"
+        self.assertEqual(A._period_misfits(table.format("$640", "$512"), shown, facts), ["$640", "$512"])
+        self.assertEqual(A._period_misfits(table.format("$512", "$640"), shown, facts), [])
+        # statute lists, provisions and lists of days are identifiers; a number after a lone date is not
+        for txt, toks in (("It amends 42 U.S.C. 1395, 1396 and 1397.", []), ("FLSA section 13(a)(1) applies.", []),
+                          ("Votes on March 4, 6, 11 and 12, 2024.", []), ("On March 3, 12 states", ["12"]),
+                          ("42 U.S.C. 1395, 42 U.S.C. 1396 and 138 Stat. 3234", []),
+                          ("42 U.S.C. 1395 and 12 percent", ["12 percent"]),
+                          ("These are votes 1 to 659 of the session; 351 were on nominations.", ["351"]),
+                          ("The gap is significant at 90 percent (90 percent margins of error); 90 percent of", ["90 percent"])):
+            self.assertEqual([n["tok"] for n in A.answer_numbers(txt)], toks, txt)
+        # prose: a measure's acronym right before the number; a year after a comma belongs to the next clause; a
+        # repeated number is checked at each place; "1987 (4.2" dates the number; a label's one year dates a fact
+        mf = {"pce": {"value": 2.8, "fmt": "pct100:1", "label": "PCE price index, change 2019-2025"},
+              "eci": {"value": 3.4, "fmt": "pct100:1", "label": "ECI wages, change 2019-2025"},
+              "x": {"value": 1.0, "fmt": "num:0", "label": "other"}}
+        for txt, bad in (("prices (PCE, up 3.4 percent)", "PCE"), ("prices (PCE, up 2.8 percent)", None),
+                         ("PCE-based estimates instead of ECI, 3.4 percent", None)):
+            n = [m for m in A.answer_numbers(txt) if "percent" in m["tok"]][0]
+            fh = [f for f in mf.values() if A._matches(n, *A.fact_display(f))]
+            self.assertEqual(A._measure_named([txt], n, fh, mf), bad, txt)
+        y = lambda v, yr: {"value": v, "fmt": "pct100:2", "where": {"year": yr}}        # noqa: E731
+        self.assertTrue(A._wrong_year(A._year_before("The rate topped in 2011 at ", ", eased to 1.9 percent in 2014."),
+                                      [y(4.17, "2012")]))
+        self.assertTrue(A._wrong_year(A._year_before("last seen in 1987 (", " percent)"), [y(4.2, "2026")]))
+        self.assertTrue(A._wrong_year(" in 2024", [{"value": 1, "where": {"alt": "x"}, "label": "Share, FY2026, alternative"}]))
+        self.assertFalse(A._wrong_year(" in 1944", [{"value": 1, "where": {"m": "peak"}, "label": "Peak share since 1939"}]))
+        # cells swapped between two columns of one row hold the other column's measure
+        cf = {}
+        for row, a, b in (("North", -15.1, -23.4), ("South", -9.0, -12.2), ("East", -6.1, -8.8), ("West", -4.4, -7.7)):
+            cf[f"a_{row}"] = {"value": a, "fmt": "num:1", "where": {"region": row}, "label": f"{row}: change to 2025"}
+            cf[f"b_{row}"] = {"value": b, "fmt": "num:1", "where": {"region": row}, "label": f"{row}: change to 2026"}
+        t = ("| Region | To 2025 | To 2026 |\n|---|---|---|\n| North | {} | {} |\n| South | -9.0 | -12.2 |\n"
+             "| East | -6.1 | -8.8 |\n| West | -4.4 | -7.7 |\n")
+        self.assertEqual(A._column_misfits(t.format("-15.1", "-23.4"), cf), [])
+        self.assertEqual(A._column_misfits(t.format("-23.4", "-15.1"), cf), ["-23.4", "-15.1"])
+        self.assertEqual([n["tok"] for n in A.answer_numbers("file versions 4, 4 and 3; 12 percent")], ["12 percent"])
+        # a lag is a statistic ("6 months later"); a standard window is not ("over the past 12 months"); a count
+        # with its noun is no percent fact
+        self.assertEqual([n["tok"] for n in A.answer_numbers("Rates followed 6 months later, over the past 12 months")],
+                         ["6"])
+        F = copy.deepcopy(FACTS)
+        F["rate"] = {"value": 6.02, "fmt": "pct100:2", "derivation": "x", "label": "rate"}
+        write(os.path.join(self.out, "facts.json"), F)
+        write(os.path.join(self.out, "answer.md"), "The 2024 slope was 0.5, as published. Prices followed 6 months later.\n")
+        r, _ = quiet(A.audit, self.out)
+        self.assertTrue(any("6 not found" in m for _, _, m in fails(r, "answer")))
+        write(os.path.join(self.out, "facts.json"), FACTS)
+        # a cited figure stored on a rounding tie needs full precision or a stated reason
+        F = copy.deepcopy(FACTS)
+        F["tie"] = {"value": 744.25, "fmt": "num:1", "source": "exhibits/trend.csv", "label": "Outlays, $B"}
+        write(os.path.join(self.out, "facts.json"), F)
+        write(os.path.join(self.out, "answer.md"), "The 2024 slope was 0.5, as published. Outlays were 744.3.\n")
+        r, _ = quiet(A.audit, self.out)
+        self.assertTrue(any("rounding tie" in m for _, _, m in fails(r, "answer")))
+        D = copy.deepcopy(GOOD)
+        D["rounding_ties_ok"] = [{"fact": "tie", "reason": "published to the cent"}]
+        write(os.path.join(self.out, "decisions.json"), D)
+        r, _ = quiet(A.audit, self.out)
+        self.assertFalse(any("rounding tie" in m for _, _, m in fails(r, "answer")))
+        write(os.path.join(self.out, "decisions.json"), GOOD)
+        write(os.path.join(self.out, "facts.json"), FACTS)
+        # a credited published "about 1 percent" is not our preliminary 1.31 read coarsely
+        F = copy.deepcopy(FACTS)
+        F["sh"] = {"value": 1.31, "fmt": "pct100:2", "derivation": "x", "preliminary": True}
+        write(os.path.join(self.out, "facts.json"), F)
+        write(os.path.join(self.out, "exhibits", "benchmark.csv"),
+              "measure,period,computed,published,source,url,accessed,match,note\n"
+              "slope,2024,0.5,0.5,BLS,https://x.gov,2026-10-21,yes,\n"
+              "DHS change (percent),2026,-0.8,1,GAO,https://x.gov,2026-10-21,no,GAO rounds to whole percents\n")
+        write(os.path.join(self.out, "answer.md"), "The 2024 slope was 0.5, as published.\n\n"
+                                                   "GAO reports that DHS fell about 1 percent.\n")
+        r, _ = quiet(A.audit, self.out)
+        self.assertFalse(any("preliminary" in m for _, _, m in fails(r, "answer")))
+        write(os.path.join(self.out, "facts.json"), FACTS)
+        # a published bound ("over 45 percent") is met or missed, not compared as a figure
+        for pub, ok in (("over -45", True), ("over -50", False), ("at most 2", True)):
+            write(os.path.join(self.out, "exhibits", "benchmark.csv"),
+                  "measure,period,computed,published,source,url,accessed,match,note\n"
+                  f"slope,2024,0.5,0.5,BLS,https://x.gov,2026-10-21,yes,\nfall,2025,{'-46' if '45' in pub or '50' in pub else '1.7'},"
+                  f"{pub},GAO,https://x.gov,2026-10-21,yes,\n")
+            self.assertEqual(not [m for _, okk, m in MA.check_benchmark(self.out, FACTS) if not okk], ok, pub)
+        # a fall word with a minus sign is a double negative
+        F = copy.deepcopy(FACTS)
+        F["fte"] = {"value": -8.3, "fmt": "signed:pct100:1", "derivation": "x", "label": "FTE change"}
+        write(os.path.join(self.out, "facts.json"), F)
+        for txt, flagged in (("FTEs fell -8.3 percent.", True), ("FTEs changed by -8.3 percent.", False)):
+            write(os.path.join(self.out, "answer.md"), "The 2024 slope was 0.5, as published. " + txt + "\n")
+            r, _ = quiet(A.audit, self.out)
+            self.assertEqual(any("direction words disagree" in m for _, _, m in fails(r, "answer")), flagged, txt)
+        write(os.path.join(self.out, "facts.json"), FACTS)
+        # "Democrats" names the row keyed "Democratic"
+        self.assertIn("democrats", A._forms("Democratic"))
+        # a list of survey codes after a variable name is identifiers, not statistics
+        self.assertEqual([n["tok"] for n in A.answer_numbers("Coded as RACE 651 or 652; CLASSWKR 21, 25 and 27.")], [])
+        self.assertEqual([n["tok"] for n in A.answer_numbers("RACE 651 or 9 percent")], ["9 percent"])
+        # the direction of a number is judged by the fact of the year its sentence gives
+        F = {"g20": {"value": -2.47, "fmt": "pct100:1", "where": {"year": "2020"}},
+             "q23": {"value": 2.52, "fmt": "pct100:1", "where": {"year": "2023"}}}
+        n = A.answer_numbers("Output rose 2.5 percent in 2020.")[0]
+        fh = [f for f in F.values() if A._matches(n, *A.fact_display(f))]
+        self.assertEqual(A._dated(["Output rose 2.5 percent in 2020."], n, fh), [F["g20"]])
+        # a figure published in thousands may be written out in full
+        write(os.path.join(self.out, "exhibits", "benchmark.csv"),
+              "measure,period,computed,published,source,url,accessed,match,note\n"
+              "slope,2024,0.5,0.5,BLS,https://x.gov,2026-10-21,yes,\n"
+              "Jobs added (thousands),2025,251.2,254,BLS,https://x.gov,2026-10-21,no,first print; revised since\n")
+        for txt, ok in (("BLS first reported 254,000 jobs.", True), ("BLS first reported 254 thousand jobs.", True),
+                        ("BLS first reported 245,000 jobs.", False)):
+            write(os.path.join(self.out, "answer.md"), "The 2024 slope was 0.5, as published. " + txt + "\n")
+            r, _ = quiet(A.audit, self.out)
+            self.assertEqual(not any("not found among the facts" in m for _, _, m in fails(r, "answer")), ok, txt)
 
     def test_answer_round21_rules(self):
         A = audit_answer

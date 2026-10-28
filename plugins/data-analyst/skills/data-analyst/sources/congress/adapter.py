@@ -146,6 +146,27 @@ def senate_menu_url(congress: int, session: int) -> str:
     return f"{SENATE}/legislative/LIS/roll_call_lists/vote_menu_{int(congress)}_{int(session)}.xml"
 
 
+def refused_hosts(spec) -> str:
+    """--check probes only api.congress.gov. When the spec needs Senate vote XML, try senate.gov once: a refusal
+    (HTTP 403 bot filter) is returned as the error a fetch would raise, so --check routes it before the fetch."""
+    def senate(r):
+        p, ep = r.get("params") or {}, r.get("endpoint")
+        ch = str(p.get("chamber") or "").lower()
+        return ep == "senate_votes" or (ep == "roll_call" and ch == "senate") or (ep == "bill_votes" and ch != "house")
+    if not any(senate(r) for r in spec.get("requests") or [] if isinstance(r, dict)):
+        return ""
+    try:
+        _client(SENATE, "senate-lis").get(urllib.parse.urlsplit(senate_menu_url(119, 1)).path)
+    except DataError as e:
+        if e.kind == "blocked":
+            return (f"{e}. Senate vote XML cannot be fetched from here; House votes can (bill_votes with "
+                    "\"chamber\": \"house\"), and source.md (Access) gives the Congressional Record route for Senate "
+                    "roll calls")
+    except Exception:                               # an outage or a fixture gap: the fetch will say
+        pass
+    return ""
+
+
 def _t(el, path, default=""):
     x = el.find(path) if el is not None else None
     return " ".join("".join(x.itertext()).split()) if x is not None else default
@@ -396,10 +417,12 @@ def manual_items(spec, pack):
             rr = {**rr, "params": {**rr["params"], "congress": current_congress()}}
         rr = {**rr, "params": {k: v for k, v in (rr.get("params") or {}).items() if k not in ("title_contains",)}}
         for it in gr.manual_items(pack, {"requests": [rr]}):
-            it["url"] += ("&" if "?" in it["url"] else "?") + "api_key=DEMO_KEY"
+            if "api_key=" not in it["url"]:              # the generic items may carry it already
+                it["url"] += ("&" if "?" in it["url"] else "?") + "api_key=DEMO_KEY"
             note = "DEMO_KEY is api.data.gov's public demo key (about 10 requests an hour); replace it with your own key"
             if r.get("endpoint") == "bill_votes":
-                note = ("the bill's actions; each recordedVotes entry links a vote XML file to download as well; " + note)
+                note = ("the bill's actions; each recordedVotes entry links a vote XML file (clerk.house.gov or "
+                        "senate.gov) to save as well, from a web browser if a script is refused; " + note)
             it["note"] = (it.get("note", "") + "; " if it.get("note") else "") + note
             items.append(it)
     return items

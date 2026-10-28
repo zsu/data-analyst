@@ -198,7 +198,14 @@ def annual_average(s: pd.Series, require_full: bool = True) -> pd.DataFrame:
     A year with a missing month gets NaN when require_full (the default), because a 10- or 11-month mean is not
     an annual average. Returns a DataFrame indexed by year (int) with columns mean and n_periods:
     annual_average(s).loc[2019, "mean"].
+    A median (CPS weekly earnings, LE series) or productivity (PR) has no annual average: BLS computes the
+    annual figure from the year's data (the 2024 high school median is 930; the mean of its quarters is 935).
     """
+    if re.match(r"(?:LE[SU]|PR[SU])", str(s.name or "")):
+        print(f"[tsstats] WARNING: annual_average: {s.name} is a median or a productivity measure; BLS's annual "
+              "value is not the mean of its quarters. Use the published annual figure (v2 annual_average, FRED "
+              "'<id>A', or BLS's annual table in published/) and keep this mean as a cross-check only.",
+              file=sys.stderr)
     ppy = PER_YEAR[infer_freq(s)]
     g = s.groupby(s.index.year)
     out = pd.DataFrame({"mean": g.mean(), "n_periods": g.count()})

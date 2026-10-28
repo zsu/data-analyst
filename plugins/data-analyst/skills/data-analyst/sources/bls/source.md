@@ -81,6 +81,12 @@ n_missing, n_preliminary, has_annual_average, bls_messages), `raw/response_NN.js
 - **Revisions**: CES revises two prior months each release and benchmarks each February; CPI seasonal
   factors are revised each February for five years; LAUS and state CES are model-based and revised each
   March; chained CPI-U is interim for 10 to 12 months. State the retrieval date.
+- **Federal employment (CES)**: `CES9091000001` federal, `CES9091100001` except USPS (the closest match to
+  OPM's FWD, which leaves out USPS), `CES9091912001` USPS. CES counts anyone paid for the pay period that
+  includes the 12th: employees on paid leave or ongoing severance and furloughed staff paid later are
+  employed, so 2025's deferred resignations left CES only when they came off payrolls (October 2025, first
+  printed as -179,000; Economics Daily, "Federal employment reached lowest level since 2014"). OPM counts
+  on-board staff on the month's last day: the two differ in timing as well as coverage.
 - **CPS January population controls** (footnote 12): levels jump December to January; compare rates.
 - **BLS answers HTTP 200 on failure**; the pack checks `status`. A bad ID returns no data with a message
   ("Series does not exist", "No Data Available for Series X Year: 2026"): the run exits 2 listing it.
@@ -94,6 +100,11 @@ n_missing, n_preliminary, has_annual_average, bls_messages), `raw/response_NN.js
   mean of the quarterly indexes (2025 productivity on 2026-10 data: quarterly mean 2.5, published 2.1): take annual PR
   figures from the release's annual table (save it in published/) or the annual period. The latest quarters
   are revised each release without a `P` flag: register them with `preliminary=True`.
+- **Annual medians**: CPS median usual weekly earnings (LEU/LES, quarterly) have annual medians that BLS
+  computes from the year's sample, not from the quarters (2024 high school graduates: published 930, mean of
+  quarters 935). Take them from v2 `annual_average` (period Q05), from FRED's annual copies (`<id>A`, e.g.
+  `LEU0252917300A`, identical to BLS's tables) or from the annual table (cpsaat37) in `published/`.
+  By education (25 and over, full time): `--search "weekly earnings education"`.
 - **Annual averages**: prefer BLS's M13 (v2 + `annual_average`); `tsstats.annual_average` refuses years
   with a missing month. Without a key, a mean of the 12 published (rounded) months can miss BLS's annual
   average by 0.1 (2019 prime-age women's participation rate, LNU01300062: 76.05 rounds to 76.1, BLS publishes 76.0

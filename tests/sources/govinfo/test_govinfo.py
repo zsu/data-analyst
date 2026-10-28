@@ -115,6 +115,24 @@ class TestGovinfo(PackTest):
         self.assertEqual((clinic[0]["usc_amended"], clinic[0]["usc_cited"]), ("", ""))
         self.assertEqual(len(clinic[0]["text"]), 200)
 
+    def test_unmarked_amending_action_counts_as_amended(self):
+        # PL 119-1 sec. 3(b): "Section 236 of the INA (8 U.S.C. 1226), as amended by this Act, is further amended"
+        # carries no <amendingAction> tag in GPO's USLM
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("govinfo_adapter_t", os.path.join(pack_dir("govinfo"), "adapter.py"))
+        a = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(a)
+        xml = ('<lawDoc xmlns="http://schemas.gpo.gov/xml/uslm"><main><section identifier="/us/pl/119/1/s3">'
+               '<num value="3">SEC. 3.</num><subsection><chapeau>Section 236 of the Act (<ref href="/us/usc/t8/s1226">'
+               '8 U.S.C. 1226</ref>), as amended by this Act, is further amended</chapeau></subsection>'
+               '<subsection><chapeau>See also <ref href="/us/usc/t8/s1101">8 U.S.C. 1101</ref>.</chapeau></subsection>'
+               '</section></main></lawDoc>')
+        row = a.uslm_sections("PLAW-119publ1", xml)[0]
+        self.assertEqual((row["usc_amended"], row["usc_cited"]), ("8 U.S.C. 1226", "8 U.S.C. 1101"))
+        # Daily Digest renditions carried NUL characters in 2025
+        self.assertEqual(a.html_to_text("<pre>(Vote No.\x00 7)</pre>"), "(Vote No. 7)")
+        self.assertEqual(a._calls({"requests": [{"endpoint": "text", "params": {"packageId": "C", "granuleId": "G"}}]}), 2)
+
     def test_sections_without_uslm(self):
         a = adapter()                                   # bills carry the older bill XML, not USLM [live 2026-10-25]
         p = a.check_spec({"requests": [{"name": "b", "endpoint": "sections", "params": {"packageId": "BILLS-118hr4763eh"}}]})

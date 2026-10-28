@@ -62,6 +62,7 @@ import os
 import re
 import shutil
 import sys
+sys.dont_write_bytecode = True  # never write __pycache__ into the skill folder
 import tempfile
 import zipfile
 from datetime import datetime, timezone
@@ -74,7 +75,8 @@ for _p in (HERE, os.path.join(SKILL_DIR, "scripts")):
 
 from treasury_api import (BASE, MAX_PAGE, FiscalDataClient, FiscalDataError, build_url,  # noqa: E402
                           filter_string, normalize_endpoint, query_params)
-from core import manual, routes  # noqa: E402
+from core import manual, package as core_package, routes  # noqa: E402
+from core import policy as cpol  # noqa: E402
 from core.env import detect_environment, upload_dirs  # noqa: E402
 from core.keys import redact  # noqa: E402
 from core.package import data_dir  # noqa: E402
@@ -361,7 +363,7 @@ def write_package(spec: dict, out: str, results: dict, route: str):
     how = "downloaded by hand with the bundled links, then packaged with --ingest" if route == "manual_download" \
         else "Fiscal Data API"
     lines = [f"# Treasury Fiscal Data download: {spec.get('description', '')}", "",
-             f"- Retrieved: {now} ({how})",
+             f"- Retrieved: {cpol.local_stamp(now)} ({how})",
              f"- Data cut-off (as_of): {spec.get('as_of') or 'none (latest available at retrieval)'}",
              f"- Source: {BASE}", "",
              "Values are exactly as published. The API returns every value as a string; its \"null\" is an empty "
@@ -406,6 +408,7 @@ def write_package(spec: dict, out: str, results: dict, route: str):
               "permitted. Cite the source and the retrieval date, because Treasury revises some series.", ""]
     with open(os.path.join(data_dir, "README.md"), "w", encoding="utf-8") as f:
         f.write("\n".join(lines))
+    core_package.copy_pack_lib(os.path.dirname(os.path.dirname(os.path.abspath(data_dir))), SOURCE)
     return prov, citation
 
 
@@ -515,7 +518,7 @@ can change dates and long numbers.
 
 SEND_BUNDLE = ("Send INSTRUCTIONS.md, both download scripts (download_scripts: download_treasury.sh for macOS/Linux, "
                "download_treasury.ps1 for Windows) and spec.json (request_spec, the request the scripts have built "
-               "in) with SendUserFile / present_files when available, and print their full paths. Give the user the "
+               "in) with your file-sending tool when available, and print their full paths. Give the user the "
                "one command for their system (user_commands; both when unsure); no key is needed. Wait for the "
                "upload, then run next_command.")
 
@@ -720,7 +723,7 @@ def route_check(spec: dict, out: str, env: str, spec_path: str, refresh: bool = 
         stale = "" if spec.get("as_of") else (" No as_of cut-off is set, so newer records may exist; pass --refresh "
                                               "if the user wants the latest data.")
         return done("reuse_existing", f"The data for this spec are already in {ddir(out)} "
-                    f"(retrieved {ex['retrieved']}).{stale}", "Skip the download and continue with the analysis.")
+                    f"(retrieved {cpol.local_stamp(ex['retrieved'])}).{stale}", "Skip the download and continue with the analysis.")
     p = FiscalDataClient(timeout=20, verbose=False).ping()
     r.update(api_reachable=p["reachable"], detail=p["detail"])
     if p["reachable"]:
@@ -738,6 +741,10 @@ def route_check(spec: dict, out: str, env: str, spec_path: str, refresh: bool = 
                 counts[d["name"]] = None
                 problems.append(f"{d['name']}: {e}")
         r["dataset_counts"] = counts
+        later = [d["name"] for d in spec["datasets"] if split_filter(effective_filter(spec, d))[1]]
+        if later:                                       # counts are before the local part of the filter
+            r["dataset_counts_note"] = (f"{', '.join(later)}: counted before the conditions applied locally after the "
+                                        "download (values with &, commas or parentheses); the fetch keeps fewer rows")
         if problems:
             return done("fix_spec", "The API answers, but the spec needs fixing before the download: "
                         + " | ".join(problems),
@@ -920,7 +927,7 @@ def main():
             emit(r, routes.EXIT_SPEC if r["route"] in ("fix_spec", "report_error") else 0)
         ex = existing_data(a.out, spec)
         if ex and ex["files_ok"] and ex["spec_matches"] and not refresh:
-            say(f"[fiscaldata] reusing {ddir(a.out)} (retrieved {ex['retrieved']}); pass --refresh to download again")
+            say(f"[fiscaldata] reusing {ddir(a.out)} (retrieved {cpol.local_stamp(ex['retrieved'])}); pass --refresh to download again")
             emit({"status": "ok", "source": SOURCE, "route": "reuse_existing", "data_dir": ddir(a.out), **ex})
         emit(download(spec, a.out, FiscalDataClient()))
     except FiscalDataError as e:

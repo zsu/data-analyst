@@ -43,7 +43,7 @@ The ACS starts in 2000 (large samples from 2005, group quarters from 2006). CPS 
 |---|---|---|---|
 | USA (ACS/census) | `PERWT` | `HHWT` (one row per household: `PERNUM == 1`) | `REPWTP` replicate weights (80) for SEs; request them explicitly |
 | CPS ASEC | `ASECWT` | `ASECWTH` | `WTFINL` is **empty** on ASEC records |
-| CPS basic monthly | `WTFINL` | `HWTFINL` | `ASECWT` is empty on monthly records |
+| CPS basic monthly | `WTFINL` | `HWTFINL` | `ASECWT` is empty on monthly records. Labor-force **levels** to match BLS: `COMPWT` (composite weight, request it), which reproduces BLS's total monthly employment exactly (2024: 161,346 thousand; `WTFINL` gives about 0.4 percent more) and subgroups closely (women 25-54: annual levels within 0.1 percent, single months within about 0.4 percent). Shares barely differ |
 | CPS earnings (outgoing rotation, MISH 4 and 8) | `EARNWT` | | For `EARNWEEK2`, `HOURWAGE2` and `UNION` (union membership is asked in the outgoing rotation only; BLS's rate is members / employed wage and salary workers, self-employed excluded). Pooling months: divide by the number of months (12; 11 for 2025) for annual-average counts |
 | NHIS 2019 on | `SAMPWEIGHT` | | One sample adult and one sample child per household: `ASTATFLG` 1 = sample adult, `CSTATFLG` 1 = sample child. Adults sum to the civilian noninstitutionalized adult population (2024: 260M), children to 72M. 2020 sample adults: `PARTWEIGHT` when pooling 2019-2020 (2020 only) |
 | NHIS before 2019 | `PERWEIGHT` (person file), `SAMPWEIGHT` (sample adult/child items) | | The weighting changed in 2019: IPUMS advises against comparing trends across 2019 |
@@ -101,7 +101,11 @@ dorms are coded in their parents' household. Reproduced AD-1 exactly for 2019 an
 - `UHRSWORK`: usual hours per week last year (0 = N/A, 99 = 99+).
 - `WKSWORK1`: weeks worked last year (available for ACS 2019+ and censuses). `WKSWORK2`: intervals (1 = 1–13 … 6 = 50–52) for 2008–2018.
 - Full-time, full-year = UHRSWORK ≥ 35 and weeks ≥ 50 (for 2008–18 use WKSWORK2 = 6).
-- `OCC`, `OCC2010` (harmonized), `OCCSOC`; `IND`, `IND1990`, `INDNAICS`.
+- `OCC`, `OCC2010` (harmonized), `OCCSOC`; `IND`, `IND1990`, `INDNAICS`. The extract's `codebook.csv` has no
+  value labels for these: `IND`/`OCC` use the Census code list of the survey year (CPS 2024: construction
+  industry IND 0770; construction and extraction occupations OCC 6200-6950), listed on the variable's IPUMS
+  page (cps.ipums.org/cps-action/variables/IND#codes_section). Check a code set against a BLS table (cpsaat18
+  for industries, cpsaat11 for occupations) before using it.
 - `TRANWORK` ✔: usual means of transportation to work last week. 0 N/A (not a worker or not at work that week),
   10-15 car, truck or van, 31-39 public transit and taxi, 50 bicycle, 60 walked, 70 other, **80 worked at home**.
   Census's commuting tables (B08301, B08101) count workers 16+ at work last week, i.e. TRANWORK > 0: keep that
@@ -144,8 +148,10 @@ case-select `RELATE` 1 (householder) and weight by HHWT with REPWT1-80.
 **Demographics:** AGE (0–85; 80 = 80–84 and 85 = 85+ in recent years), SEX, RACE, HISPAN, MARST, STATEFIP, METFIPS.
 
 **Nativity** ✔ (1994+)
-- `NATIVITY`: 0 unknown, 1 both parents native, 2 father foreign, 3 mother foreign, 4 both parents foreign, **5 foreign born**.
+- `NATIVITY`: 0 unknown, 1 both parents native, 2 father foreign, 3 mother foreign, 4 both parents foreign, 5 foreign born
+  (by birthplace: it includes CITIZEN 2 and 3, so it is **not** BLS's foreign born). Use it for parents' nativity.
 - `CITIZEN`: 1 born in the US, 2 born in US outlying areas, 3 born abroad of American parents, **4 naturalized**, **5 not a citizen**.
+  BLS's foreign born ("not U.S. citizens at birth") = CITIZEN 4-5; it reproduces BLS's published medians by nativity.
 - `BPL`, `YRIMMIG`.
 
 **Education** ✔
@@ -164,7 +170,10 @@ case-select `RELATE` 1 (householder) and weight by HHWT with REPWT1-80.
   an extract asking for it for later months fails with HTTP 400.
 - `HOURWAGE2` (999.99 NIU; `HOURWAGE` likewise replaced), `PAIDHOUR` (1 no, 2 yes paid hourly).
 - To match BLS's usual weekly earnings: full time = usual hours 35 or more, plus workers whose hours vary
-  (`UHRSWORK1` 997) who usually work full time (`WKSTAT`); medians interpolated in $50 intervals centred on
+  (`UHRSWORK1` 997) who usually work full time (`WKSTAT` 10-13 or 21; usually part time: 14, 15, 20, 22, 40-42;
+  BLS classes people absent from work by their usual status, and the 2014/2024 shares for women 25-54 match
+  BLS's LNU02600062 / LNU02000062); `clean_missing` blanks 997, so take
+  the full-time flag from the raw column (or from `WKSTAT` alone) first. Medians interpolated in $50 intervals centred on
   multiples of $50 (`wmedian_binned(x, w, width=50, offset=25)`); 2025 averages 11 months (no October).
 - Use the `EARNWT` weight.
 - Use these for minimum-wage and hourly-wage distributions.

@@ -110,6 +110,23 @@ class TestCongress(PackTest):
         code, r = self.check(bad)
         self.assertEqual(r["route"], "fix_spec", r)
 
+    def test_refused_senate_host_is_found_at_check(self):
+        # senate.gov answered scripts with HTTP 403 on 2026-10-27 while api.congress.gov answered
+        from unittest import mock
+        from core.http import DataError
+        a = adapter()
+
+        class Refuses:
+            def get(self, *_a, **_k):
+                raise DataError("senate-lis: HTTP 403 from www.senate.gov: the host refused", kind="blocked")
+        senate = {"requests": [{"name": "v", "endpoint": "bill_votes",
+                                "params": {"congress": 119, "billType": "hr", "billNumber": 1}}]}
+        house = {"requests": [{"name": "v", "endpoint": "bill_votes",
+                               "params": {"congress": 119, "billType": "hr", "billNumber": 1, "chamber": "house"}}]}
+        with mock.patch.object(a, "_client", lambda *_a: Refuses()):
+            self.assertIn("chamber", a.refused_hosts(senate))
+            self.assertEqual(a.refused_hosts(house), "")
+
     def test_manual_bundle(self):
         sp, out = self.write_spec(SPEC)
         code, r = self.cli(sp, "--out", out, "--manual-bundle")
@@ -119,6 +136,7 @@ class TestCongress(PackTest):
         self.assertEqual(items["ira_house_passage.xml"]["url"], "https://clerk.house.gov/evs/2022/roll420.xml")
         self.assertFalse(items["ira_house_passage.xml"]["needs_key"])
         self.assertIn("api_key=DEMO_KEY", items["s5_bill.json"]["url"])
+        self.assertTrue(all(i["url"].count("api_key=") <= 1 for i in items.values()))   # once per link
 
     def test_ingest_roll_call_xml(self):
         sp, out = self.write_spec({"requests": [SPEC["requests"][3]]})

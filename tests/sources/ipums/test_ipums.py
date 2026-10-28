@@ -293,6 +293,10 @@ class TestIpums(PackTest):
         labels = lambda c: [x if isinstance(x, str) else None for x in c]   # noqa: E731 (unassigned: NaN)
         self.assertEqual(labels(stats.educ_group(df, "nhis"))[:3], ["Bachelor's degree or more", "High school diploma", None])
         self.assertEqual(list(stats.foreign_born(df, "nhis")), [False, True, None, False])
+        # CPS: foreign born is CITIZEN 4/5 (BLS), not NATIVITY 5, which also holds CITIZEN 2 (outlying areas)
+        # and 3 (born abroad of American parents)
+        cps = pd.DataFrame({"NATIVITY": [5, 5, 5, 5, 1, 0], "CITIZEN": [2, 3, 4, 5, 1, 4], "WTFINL": 1.0})
+        self.assertEqual(list(stats.foreign_born(cps)), [False, False, True, True, False, True])
         m = pd.DataFrame({"EDUC": [116, 500, 510, 530, 522], "AGE": [8, 50, 50, 50, 70]})
         self.assertEqual(labels(stats.educ_group(m, "meps", "educ5")),
                          ["High school diploma or less", None, "Master's degree", None, "Professional degree or doctorate"])

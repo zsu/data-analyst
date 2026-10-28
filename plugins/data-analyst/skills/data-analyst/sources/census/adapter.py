@@ -532,6 +532,24 @@ def _dcg_csv(path: str) -> list[dict]:
     return out
 
 
+def _upload_vintage(resp: dict, req: dict, path: str) -> dict:
+    """The year and product of a data.census.gov table JSON (objectId "ACSDT1Y2024.B24091", dataAPIURI
+    ".../data/2024/acs/acs1"), kept on every row; a file of another product or year than the spec asks is refused,
+    so a 5-year table is never ingested as a 1-year one."""
+    from core.http import DataError
+    m = re.search(r"/data/(\d{4})/([\w/]+?)(?:\?|$)", str(resp.get("dataAPIURI") or ""))
+    if not m:
+        return {}
+    year, product = m.group(1), m.group(2)
+    want = str((req.get("params") or {}).get("dataset") or req.get("dataset") or "")
+    wy = re.match(r"(\d{4})/", want)
+    wp, gp = re.search(r"acs[135]", want), re.search(r"acs[135]", product)   # acs1 / acs5, alias or path
+    if (wp and gp and wp.group(0) != gp.group(0)) or (wy and wy.group(1) != year):
+        raise DataError(f"{os.path.basename(path)} is {resp.get('objectId') or product + ' ' + year}, but request "
+                        f"{req.get('name')!r} asks for {want}: upload the matching table", kind="bad_request")
+    return {"vintage": year, "census_dataset": product, "table_id": str(resp.get("objectId") or "")}
+
+
 def parse_upload(pack, req, paths):
     from core import generic_rest as gr
     from core.http import DataError
@@ -544,11 +562,12 @@ def parse_upload(pack, req, paths):
             data = json.loads(f.read().decode("utf-8-sig"))
         if isinstance(data, dict) and isinstance((data.get("response") or {}).get("data"), list):
             # data.census.gov's own table JSON: the API layout with every column of the table; keep the asked ones
+            vintage = _upload_vintage(data["response"], req, p)
             t = _table(data["response"]["data"])
             want = _ensure_list((req.get("params") or {}).get("get"))
             keep = ["GEO_ID", "NAME"] + [c for v in want for c in ((v, v[:-1] + "M") if v.endswith("E") else (v,))]
             t = [{**({k: r[k] for k in keep if k in r} if want else r),
-                  "geo_fips": str(r.get("GEO_ID", "")).split("US")[-1]} for r in t]
+                  "geo_fips": str(r.get("GEO_ID", "")).split("US")[-1], **vintage} for r in t]
             rows += normalize(req, {}, t)
         elif isinstance(data, list):
             rows += normalize(req, {}, _table(data))

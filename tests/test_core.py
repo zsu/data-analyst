@@ -140,6 +140,21 @@ class TestHttp(unittest.TestCase):
         from core.http import error_snippet
         self.assertEqual(error_snippet(b'{"error": "bad param"}'), '{"error": "bad param"}')
 
+    def test_403_from_a_keyless_host_is_a_block_not_a_key_problem(self):
+        # senate.gov answered scripts with an HTML 403 on 2026-10-27; it was reported as a rejected api.data.gov key
+        with tempfile.TemporaryDirectory() as t:
+            json.dump({"GET https://example.gov/x": {"file": "r.html", "status": 403}}, open(os.path.join(t, "index.json"), "w"))
+            open(os.path.join(t, "r.html"), "wb").write(b"<html><title>Access Denied</title></html>")
+            with mock.patch.dict(os.environ, {"DATA_ANALYST_FIXTURES": t}):
+                with self.assertRaises(DataError) as e:
+                    Client("https://example.gov", name="t", retries=0).get("/x")
+                self.assertEqual(e.exception.kind, "blocked")
+                self.assertNotIn("key rejected", str(e.exception))
+                with self.assertRaises(DataError) as e:      # a host that gets a key: still a key problem
+                    Client("https://example.gov", name="t", retries=0, key=FAKE,
+                           auth={"env": "T_KEY", "placement": "query", "param": "api_key"}).get("/x")
+                self.assertEqual(e.exception.kind, "auth")
+
     def test_key_placement_never_in_recorded_url(self):
         with tempfile.TemporaryDirectory() as t:
             json.dump({"GET https://example.gov/x?a=1": "r.json"}, open(os.path.join(t, "index.json"), "w"))
@@ -228,6 +243,16 @@ class TestRouteAfterFailure(unittest.TestCase):
         self.assertNotEqual(r["route"], "api")
 
 
+    def test_blocked_host_goes_to_a_browser_download(self):
+        with mock.patch.dict(os.environ, {"DATA_GOV_API_KEY": FAKE}):
+            r = self.check("congress", "local", {"route": "api", "kind": "blocked",
+                                                 "error": "senate-lis: HTTP 403 from www.senate.gov: the host refused"})
+        self.assertEqual(r["route"], "manual_download")
+        self.assertIsNone(r["key_ok"])                    # no key was blamed
+        self.assertIn("web browser", r["message"])
+        self.assertNotIn("rejected", r["message"])
+
+
 class TestPlan(unittest.TestCase):
     def test_a_source_listed_twice_is_refused(self):
         with tempfile.TemporaryDirectory() as t:
@@ -292,6 +317,34 @@ class TestSetupKey(unittest.TestCase):
         self.assertEqual(p.returncode, 3, p.stdout + p.stderr)
         self.assertIn("not checked", p.stdout)
         self.assertNotIn(FAKE, p.stdout + p.stderr)
+
+
+class TestPatientFetch(unittest.TestCase):
+    def test_a_busy_minute_does_not_lose_the_run(self):
+        # Congress.gov answered 503 for a minute inside a 1,244-call for_each (Oct 2026)
+        calls = []
+
+        def flaky(c, ep, params, max_rows):
+            calls.append(1)
+            if len(calls) < 3:
+                raise DataError("x: HTTP 503 after 2 retries", kind="http", status=503)
+            return [{"a": 1}], {"truncated": False, "total": 1}
+        c = Client("https://example.gov", name="t")
+        env = {k: v for k, v in os.environ.items() if k != "DATA_ANALYST_FIXTURES"}
+        with mock.patch.object(gr, "fetch_request", flaky), mock.patch.dict(os.environ, env, clear=True), \
+                mock.patch("time.sleep"):
+            rows, _ = gr._fetch_patiently(c, {}, {}, None)
+            self.assertEqual((rows, len(calls)), ([{"a": 1}], 3))
+
+        def missing(c, ep, params, max_rows):
+            calls.append(1)
+            raise DataError("x: not found (HTTP 404)", kind="not_found", status=404)
+        calls.clear()
+        with mock.patch.object(gr, "fetch_request", missing), mock.patch.dict(os.environ, env, clear=True), \
+                mock.patch("time.sleep") as slept:
+            with self.assertRaises(DataError):                # a 404 is not waited out
+                gr._fetch_patiently(c, {}, {}, None)
+            self.assertEqual((len(calls), slept.call_count), (1, 0))
 
 
 class TestGenericRest(unittest.TestCase):
@@ -676,6 +729,18 @@ class TestPackage(unittest.TestCase):
             cond = {"glob": "data/bls/bls_series.csv", "column": "footnotes", "pattern": r"\d+-month average"}
             self.assertTrue(policy._data_flagged(d, cond))
             self.assertFalse(policy._data_flagged(d, dict(cond, pattern="preliminary")))
+            # BLS's October 2025 gap matters only to an answer whose BLS facts reach 2025 or FY2026
+            from core import packs
+            P = packs.load("bls").policy
+            with open(os.path.join(d, "data", "bls", "bls_series.csv"), "w", encoding="utf-8", newline="") as f:
+                f.write("series_id,footnotes\nLNS14000000,Data unavailable due to the 2025 lapse in appropriations.\n")
+            hook = lambda facts, text: [r for r in policy.run_audit_hooks(P, d, None, facts, html=text)  # noqa: E731
+                                        if r[1] == "bls_partial_year"][0][0]
+            fy26 = {"u": {"value": 4.3, "where": {"fiscal_year": "2026"}, "pack": "bls"}}
+            y24 = {"u": {"value": 4.0, "where": {"year": "2024"}, "pack": "bls"}}
+            self.assertEqual(hook(fy26, "unemployment averaged 4.3"), "FAIL")
+            self.assertEqual(hook(fy26, "an 11-month average"), "PASS")
+            self.assertEqual(hook(y24, "unemployment averaged 4.0"), "PASS")
 
     def test_route_ranks_the_named_source(self):
         from core import packs
@@ -689,6 +754,12 @@ class TestPackage(unittest.TestCase):
                        ("How much has the broad trade-weighted dollar index changed in 2026?", "fred"),
                        ("How much have import prices changed over 12 months, fuel and nonfuel?", "bls")):
             self.assertEqual(packs.route(q, 3)[0]["source"], sid, q)
+        # word forms ("earn per week" / "weekly earnings"), a bare number of a phrase ("10" of "10-k") scores nothing
+        self.assertEqual(packs._tokens("earn weekly"), packs._tokens("earnings week"))
+        self.assertEqual(packs.route("What do women earn per week compared with men?", 3)[0]["source"], "bls")
+        why = [m for r in packs.route("the 10-year yield as a share of GDP", 8) for m in r["matched"]]
+        self.assertFalse([m for m in why if "one word of '10-k'" in m], why)
+        self.assertIn("bea", [r["source"] for r in packs.route("Federal debt as a percent of GDP since 2000", 5)])
 
     def test_fingerprint_ignores_labels(self):
         a = package.fingerprint({"requests": [{"name": "x", "params": {"a": 1}}], "description": "one"})

@@ -42,8 +42,8 @@ calendar years; the latest complete period, found from the data, not from memory
 **dollar basis** (nominal, real with which index, per capita, share of GDP) and the **comparisons**.
 
 Then collect the open choices that would change a headline number: the `clarify` list of each chosen
-source (print it with `fetch.py --source <id> --policy`; never open `sources/packs.json`, a large bundle
-read by code) plus these general ones: nominal vs real (and the deflator), fiscal vs calendar year,
+source (print it with `fetch.py --source <id> --clarify`, the full policy with `--policy`; never open
+`sources/packs.json`, a large bundle read by code) plus these general ones: nominal vs real (and the deflator), fiscal vs calendar year,
 geography level, data vintage (latest vs as first published), estimate vs margin of error (surveys),
 weights and universe (microdata), answer vs report, and any download that will be large or slow (IPUMS
 extracts).
@@ -51,7 +51,8 @@ extracts).
   exactly one "Don't know — decide for me" option (never a separate "Skip"), your recommended option first.
 - A skipped or unanswered question is a "Don't know". Exception: a **blocking** question (what the user
   means: which program, place, population or product) has no defensible default. After a skip, ask it once
-  more; if still unanswered, use the most literal reading of the request and say so in the answer's first line.
+  more; if still unanswered, use the most literal reading and say so in the answer's opening paragraph (its
+  `disclosures` line, word for word).
 - Skip what the request already settles (`"reason_code": "settled_by_request"`, `"request"`: the user's words).
   A one-number lookup with an obvious convention needs none.
 - Non-interactive runs (`"reason_code": "no_user"`) only when nobody can answer: a headless or scheduled
@@ -112,7 +113,7 @@ the user), `action` (what you do next) and `next_command`. A plan check returns 
 |---|---|---|
 | `reuse_existing` | the data are already in `<out>/data/<id>/` | continue at §4 (offer `--force` if stale) |
 | `api`, `api_keyless`, `bulk` | the source answers from here | run `next_command`; for `api_keyless`, tell the user once what a key adds |
-| `run_setup` | a key is needed; the user has a terminal | give them `run_command` (`setup.ps1 -Source <id>` / `setup.sh <id>`) to run **themselves**; never ask for a key in chat; offer any keyless alternative; rerun `--check` when they say it is stored |
+| `run_setup` | a key is needed; the user has a terminal | give them `run_command` (`setup.ps1 -Source <id>` / `setup.sh <id>`) to run **themselves**; never ask for a key in chat; offer any keyless alternative; rerun `--check` when they say it is stored. With no user (`no_user`): take the keyless route the pack's `source.md` (Access) names, else say the data could not be fetched |
 | `cloud_secret` | key needed in a cloud session | add the variable to the environment's secrets and restart, or use the bundle |
 | `cloud_allowlist` | the cloud network blocks the host | allow the hosts listed, or use the bundle |
 | `manual_download` | this environment cannot get the data (a hosted chat with network off or the host not allowed, a sandbox, a key that cannot be stored here) | send `INSTRUCTIONS.md`, both `download_scripts` (`.sh` for macOS/Linux, `.ps1` for Windows: the request is built in, they ask for any key with hidden input and download everything) and the request (`request_spec` / `request_body`: spec.json, IPUMS extract_spec.json) with your file-sending tool when available, and print the paths; give the user the one command for their system (`user_commands`, e.g. `bash ~/Downloads/download_data.sh`; both when unsure), never a Python command; wait for the upload, then run `next_command` with the uploaded files (or their folder) after `--ingest` |
@@ -169,24 +170,26 @@ Accuracy checklist (each item prevents a silent error):
   periods; compare the same months; never present an incomplete period as complete (`to_fiscal` flags it).
 - **Revisions and vintages**: say which vintage you used. BLS (footnote P) and OPM (first release) flag
   preliminary values; BEA and others do not, though their latest periods are early estimates: register those
-  facts with `preliminary=True`.
+  facts with `preliminary=True` (a period already through an annual revision is not early: the pack's
+  `source.md` says which, e.g. BEA's annual update).
 - **Surveys and microdata**: weighted estimates with standard errors or margins of error; name the weight;
   small cells are unreliable; ACS 1-year vs 5-year are not interchangeable.
 - **Benchmark**: compare each headline with the agency's published figure and say whether it matches.
 - **Evidence before judgment**: give each key definition and parameter a basis in `decisions.json` →
   `assumptions`, from strongest to weakest: **empirical** (estimate it from the data in `analysis.py`; the
   evidence names the exhibit CSV or `{{fact}}`), **literature** or **precedent** (a published estimate or the
-  agency's practice, cited as an opened `[@ref]`), **user** (the user's answer). Use **judgment** only when none
+  agency's practice, cited as an opened `[@ref]`; a pack's `source.md` is a guide, so cite the agency or IPUMS
+  page it names), **user** (the user's answer). Use **judgment** only when none
   of these can settle it. Then state `why_not_empirical`, run the alternative, and record the row in
   `exhibits/sensitivity.csv` (parameter, base, alternative, headline_base, headline_alt, conclusion_changes).
 - **Data that would improve it**: in `decisions.json` → `data_needs`, list the data that would replace each
   judgment call or unchecked benchmark (`data`, `improves`: the parameters or measures, `effect`, `how_to_get`,
   `from_user`: true when only the user has it). Use `[]` plus a `data_needs_note` when nothing would help.
 - **Benchmarks** go in `exhibits/benchmark.csv` (measure, period, computed, published, source, url,
-  accessed, match, note), one number per cell in the published figure's units. The audit compares computed
+  accessed, match, note), one number per cell in the published figure's units (a bound as `over 45`). The audit compares computed
   with published within the published rounding: a larger gap needs a `note` with its cause (definition,
-  vintage, universe), stated in the answer; otherwise find the error. Write "not checked" when no published
-  figure exists.
+  vintage, universe), stated in the answer; otherwise find the error. Write "not checked" in `published` when
+  no published figure exists.
 - Each source's own traps are in its `source.md`. Read them.
 
 ## 5. Combining sources
@@ -197,7 +200,8 @@ Before any join or ratio across sources:
    base period: `deflate`).
 4. Compatible **vintages and coverage** (e.g. OPM excludes USPS and intelligence agencies; IPUMS samples
    cover the civilian noninstitutional population): state differences in the methods.
-5. `align_check(frames, on=[...], units={...})` before merging; it refuses missing or repeated keys, no
+5. `align_check({"treasury": t, "bea": g}, on=["fiscal_year"], units={"treasury": "$M, nominal, FY", "bea": "$B
+   SAAR, FY average"})` (units keyed by the same names as the frames) before merging; it refuses missing or repeated keys, no
    overlap and unnamed units, and reports keys that drop out. It prints units but cannot compare them: convert first.
 6. Cite every source; each fact records its pack. Each source's rules still apply to its own files.
 
@@ -216,11 +220,15 @@ format shows it, or a published figure from `benchmark.csv` at its published pre
 publisher in its sentence or column header; a table cell must be a fact registered for its row (give table
 facts `where=` the row's label as printed, and each period in its own field: `{"fiscal_year": "2026", "month": "12"}`,
 not one string `"FY2026 December"`) (a number that is not a statistic goes in
-`decisions.json` → `audit_allow` as `{"value", "reason"}`); every `disclosures` line must be there word for
+`decisions.json` → `audit_allow` as `{"value", "reason"}`); a cited fact stored on a rounding tie (21.55 printed
+as 21.6) needs full precision in the exhibit or a `rounding_ties_ok` entry `{"fact", "reason"}` when the value is
+exact (published at that precision); every `disclosures` line must be there word for
 word; preliminary, projected and past-vintage facts must be called so; direction words must agree with the sign
 (register a fall as a negative change, or label a positive size "decline"/"drop"); each source's required statements
-(its `audit_hooks`) must appear. In prose, a number right after a name the facts are keyed by ("Colorado
-(19.8 percent)") must be that name's fact; otherwise the gate proves each number is some registered fact,
+(its `audit_hooks`; wording in `data/<id>/README.md` and `--clarify`) must appear. In prose, a number right after a name the facts are keyed by ("Colorado
+(19.8 percent)"), the one row its clause names, or a measure acronym in its label ("CPI-U, up 26.5"), and a
+number with a year beside it ("in 2024", "1929 (0.55") must be a fact of that year (so give facts a `label`
+and their period in `where`); otherwise the gate proves each number is some registered fact,
 not that it is the right one for its sentence, and it skips ranges ("40-50"), numbers in words outside tables (write counts as
 facts.json prints them, in digits), years, dates and
 identifiers (bill, law, executive order, table and statute numbers, codes) and ages ("16 and over"): before sending, read each number and date against

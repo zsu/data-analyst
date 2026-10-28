@@ -122,6 +122,9 @@ def key_only(pack, spec) -> list[str]:
 
 
 def std_check(pack, spec, spec_path, out, env, force, failed=None) -> dict:
+    if failed is None and pack.has("refused_hosts"):    # a second host the spec needs refuses scripts
+        why = pack.adapter.refused_hosts(spec)
+        failed = {"route": "api", "kind": "blocked", "error": why} if why else None
     return routes.route_check(pack, spec, spec_path, out, env, force=force, key_only_needs=key_only(pack, spec),
                               ping=std_ping(pack), spec_problems=gr.check_spec(pack, spec) if pack.endpoints else
                               (gr.call_check_spec(pack, spec) if pack.has("check_spec") else []),
@@ -139,7 +142,7 @@ def std_fetch(pack, spec, spec_path, out, env, force, route_name="api") -> dict:
         else:
             tables, notes = gr.fetch(pack, spec)
     except DataError as e:
-        if e.kind in ("network", "key_missing", "auth"):
+        if e.kind in ("network", "key_missing", "auth", "blocked"):
             r = std_check(pack, spec, spec_path, out, env, force,
                           failed={"route": route_name, "kind": e.kind, "error": str(e)})
             r.update(status="blocked", error=str(e), kind=e.kind)
@@ -177,7 +180,9 @@ def std_ingest(pack, spec, out, paths) -> dict:
             tables[r["name"]] = gr.parse_upload(pack, r, files)
     tables, spec = gr.merge_for_each(spec, tables), gr.collapse_for_each(spec)
     res = package.write(out, pack, tables, spec, route="manual_download", acquired="manual_download",
-                        notes=["Files downloaded by the user and uploaded; record this in the methods."])
+                        notes=["Files downloaded outside the API route (by the user, or saved from the agency's own "
+                               "site) and ingested: say where they came from in the methods; an API-only notice "
+                               "applies only if they came from the API."])
     return {"status": "ok", "source": pack.id, "route": "manual_download", "data_dir": res["data_dir"],
             "tables": [{k: t[k] for k in ("file", "rows")} for t in res["tables"]]}
 
@@ -280,7 +285,7 @@ def plan_action(ready: list, blocked: list, bundles: bool) -> str:
     asks = []
     if bundles:
         asks.append("send every bundle together (each one's INSTRUCTIONS.md, .sh and .ps1 download scripts and "
-                    "spec.json / plan.json, via present_files / SendUserFile) and give the one command per script for "
+                    "spec.json / plan.json, via your file-sending tool) and give the one command per script for "
                     "their system (user_commands; each script asks for its key with hidden input)")
     if by.get("run_setup"):
         asks.append(f"give the setup command of {', '.join(by['run_setup'])} (need_user next_command) to run in their "
@@ -366,6 +371,12 @@ def main():
         if probs:
             emit({"status": "error", "source": pack.id, "message": "policy.json is invalid: " + "; ".join(probs)}, 3)
         rest = argv[:i] + argv[i + 2:]
+        if "--clarify" in rest:       # just the open choices and the statements an answer must carry
+            P = packfiles.read_json(pack.dir, "policy.json")
+            emit({"source": pack.id, "clarify": P.get("clarify") or [], "notices": P.get("notices") or [],
+                  "audit_hooks": [{k: v for k, v in h.items() if k in ("id", "kind", "any", "message")
+                                   or k.startswith("when")}      # when_route, when_data: when it applies
+                                  for h in P.get("audit_hooks") or []]})
         if "--policy" in rest:        # the upload zip bundles every policy.json: read one here, never the bundle
             emit({"source": pack.id, "policy": packfiles.read_json(pack.dir, "policy.json")})
         return run_deep(pack, rest) if pack.deep_cli else run_standard(pack, rest)

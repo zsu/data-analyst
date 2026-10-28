@@ -99,7 +99,9 @@ means those rows were NOT filtered; missing requested columns are filled with nu
 - **Versions**: use current versions; earlier reports may differ because files were reissued; pin to
   reproduce. Employment is quarterly before 2011 (`partial_period` flags short fiscal years).
 - **Sentinels** `NO DATA REPORTED`, `INVALID`, `UNSPECIFIED`, `*` become missing in `clean()`; report the
-  missing counts for the fields used (`missing_summary`). Agencies that miss a submission show a dip and
+  missing counts for the fields used (`missing_summary`). A missing `department_code` with a valid
+  `agency_code` (HUD, Dec 2024-Mar 2025: 410-435 employees a month) is filled by `clean()` from the agency's
+  department, with a note: keep `agency_code` in `aggregate.by` so it can be. Agencies that miss a submission show a dip and
   rebound: check the FWD Data Quality page before reporting a one-month change of more than ~5 percent.
 - **Pay universe**: full-time (`work_schedule_code` F), per annum (`pay_basis_code` PA), pay > 0
   (`pay_universe`); basic pay plus locality, not total compensation; `screen_pay()`; prefer medians.
@@ -119,7 +121,7 @@ Analysis helpers: `sources/opm/lib/stats.py` (`load`, `clean`, `headcount`, `sha
 import sys, os
 OUT = os.path.dirname(os.path.abspath(__file__))
 sys.path[:0] = [os.path.join(OUT, "lib"), os.path.join(OUT, "lib", "opm"), r"<skill>/sources/opm/lib"]  # SKILL.md section 4
-from stats import *
+from stats import *     # alone; with bea, ipums or opm too: st = pack_lib("opm", "stats", OUT, SKILL)
 emp = clean(load(f"{OUT}/data/opm", "employment"))
 sep = clean(load(f"{OUT}/data/opm", "separations"))
 t = action_rate(sep, emp, by=["department_code"], period="fiscal_year")

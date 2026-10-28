@@ -264,20 +264,42 @@ def deflate(values: pd.Series, period_cpi: pd.Series, base_cpi: float) -> pd.Ser
     return values.astype(float) * float(base_cpi) / period_cpi.astype(float)
 
 
+def _bea_gdp(out: str) -> pd.DataFrame | None:
+    """Quarterly nominal GDP (billions, SAAR) from the bea pack's download (<out>/data/bea/bea_data.csv, NIPA
+    T10105 line 1, series A191RC), when the analysis fetched GDP from BEA instead of --context gdp."""
+    p = os.path.join(out, "data", "bea", "bea_data.csv")
+    if not os.path.exists(p):
+        return None
+    d = pd.read_csv(p, dtype={"series_code": str, "frequency": str})
+    d = d[(d["series_code"] == "A191RC") & (d["frequency"] == "Q")]
+    if d.empty:
+        return None
+    d = d.drop_duplicates("date")
+    return pd.DataFrame({"date": pd.to_datetime(d["date"]),
+                         "value": pd.to_numeric(d["value"]) * 10.0 ** (pd.to_numeric(d["unit_mult"]) - 9)})
+
+
 def fy_gdp(out: str) -> pd.DataFrame:
     """Fiscal-year GDP (billions) = average of the four quarterly SAAR values Oct-Sep (Q4 of the prior
-    calendar year + Q1-Q3), the convention OMB and CBO use. Needs quarterly data (FRED/BEA); refuses the
-    calendar-year World Bank fallback rather than mixing calendar and fiscal years silently."""
-    meta = json.load(open(data_path(out, "context_sources.json"), encoding="utf-8"))["gdp"]
-    if meta.get("frequency") != "quarterly":
-        raise ValueError("GDP is calendar-year only (World Bank fallback). Use cy_gdp() and calendar-year data, "
-                         "or ask the user to upload quarterly GDP.")
-    g = _context(out, "gdp")
+    calendar year + Q1-Q3), the convention OMB and CBO use. Needs quarterly data: `--context gdp` (FRED/BEA)
+    or the bea pack's T10105 in data/bea/; refuses the calendar-year World Bank fallback rather than mixing
+    calendar and fiscal years silently."""
+    g = None if os.path.exists(data_path(out, "context_gdp.csv")) else _bea_gdp(out)
+    if g is None:
+        meta = json.load(open(data_path(out, "context_sources.json"), encoding="utf-8"))["gdp"]
+        if meta.get("frequency") != "quarterly":
+            raise ValueError("GDP is calendar-year only (World Bank fallback). Use cy_gdp() and calendar-year "
+                             "data, or ask the user to upload quarterly GDP.")
+        g = _context(out, "gdp")
     g["fiscal_year"] = fiscal_year(g["date"])
     r = g.groupby("fiscal_year").agg(gdp_billions=("value", "mean"), n_quarters=("value", "size")).reset_index()
     r["complete"] = r["n_quarters"] == 4
-    return _warn_incomplete(r, "fy_gdp (an incomplete year averages the quarters available)", "fiscal_year",
-                            "n_quarters", 4)
+    # a first year cut by where the data start is flagged in `complete` but not warned about (ask for quarters
+    # from Q4 of the year before the first fiscal year); an incomplete latest year is the one that misleads
+    warn = r[~r["complete"] & (r["fiscal_year"] != r["fiscal_year"].min())] if len(r) > 1 else r
+    _warn_incomplete(warn, "fy_gdp (an incomplete year averages the quarters available)", "fiscal_year",
+                     "n_quarters", 4)
+    return r
 
 
 def cy_gdp(out: str) -> pd.DataFrame:

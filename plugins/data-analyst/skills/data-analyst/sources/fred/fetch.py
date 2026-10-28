@@ -76,6 +76,7 @@ import os
 import re
 import shutil
 import sys
+sys.dont_write_bytecode = True  # never write __pycache__ into the skill folder
 import urllib.parse
 from datetime import date, datetime, timedelta, timezone
 
@@ -328,7 +329,7 @@ def route_check(s: dict, out: str, env: str, force: bool = False, spec_path: str
                         run_cmd)
         stale = ex["age_days"] is not None and ex["age_days"] >= 7
         return done("reuse_existing",
-                    f"The data for this request are already in {ex['path']} (retrieved {ex['retrieved'][:10]} by "
+                    f"The data for this request are already in {ex['path']} (retrieved {cpol.local_day(ex['retrieved'])} by "
                     f"the {ex['route']} route)." + (" FRED has probably published newer data or revisions since."
                                                      if stale else ""),
                     "Skip the download and continue with the analysis." +
@@ -461,7 +462,7 @@ KEYNOTE_NONE = "No key is needed for any of these files."
 
 DOWNLOAD_SCRIPTS = {"bash": "download_fred.sh", "powershell": "download_fred.ps1"}
 SEND = ("Send INSTRUCTIONS.md, download_fred.sh, download_fred.ps1 and spec.json from the bundle to the user "
-        "(present_files / SendUserFile when available; print the full paths), wait for the upload, then run "
+        "(your file-sending tool when available; print the full paths), wait for the upload, then run "
         "next_command.")
 
 
@@ -1041,7 +1042,7 @@ def write_readme(d: str, s: dict, meta: list[dict], rows: list[dict], req: dict)
     lines = [
         f"# FRED data: {s.get('description') or ', '.join(m['series_id'] for m in meta)}",
         "",
-        f"- Retrieved: {req['retrieved']} ({req['acquired']}; route `{req['route']}`)",
+        f"- Retrieved: {cpol.local_stamp(req['retrieved'])} ({req['acquired']}; route `{req['route']}`)",
         f"- Rows: {len(rows):,} in `fred_observations.csv` (one per series variant, vintage and date); series "
         "details in `series.csv`" + ("; GeoFRED cross-sections in `regional.csv`" if req["regional_rows"] else ""),
         "- Raw responses: `raw/`; the exact requests (without the key): `request.json`"
@@ -1406,7 +1407,7 @@ def main():
                   "note": "labels, sources or copyright changed; data/fred/ rebuilt from data/fred/raw without "
                           "downloading", "retrieved": req["retrieved"], "problems": req["problems"]})
         if ex and ex["csv_exists"] and ex["matches"] and not ex["problems"] and not a.force:
-            print(f"[fred] reusing {ex['path']} (retrieved {ex['retrieved']}); pass --force to download again",
+            print(f"[fred] reusing {ex['path']} (retrieved {cpol.local_stamp(ex['retrieved'])}); pass --force to download again",
                   file=sys.stderr)
             emit({"status": "reused_existing", "route": "reuse_existing", "data_dir": data_dir(a.out),
                   "csv": ex["path"], "retrieved": ex["retrieved"], "latest": ex["latest"]})

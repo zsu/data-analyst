@@ -73,20 +73,26 @@ def _printed_precision(text: str) -> float:
         return 0.0
 
 
-def _warn_rounding_tie(name: str, cell: float, text: str, fmt: str) -> None:
-    """A CSV value stored one digit past what the format prints and ending in 5 ("21.55" printed as "21.6") was
-    already rounded: the unrounded value (21.545) may round the other way. Store full precision."""
+def rounding_tie(cell: float, text: str, fmt: str) -> bool:
+    """Is a value stored exactly one digit past what its format prints, ending in 5 ("21.55" printed as "21.6")?
+    Then the printed figure depends on digits the CSV dropped (21.545 rounds the other way) unless the value is
+    exact at that precision (a figure published so). audit_answer.py requires one or the other to be said."""
     try:
         shown = re.search(r"-?\d[\d,]*(?:\.(\d+))?", format_value(cell, fmt))
         if not shown or not cell or "." not in text:
-            return
+            return False
         disp = float(shown.group(0).replace(",", ""))
         k = round(math.log10(abs(disp / cell))) if disp else 0
-        if len(text.split(".")[1].rstrip()) - k == len(shown.group(1) or "") + 1 and text.rstrip().endswith("5"):
-            print(f"note: fact {name}: {text} in the CSV sits on a rounding tie for its format; if the CSV was "
-                  "rounded, store full precision so the printed figure rounds from the true value", file=sys.stderr)
+        return len(text.split(".")[1].rstrip()) - k == len(shown.group(1) or "") + 1 and text.rstrip().endswith("5")
     except (ValueError, ZeroDivisionError, OverflowError):
-        return
+        return False
+
+
+def _warn_rounding_tie(name: str, cell: float, text: str, fmt: str) -> None:
+    if rounding_tie(cell, text, fmt):
+        print(f"note: fact {name}: {text} in the CSV sits on a rounding tie for its format: store full precision "
+              "(no .round() before saving), or, when the value is exact at that precision (published so), list it "
+              "in decisions.json \"rounding_ties_ok\" with why; the answer audit fails otherwise", file=sys.stderr)
 
 
 def _packs(x) -> list[str]:

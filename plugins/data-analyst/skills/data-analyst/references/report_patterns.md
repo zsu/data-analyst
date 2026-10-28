@@ -13,7 +13,7 @@ universes, replicate standard errors; opm: redaction of pay and location).
 
 Ask only the ones the request leaves open **and** that would change a headline number: at most four, in one
 round, with "Don't know — decide for me" on each and the recommended option first. A source's `clarify`
-list (`fetch.py --source <id> --policy`) names the questions specific to it; merge them with these and keep
+list (`fetch.py --source <id> --clarify`) names the questions specific to it; merge them with these and keep
 the four that matter most.
 
 Each question has exactly one "Don't know" option, never a separate "Skip". A skipped or unanswered
