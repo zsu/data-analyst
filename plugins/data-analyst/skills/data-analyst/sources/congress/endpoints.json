@@ -33,7 +33,7 @@
      "desc": "updated on or before YYYY-MM-DDT00:00:00Z"
     },
     "title_contains": {
-     "desc": "keep rows whose title contains these words (filtered by the pack after download)"
+     "desc": "keep rows whose title contains this phrase (words in order, each at a word start, any case) or any phrase of a list (filtered by the pack after download)"
     },
     "sort": {
      "desc": "updateDate+desc (default), updateDate+asc, introducedDate+desc or introducedDate+asc",
@@ -75,7 +75,7 @@
      "desc": "updated on or before YYYY-MM-DDT00:00:00Z"
     },
     "title_contains": {
-     "desc": "keep rows whose title contains these words (filtered by the pack after download)"
+     "desc": "keep rows whose title contains this phrase (words in order, each at a word start, any case) or any phrase of a list (filtered by the pack after download)"
     },
     "sort": {
      "desc": "updateDate+desc (default), updateDate+asc, introducedDate+desc or introducedDate+asc",
@@ -642,7 +642,7 @@
      ]
     },
     "title_contains": {
-     "desc": "keep rows whose title contains these words (filtered by the pack after download)"
+     "desc": "keep rows whose title contains this phrase (words in order, each at a word start, any case) or any phrase of a list (filtered by the pack after download)"
     }
    },
    "records": "bills",
@@ -669,7 +669,7 @@
      "desc": "Congress number, e.g. 118, or 'current'"
     },
     "title_contains": {
-     "desc": "keep rows whose title contains these words (filtered by the pack after download)"
+     "desc": "keep rows whose title contains this phrase (words in order, each at a word start, any case) or any phrase of a list (filtered by the pack after download)"
     }
    },
    "records": "bills",
@@ -1368,7 +1368,7 @@
      "desc": "updated on or before YYYY-MM-DDT00:00:00Z"
     },
     "title_contains": {
-     "desc": "keep rows whose title contains these words (filtered by the pack after download)"
+     "desc": "keep rows whose title contains this phrase (words in order, each at a word start, any case) or any phrase of a list (filtered by the pack after download)"
     }
    },
    "records": "nominations",
@@ -1465,7 +1465,7 @@
   "crs_reports": {
    "path": "/crsreport",
    "method": "GET",
-   "description": "CRS reports (id, title, current version's publish date, status; the list's version field is not the product version, crs_report has currentVersion), newest first by update; no keyword search: use title_contains, or fromDateTime/toDateTime, which filter on the update date.",
+   "description": "CRS reports (id, title, current version's publish date, status; the list's version field is not the product version, crs_report has currentVersion), newest first by update; no keyword search: use title_contains (a multi-word phrase matches only with its words together and in that order: list each order as its own phrase), or fromDateTime/toDateTime, which filter on the update date.",
    "params": {
     "fromDateTime": {
      "desc": "updated on or after YYYY-MM-DDT00:00:00Z"
@@ -1474,7 +1474,7 @@
      "desc": "updated on or before YYYY-MM-DDT00:00:00Z"
     },
     "title_contains": {
-     "desc": "keep rows whose title contains these words (filtered by the pack after download)"
+     "desc": "keep rows whose title contains this phrase (words in order, each at a word start, any case) or any phrase of a list (filtered by the pack after download)"
     }
    },
    "records": "CRSReports",

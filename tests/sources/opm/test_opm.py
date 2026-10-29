@@ -148,6 +148,11 @@ class TestOpm(PackTest):
     def test_fix_spec(self):
         code, r = self.check({"datasets": {"payroll": {"periods": ["2026-08"]}}}, env=self.env)
         self.assertEqual((code, r["route"]), (2, "fix_spec"), r)
+        # a column no requested dataset has would come back all null: refused at --check, with the near names
+        code, r = self.check(dict(SPEC, columns=["agency_code", "effective_month"]), env=self.env)
+        self.assertEqual((code, r["route"]), (2, "fix_spec"), r)
+        self.assertIn("effective_month", r["message"])
+        self.assertIn("personnel_action_effective_date_yyyymm", r["message"])
         code, r = self.check(dict(SPEC, filters={"grade": [8]}), env=self.env)
         self.assertEqual((code, r["route"]), (2, "fix_spec"), r)
         code, r = self.check({"datasets": {"separations": {"from": "2031-01", "to": "2031-03"}}}, env=self.env)

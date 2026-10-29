@@ -105,6 +105,26 @@ class TestUsgs(PackTest):
         coll = ad._features({"type": "FeatureCollection", "features": [body, body]})
         self.assertEqual(len(coll), 2)
 
+    def test_antimeridian_boxes(self):
+        # one box crossing 180 has maxlongitude above 180 (accepted); min above max is refused, with the +360 form
+        # only for an east-to-west pair and "swapped" otherwise; separate boxes on either side stay valid
+        base = {"starttime": "2023-01-01", "endtime": "2023-02-01", "minmagnitude": 4}
+        def box(name, lo, hi, la=(-30, -10)):
+            return {"name": name, "endpoint": "earthquakes",
+                    "params": {**base, "minlatitude": la[0], "maxlatitude": la[1], "minlongitude": lo, "maxlongitude": hi}}
+        code, r = self.check({"requests": [box("arc", 170, 190)]})
+        self.assertNotEqual(r["route"], "fix_spec", r)
+        code, r = self.check({"requests": [box("arc", 170, -170)]})
+        self.assertEqual(r["route"], "fix_spec", r)
+        self.assertIn("maxlongitude 190", r["message"])
+        code, r = self.check({"requests": [box("x", -100, -120)]})
+        self.assertEqual(r["route"], "fix_spec", r)
+        self.assertIn("swapped", r["message"])
+        self.assertNotIn("above 180", r["message"])
+        code, r = self.check({"requests": [box("north", -180, 180, (0, 90)), box("south", -180, 180, (-90, 0)),
+                                           box("w", 150, 180, (40, 60)), box("e", -180, -170, (-25, -15))]})
+        self.assertNotEqual(r["route"], "fix_spec", r)
+
     def test_unknown_endpoint_is_fix_spec(self):
         code, r = self.check({"requests": [{"name": "x", "endpoint": "nwis_iv", "params": {}}]})
         self.assertEqual(r["route"], "fix_spec", r)

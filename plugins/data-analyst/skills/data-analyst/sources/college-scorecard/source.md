@@ -18,7 +18,7 @@ Filters: `school.state` (DE or DE,MD), `school.ownership` (1 public, 2 private n
 `school.degrees_awarded.predominant` (0-4: not classified, certificate, associate, bachelor's, graduate),
 `school.name` (word search), `id` (UNITID, comma list), any field with `__range=lo..hi` (e.g.
 `latest.admissions.admission_rate.overall__range=0..0.2`). Short aliases: `name`, `state`, `ownership`,
-`predominant_degree`. `fields` takes a list or comma string of field names or catalog aliases:
+`predominant_degree` (also inside `sort`, with the catalog aliases: `name:asc`). `fields` takes a list or comma string of field names or catalog aliases:
 `admission_rate`, `size`, `tuition_in_state`, `tuition_out_of_state`, `net_price`, `attendance_cost`,
 `median_debt`, `pell_rate`, `loan_rate`, `completion_rate`, `retention_rate`, `earnings_6yr`,
 `earnings_7yr` (live from October 2026), `earnings_10yr`, `default_rate_3yr`, `share_first_generation`,

@@ -8,6 +8,7 @@ endpoints.json:
 {
   "base_url": "https://data.cdc.gov/resource",
   "timeout": 30,                             # seconds per attempt (slow APIs such as CMS need more)
+  "retry_html_400": 3,                       # optional: retry an HTML-page HTTP 400 (a flaky front server) n times
   "endpoints": {
     "<name>": {
       "path": "/{dataset}.json",            # {x} placeholders come from params with "in": "path"
@@ -29,6 +30,15 @@ endpoints.json:
                 # or {"type": "cursor", "cursor_param": "cursor", "next": "pagination.next_cursor", "size_param": "limit", "size": 100}
                 # or {"type": "link", "next": "links.next"}   or {"type": "none"}
       "max_rows": 100000,                    # hard stop; the spec may set a lower one
+      "unique_key": "appl_id",               # optional: a KEY column (the source has one row per value); after
+                                             # paging, rows repeated across pages are dropped and a note says
+                                             # rows may be missing (offset paging over an unstable order repeats
+                                             # some rows and skips as many: page by a unique sort). Never a
+                                             # column whose values legitimately repeat: those rows would go.
+      "truncated_note": {"when_default": "sort_field", "text": "..."},   # optional: added to the max_rows note
+                                             # only when the request SENT that param (endpoint default or adapter)
+                                             # and the spec did not set it: says which rows the pack's own order
+                                             # keeps; a request sent without it (API order) gets no such note
       "missing": ["", "(NA)", "."],          # published codes for "no value": written as empty cells
       "flatten": true                        # nested objects become dotted columns, lists become JSON text
     }
@@ -51,6 +61,10 @@ import re
 import urllib.parse
 
 from core.http import Client, DataError
+
+# A note containing this marks its table incomplete (status partial, listed under problems), like a max_rows cut:
+# f"{name}{INCOMPLETE} <what is missing and why>"
+INCOMPLETE = ": incomplete:"
 
 
 def dig(obj, path: str):
@@ -93,7 +107,8 @@ def client_for(pack, eps: dict | None = None, **kw) -> Client:
     return Client(eps.get("base_url") or P["routes"].get("api", {}).get("base", ""), name=pack.id, auth=P["auth"],
                   rps=L.get("rps") or 5, burst=L.get("burst") or 10, check_error=check,
                   errors_per_min=L.get("errors_per_min"), bytes_per_min=L.get("bytes_per_min"),
-                  headers=eps.get("headers"), **{"timeout": eps.get("timeout", 30), **kw})
+                  headers=eps.get("headers"),
+                  **{"timeout": eps.get("timeout", 30), "retry_html_400": eps.get("retry_html_400", 0), **kw})
 
 
 # ---------------------------------------------------------------------- spec → requests
@@ -294,6 +309,7 @@ def fetch_request(client: Client, ep: dict, params: dict, max_rows: int | None =
     offset = int(query.get(pg.get("offset_param", ""), 0) or 0) if kind == "offset" else 0
     cursor = None
     next_url = None
+    prev = None
 
     def put(target: dict | None, k, v):
         if k:
@@ -319,6 +335,10 @@ def fetch_request(client: Client, ep: dict, params: dict, max_rows: int | None =
             resp = client.request(method, path, q, json_body=b)
         meta["pages"] += 1
         got = _records(ep, resp)
+        if got and kind in ("offset", "page") and got == prev:   # the API ignored the page/offset: stop, do not loop
+            meta["truncated"] = meta["repeated_page"] = True
+            break
+        prev = got
         rows += got
         if ep.get("total") and resp.body[:1] in (b"{", b"["):
             try:
@@ -357,6 +377,28 @@ def fetch_request(client: Client, ep: dict, params: dict, max_rows: int | None =
     return _clean(rows, ep), meta
 
 
+def dedupe_pages(rows: list[dict], ep: dict, meta: dict, name: str) -> tuple[list[dict], str | None]:
+    """Offset or page paging over an order the API does not keep stable repeats rows at page boundaries and
+    skips as many (the result has the right count but not the right rows). With the endpoint's `unique_key`
+    (a key: one row per value at the source), repeated rows are dropped and the note says how many may be
+    missing."""
+    col = ep.get("unique_key")
+    if not col or meta.get("pages", 0) < 2 or not rows or any(col not in r for r in rows):
+        return rows, None
+    seen, out = set(), []
+    for r in rows:
+        if r[col] not in seen:
+            seen.add(r[col])
+            out.append(r)
+    if len(out) == len(rows):
+        return rows, None
+    gap = len(rows) - len(out)
+    return out, (f"{name}: {gap:,} row(s) came back twice across page boundaries (same {col}), so the source's "
+                 f"order shifted while paging and about as many rows may be missing; the repeats were dropped "
+                 f"({len(out):,} rows kept" + (f" of {meta['total']:,}" if meta.get("total") else "") +
+                 "). Sort by a unique field (or narrow the request to one page) and fetch again (--force).")
+
+
 def _fetch_patiently(c: Client, ep: dict, params: dict, max_rows, waits=(20, 60)):
     """fetch_request, waiting out a server that stays busy past the client's own retries (Congress.gov answered
     HTTP 503 for a minute at a time in a 1,244-call for_each, Oct 2026): one bad minute must not lose the run."""
@@ -373,10 +415,56 @@ def _fetch_patiently(c: Client, ep: dict, params: dict, max_rows, waits=(20, 60)
             time.sleep(wait)
 
 
+class Misses:
+    """One missing item must not hide the rest: every request runs, and the ones the source does not have (404) or
+    that came back empty are named together at the end, so one fix covers them all. Packs with their own fetch
+    loop use it too:
+        miss = gr.Misses()
+        for r in spec["requests"]:
+            try: rows = ...
+            except DataError as e:
+                if e.kind != "not_found": raise
+                miss.not_found(r, tables, notes); continue
+            miss.check_empty(r, rows); tables[r["name"]] = rows
+        miss.raise_if_any(missing_hint=..., empty_hint=...)"""
+
+    MISSING_HINT = "check the IDs"
+    EMPTY_HINT = "check the filter values (see source.md)"
+
+    def __init__(self):
+        self.missing, self.empty = [], []
+
+    def not_found(self, r: dict, tables: dict, notes: list) -> None:
+        if r.get("allow_empty"):
+            notes.append(f"{r['name']}: not found at the source (404); kept as an empty table (allow_empty).")
+            tables[r["name"]] = []
+        else:
+            self.missing.append(r["name"])
+
+    def check_empty(self, r: dict, rows: list) -> None:
+        if not rows and not r.get("allow_empty"):
+            key = r.get("_key")                 # a for_each row: name it by its values (billNumber=16), not __2
+            self.empty.append(r["name"] + (" (" + ", ".join(f"{k}={v}" for k, v in key) + ")" if key else ""))
+
+    def raise_if_any(self, missing_hint: str = "", empty_hint: str = "") -> None:
+        msgs = []
+        if self.missing:
+            msgs.append(f"request(s) {', '.join(map(repr, self.missing))} were not found at the source (404): "
+                        f"{missing_hint or self.MISSING_HINT}. If the item really does not exist yet (e.g. a volume "
+                        "not yet published), add \"allow_empty\": true to that request in spec.json and run again; the "
+                        "answer must say it is missing.")
+        if self.empty:
+            msgs.append(f"request(s) {', '.join(map(repr, self.empty))} returned no rows: {empty_hint or self.EMPTY_HINT}. "
+                        "If none is a correct answer (e.g. no private laws in that Congress), add \"allow_empty\": "
+                        "true to that request in spec.json and run again.")
+        if msgs:
+            raise DataError(" ".join(msgs), kind="not_found" if self.missing else "bad_request")
+
+
 def fetch(pack, spec: dict, client: Client | None = None) -> tuple[dict, list[str]]:
     """Every request in the spec. Returns ({name: rows}, notes)."""
     c = client or client_for(pack)
-    tables, notes, empty, missing = {}, [], [], []
+    tables, notes, miss = {}, [], Misses()
     for r in spec["requests"]:
         ep, params, probs = resolve(pack, r)
         if probs:
@@ -392,35 +480,34 @@ def fetch(pack, spec: dict, client: Client | None = None) -> tuple[dict, list[st
             rows, meta = _fetch_patiently(c, ep, params, r.get("max_rows"))
         except DataError as e:                  # say which request failed (a spec can hold hundreds)
             if e.kind == "not_found":           # no such item: run the rest, then name every missing one
-                if r.get("allow_empty"):
-                    notes.append(f"{r['name']}: not found at the source (404); kept as an empty table (allow_empty).")
-                    tables[r["name"]] = []
-                else:
-                    missing.append(r["name"])
+                miss.not_found(r, tables, notes)
                 continue
             raise DataError(f"request {r['name']!r} ({r.get('endpoint')}): {e}", kind=e.kind,
                             status=getattr(e, "status", None)) from None
+        rows, dup = dedupe_pages(rows, ep, meta, r["name"])
+        if dup:
+            notes.append(dup)
+        if pack.has("request_note"):        # how the pack read the request (e.g. phrase vs every word)
+            n = pack.adapter.request_note(r, ep, params)
+            if n:
+                notes.append(n)
         if pack.has("normalize"):
             rows = pack.adapter.normalize(r, ep, rows)
-        if meta["truncated"]:
+        if meta.get("repeated_page"):
+            notes.append(f"{r['name']}{INCOMPLETE} stopped at {len(rows):,} rows: page {meta['pages']} repeated the page "
+                         "before it (the API ignored the paging parameter), so later rows may be missing. Narrow the "
+                         "request so it fits one page.")
+        elif meta["truncated"]:
+            tn = ep.get("truncated_note") or {}
+            k = tn.get("when_default")      # the note describes the pack's own order: only when it was sent
+            own_order = bool(tn.get("text") and k and params.get(k) not in (None, "")
+                             and (r.get("params") or {}).get(k) in (None, ""))
             notes.append(f"{r['name']}: stopped at {len(rows):,} rows (max_rows); the source has more"
-                         + (f" ({meta['total']:,} in total)" if meta["total"] else "") + ". Narrow the filter or raise max_rows.")
-        if not rows and not r.get("allow_empty"):
-            key = r.get("_key")                 # a for_each row: name it by its values (billNumber=16), not __2
-            empty.append(r["name"] + (" (" + ", ".join(f"{k}={v}" for k, v in key) + ")" if key else ""))
+                         + (f" ({meta['total']:,} in total)" if meta["total"] else "") + ". Narrow the filter or raise max_rows."
+                         + (" " + tn["text"] if own_order else ""))
+        miss.check_empty(r, rows)
         tables[r["name"]] = rows
-    msgs = []                               # every request ran: name every missing and empty one at once
-    if missing:
-        msgs.append(f"request(s) {', '.join(map(repr, missing))} were not found at the source (404): check the "
-                    "IDs. If the item really does not exist yet (e.g. a volume not yet published), add "
-                    "\"allow_empty\": true to that request in spec.json and run again; the answer must say it "
-                    "is missing.")
-    if empty:
-        msgs.append(f"request(s) {', '.join(map(repr, empty))} returned no rows: check the filter values (see "
-                    "source.md). If none is a correct answer (e.g. no private laws in that Congress), add "
-                    "\"allow_empty\": true to that request in spec.json and run again.")
-    if msgs:
-        raise DataError(" ".join(msgs), kind="not_found" if missing else "bad_request")
+    miss.raise_if_any()                     # every request ran: name every missing and empty one at once
     return tables, notes
 
 

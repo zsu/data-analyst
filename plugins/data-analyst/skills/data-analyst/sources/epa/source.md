@@ -63,6 +63,10 @@ endsWith, contains. Value matching is case-insensitive (verified).
   `<column>_iso` columns and keeps the published ones. Penalties are nominal dollars assessed in the
   settlement, not necessarily collected. Compliance status columns describe the last 3 years (12
   quarters), as of ECHO's weekly refresh.
+- **Columns**: facility searches return each program's default columns (about 60 for `air`). For others,
+  pass `qcolumns` (comma-separated column ids); the ids and names are listed keylessly by
+  `https://echodata.epa.gov/echo/<program>_rest_services.metadata?output=JSON` (`ResultColumns`). The pack
+  sends `qcolumns` to both steps (search and `get_qid`); check that the column you need is in the CSV.
 - **GHGRP** rows are facility x gas x year: `co2e_emission` is metric tons CO2-equivalent for that gas
   (the global-warming potentials follow EPA's current GHGRP rule; check before comparing across rule
   changes); sum over gases for a facility total. Only

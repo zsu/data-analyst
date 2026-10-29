@@ -31,7 +31,9 @@ the most used ones without a key and count against no limit.
 Verified lines (September 2026 vintage): T10101 line 1 real GDP percent change (annual rate); T10106 line 1
 real GDP (millions of chained 2017 dollars, SAAR); T10105 line 1 nominal GDP; T10111 line 1 year-over-year
 real GDP change; T10102 contributions; T20100 lines 1/27/37/35/40 personal income / DPI / real DPI / saving
-rate / population; T20804 lines 1/25 PCE / core PCE price index (monthly; published changes: T20807 month over month, not
+rate / population (annual and quarterly only: monthly values are in T20600, whose line numbers differ, so
+check them with `--lines T20600`; a table is monthly only when its title says so, and the bulk route refuses
+frequency M for any other table); T20804 lines 1/25 PCE / core PCE price index (monthly; published changes: T20807 month over month, not
 annualized, T20811 lines 32/37 over 12 months); T70100 lines 1/3 GDP and income
 per capita (BEA divides by unrounded population: real GDP over T70100's population, published in thousands,
 can miss the published per-capita level by just over 0.5 dollars; allow for that rounding in the benchmark and

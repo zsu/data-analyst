@@ -92,6 +92,29 @@ class TestNrel(PackTest):
                                              "params": {"fuel_type": "E85", "radius": 10}}]})
         self.assertEqual(r["route"], "fix_spec", r)
 
+    def test_city_is_matched_on_the_rows_not_sent(self):
+        """The station API has no city parameter (sent, it answers 0 rows, live 2026-10-28): the pack fetches the
+        state or ZIP and keeps the rows of that city, ignoring case and extra blanks (r005, recorded 2026-10-28:
+        the ZIP read in full, 4 stations)."""
+        req = {"name": "dcfast_town", "endpoint": "alt_fuel_stations",
+               "params": {"zip": "05301", "fuel_type": "ELEC", "ev_charging_level": "dc_fast", "city": "  brattleboro"}}
+        code, r, out = self.fetch({"requests": [req]})
+        self.assertEqual((code, r["status"]), (0, "ok"), r)
+        self.assertEqual([x["city"] for x in self.csv(out, "dcfast_town")], ["Brattleboro"] * 4)
+        none = {"requests": [{**req, "params": {**req["params"], "city": "Nowhere"}}]}
+        code, r, out = self.fetch(none)
+        self.assertEqual(code, 2, r)                                 # every station read, none matched: fails loudly
+        self.assertIn("returned no rows", r["message"])
+        # a state fetch cut at max_rows (r001: 3 of 113) leaves the city's rows incomplete: partial, and said so
+        cut = {"requests": [{"name": "dcfast_town", "endpoint": "alt_fuel_stations", "max_rows": 3,
+                             "params": {"state": "VT", "fuel_type": "ELEC", "ev_charging_level": "dc_fast",
+                                        "city": "Nowhere"}}]}
+        code, r, out = self.fetch(cut)
+        self.assertEqual((code, r["status"]), (0, "partial"), r)
+        self.assertTrue(any("may be incomplete" in n for n in r["notes"]), r["notes"])
+        code, r = self.check({"requests": [{"name": "c", "endpoint": "alt_fuel_stations", "params": {"city": "Barre"}}]})
+        self.assertEqual(r["route"], "fix_spec", r)                  # city alone would page through the country
+
 
 if __name__ == "__main__":
     unittest.main()

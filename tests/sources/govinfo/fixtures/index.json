@@ -10,5 +10,6 @@
  "GET https://api.govinfo.gov/packages/PLAW-112publ1/uslm": {
   "file": "r009.json",
   "status": 400
- }
+ },
+ "POST https://api.govinfo.gov/search 7668a75cdeeb": "r010.json"
 }

@@ -17,7 +17,7 @@ One host: `https://api.gsa.gov/acquisition/calc/v3/api/ceilingrates/` (no key; v
 | Endpoint | Returns | Key parameters |
 |---|---|---|
 | `rates` | rate rows (JSON), pages of 500, at most 10,000 rows | `keyword` or `search`, filters, `ordering`, `sort` |
-| `rates_export` | the same search as one CSV export, every row (no 10,000 cap) | same |
+| `rates_export` | the same search as one CSV export, no 10,000 cap; rates identical in every exported column appear once | same |
 | `rate_stats` | one row over all matches: count, min, max, mean, std_dev_sample, median, p10-p90 | same filters |
 | `rate_facets` | counts by education_level, worksite, business_size, security_clearance, min_years_experience, labor_category (top 500) | same filters |
 | `suggest_labor_category` / `suggest_vendor_name` / `suggest_contract` | values containing a text, with counts | `prefix` |
@@ -72,6 +72,12 @@ Columns (rates, rates_export): `labor_category`, `vendor_name`, `idv_piid` (cont
 - The JSON search stops at 10,000 rows (hits.total says "10000, gte"); a page past row 10,000 answers HTTP
   406 with an empty body (verified 2026-10-22; the pack never asks for one). Use `rates_export` (CSV, all
   rows; 55,000+ rows for "engineer", about 19 MB) or `rate_stats`.
+- `rates_export` writes one line per distinct row of its exported columns: rates identical in all of them
+  (same contract, category and prices; different JSON `id`) appear once, so the export can hold fewer rows
+  than the search matches ("data scientist": 1,504 rows for 1,516 matches; "accountant" 751 for 755;
+  verified 2026-10-28). The fetch counts the matches (one
+  `rate_stats` call) and notes any shortfall. Count rates with `rate_stats`; when every rate must be a row,
+  use `rates` (JSON, with `id`; at most 10,000).
 - A `rates_export` with no matches is only the SEARCH VALUES / FILTER VALUES preamble with no header line;
   the pack reads it as zero rows and fails with "returned no rows" (as the other endpoints do).
 - `page_size` is ignored unless `page` is also sent (the pack always sends both).
@@ -91,7 +97,7 @@ Columns (rates, rates_export): `labor_category`, `vendor_name`, `idv_piid` (cont
 ## Access
 No key (no api.data.gov key needed; verified without one). Route `api` when api.gsa.gov answers; the
 pack keeps to 2 requests a second. Manual route: `manual_download/INSTRUCTIONS.md` gives one CSV export
-link per request (`export=y`, every matching row); the browser saves `ceilingrates_results.csv`: rename
+link per request (`export=y`, every matching row, identical rows once); the browser saves `ceilingrates_results.csv`: rename
 it to the name shown, upload, then `--ingest` (the export layout is parsed and renamed as above).
 Aggregation and suggestion requests get JSON links instead. Without the links: https://buy.gsa.gov/pricing/
 (CALC+ Labor Ceiling Rates), search, set filters, Export, upload.

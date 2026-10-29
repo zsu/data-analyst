@@ -6,7 +6,7 @@ student group, with standard errors and NAEP's own significance tests.
 ## When to use
 - K-12 achievement: reading and mathematics (grades 4 and 8, every two years; grade 12 less often),
   science, writing, civics, U.S. history, geography, economics, technology and engineering literacy,
-  music. States versus the nation, change since 2019, gaps by race, sex, school-lunch eligibility.
+  music. States versus the nation, change since 2019, gaps by race, sex, economic disadvantage.
 - Not here: state test results (each state's own exams, not comparable across states), graduation rates
   and school finance (nces or ed packs if present), college outcomes (college-scorecard).
 - NAEP is a sample survey: every number is an estimate. It reports groups, never students or schools.
@@ -32,8 +32,11 @@ Codes (`--search` finds them; `--endpoints` lists the catalog):
   `economics` (grade 12), `tel` (grade 8), `music` (grade 8). Aliases: `ela`, `us history`. The pack
   fills `subscale` with the composite scale: RRPCM, MRPCM (math grade 12: MWPCM), SRPUV, WRIRP, CIVRP,
   HRPCM, GRPCM, ERPCM, TRPUN, MUSRP. Subscales: `--search geometry`.
-- `variable`: TOTAL, SDRACE (race/ethnicity), GENDER, SLUNCH3 (lunch eligibility), PARED, SCHTYPE,
-  CHRTRPT, UTOL4 (city/suburb/town/rural), CENSREG, IEP, LEP; crosstab `SDRACE+GENDER`.
+- `variable`: TOTAL, SDRACE (race/ethnicity), GENDER, ECONDIS (economically disadvantaged), PARED,
+  SCHTYPE, CHRTRPT, UTOL4 (city/suburb/town/rural), CENSREG, IEP, LEP; crosstab `SDRACE+GENDER`.
+  SLUNCH3 (lunch eligibility) ends in 2022: in 2024 every SLUNCH3 cell is 999 "Non-qualified independent
+  variable", and ECONDIS carries the poverty split (its 2019 and 2022 values equal SLUNCH3's; verified
+  2026-10-28). A trend through 2024 uses ECONDIS for every year.
 - `stattype`: MN:MN mean; ALC:BB / ALC:AB / ALC:AP / ALC:AD cumulative levels; ALD:* discrete levels;
   RP:RP row percent; percentiles PC:P1, PC:P2, PC:P5, PC:P7, PC:P9 (10th, 25th, 50th, 75th, 90th; other
   PC codes answer HTTP 400 "The Statistic PC:P3 is not valid.", verified 2026-10); SD:SD.
@@ -60,9 +63,9 @@ Codes (`--search` finds them; `--endpoints` lists the catalog):
                "params": {"subject": "math", "grade": 8, "jurisdiction": "NP,MA,MS", "Year": "2024"}}]}
 ```
 ```json
-{"description": "Grade 4 reading gap by school-lunch eligibility, 2019 to 2024",
- "requests": [{"name": "lunch_gap", "endpoint": "gap_groups_across_years",
-               "params": {"subject": "reading", "grade": 4, "variable": "SLUNCH3", "Year": "2024,2019"}}]}
+{"description": "Grade 4 reading gap by economic disadvantage, 2019 to 2024",
+ "requests": [{"name": "poverty_gap", "endpoint": "gap_groups_across_years",
+               "params": {"subject": "reading", "grade": 4, "variable": "ECONDIS", "Year": "2024,2019"}}]}
 ```
 
 ## Data format and traps
@@ -75,7 +78,8 @@ Codes (`--search` finds them; `--endpoints` lists the catalog):
 - In comparison rows `gap` = focal minus target; every pair appears twice (A vs B and B vs A). Keep one.
 - **Suppressed estimates arrive as `value` 999 with `stdError` -1** and `isStatDisplayable` 0 (reporting
   standard not met, too few students). The pack adds `value_flag` = "suppressed" for those rows: drop them,
-  never average 999. `errorFlag` is a bit sum; the pack decodes it into `errorFlag_notes` ("Reporting
+  never average 999. When every estimate of a request or of one year is withheld, the fetch notes it with
+  the reasons (a variable not reported that year names its replacement). `errorFlag` is a bit sum; the pack decodes it into `errorFlag_notes` ("Reporting
   standard not met", "Race note type 1", ...). Notes such as 512 keep the value; they are footnotes.
 - Values are unrounded (216.113410808617). NAEP publishes whole-number scores; round for display only,
   and test on the unrounded values (or use NAEP's `sig`).

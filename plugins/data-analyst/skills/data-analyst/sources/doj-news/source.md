@@ -52,10 +52,18 @@ image` (blog: `attachments`). The pack's default `fields` leaves out `body` to k
   releases); without quotes all words in any order (2,191). Matching is case-insensitive substring
   matching on the title only, not the body.
 - `parameters[date]` takes one day (YYYY-MM-DD or a Unix timestamp); a month such as "2025-06" returns
-  nothing. Ranges use the pack's `since`/`until`: the list is read newest first and stops once dates fall
-  before `since`, scanning at most 30,000 records (600 pages); a note says when it stopped early.
+  nothing. Ranges use the pack's `since`/`until`: the list is read newest posted first until the postings
+  are 14 days older than `since` (see the next point), scanning at most 30,000 records (600 pages); a note
+  says when it stopped early.
 - Without `sort=date` the API's order is not chronological (an unsorted title search starts in 2014); the
-  pack defaults to `sort=date`, `direction=DESC`.
+  pack defaults to `sort=date`, `direction=DESC`. The API keeps no stable order among releases of the same
+  day (one `date` stamp for about 100 a day), so paging by date repeats some and skips as many (verified
+  2026-10: a quarter of 1,500 rows were repeats). The pack therefore pages by `created` (posting time, to
+  the second) and returns the rows in date order; with `since` it reads 14 days of postings past it, since a
+  release can be posted days before its date (up to 11 seen; one posted earlier still would be missed). A
+  `max_rows` cut keeps the newest posted rows (its note says so): for "the latest N by date", fetch a date
+  range instead. A release that still comes back twice (one posted during the fetch) is dropped with a note.
+  A spec-chosen `sort=created` or `changed` is sent as given.
 - `component` and `topic` are lists (JSON text in the CSV); the pack adds `component_names` and
   `topic_names` ("; "-joined). A release can name several components (USAO plus DEA plus FBI) and has
   zero or more topics; topic tagging is inconsistent, especially before about 2015, so do not count by
@@ -78,7 +86,7 @@ image` (blog: `attachments`). The pack's default `fields` leaves out `body` to k
 
 ## Access
 No key. Route `api` when www.justice.gov answers; the pack sends at most 3 requests a second. Manual
-route: `manual_download/INSTRUCTIONS.md` lists one JSON link per page (50 records each, newest first);
+route: `manual_download/INSTRUCTIONS.md` lists one JSON link per page (50 records each, newest posted first);
 `since`/`until` are applied when the files are ingested. Without the links: use the filters at
 https://www.justice.gov/news (type, component, topic, date range) and copy titles, dates and URLs into a
 CSV with columns `title,date_iso,component_names,url`.

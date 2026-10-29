@@ -14,6 +14,9 @@ What it does for every pack (merged from the old
   30 errors a minute) and byte budget (BEA's 100 MB a minute).
 - retries on 429/500/502/503/504 and network errors with jittered exponential backoff; Retry-After is
   honoured up to MAX_RETRY_AFTER seconds, beyond that the call fails at once (kind "rate").
+- retry_html_400=n (endpoints.json "retry_html_400"): also retry, up to n times, an HTTP 400 whose body is an
+  HTML page. Some hosts' front servers answer a valid request that way now and then, while the API's own
+  parameter errors are JSON or text; those are never retried.
 - a per-attempt timeout and an overall deadline across retries.
 - check_error(status, body_bytes) -> message | None catches APIs that answer HTTP 200 with an error.
 - every request is recorded (credential-free URL, method, status, time, bytes, sha256) in SOURCES, which
@@ -40,6 +43,11 @@ from core import keys
 
 UA = "data-analyst/1.0 (Python urllib)"            # no URL: SEC refuses User-Agents that contain one
 CREDENTIAL_HEADERS = ("authorization", "x-api-key", "cookie")
+
+
+def _html_page(body: bytes) -> bool:
+    head = body[:300].lstrip().lower()
+    return head.startswith((b"<!doctype html", b"<html")) or b"<html" in head
 
 
 def error_snippet(body: bytes, limit: int = 400) -> str:
@@ -202,10 +210,12 @@ class Client:
     def __init__(self, base_url: str = "", *, name: str, auth: dict | None = None, key: str | None = None,
                  rps: float = 5, burst: int = 10, retries: int = 2, timeout: float = 30, deadline: float = 180,
                  check_error=None, headers: dict | None = None, user_agent: str = UA,
-                 errors_per_min: float | None = None, bytes_per_min: float | None = None):
+                 errors_per_min: float | None = None, bytes_per_min: float | None = None,
+                 retry_html_400: int = 0):
         self.base = base_url.rstrip("/")
         self.name, self.auth = name, dict(auth or {})
         self.retries, self.timeout, self.deadline = retries, timeout, deadline
+        self.retry_html_400 = int(retry_html_400 or 0)
         self.check_error, self.headers, self.ua = check_error, dict(headers or {}), user_agent
         self.error_budget = Budget(errors_per_min, "errors")
         self.byte_budget = Budget(bytes_per_min, "bytes")
@@ -279,7 +289,7 @@ class Client:
         if keys.restricted():
             raise DataError(f"{self.name}: DATA_ACCESS_FORCE=restricted: network access is switched off", kind="network")
         start, last = time.monotonic(), ""
-        for attempt in range(self.retries + 1):
+        for attempt in range(max(self.retries, self.retry_html_400) + 1):
             if time.monotonic() - start > self.deadline:
                 break
             self.bucket.take()
@@ -299,6 +309,9 @@ class Client:
                                         f"{MAX_RETRY_AFTER:.0f}s; wait and run again", kind="rate", status=e.code)
                     time.sleep(wait if wait is not None else self._backoff(attempt))
                     continue
+                if e.code == 400 and attempt < self.retry_html_400 and _html_page(r.body):
+                    time.sleep(self._backoff(attempt + 1))      # a front-server page, not the API's own error
+                    continue
                 return self._finish(r, method, ok_statuses, allow_404)
             except (urllib.error.URLError, TimeoutError, OSError, http.client.HTTPException) as e:
                 # HTTPException: a connection cut mid-body (IncompleteRead, RemoteDisconnected) is a network error
@@ -306,6 +319,7 @@ class Client:
                 if attempt < self.retries:
                     time.sleep(self._backoff(attempt))
                     continue
+                break
         raise DataError(f"{method} {shown.split('?')[0]}: network error: {last or 'deadline exceeded'}", kind="network")
 
     @staticmethod
@@ -358,11 +372,18 @@ class Client:
             raise DataError(f"{self.name}: not found (HTTP 404) {r.url.split('?')[0]}", kind="not_found", status=404)
         if r.status == 429:
             raise DataError(f"{self.name}: rate limited (HTTP 429) after retries", kind="rate", status=429)
+        if r.status == 400 and self.retry_html_400 and _html_page(r.body):
+            raise DataError(f"{self.name}: HTTP 400 ({snippet}) on {self.retry_html_400 + 1} tries. This host's front "
+                            "server sometimes answers a valid request with such an HTML page (the API's own parameter "
+                            "errors are JSON or text): run again in a few minutes; if it persists, check the "
+                            "parameters against source.md", kind="bad_request", status=400)
         if 400 <= r.status < 500:
             raise DataError(f"{self.name}: HTTP {r.status}: {snippet}", kind="bad_request", status=r.status)
         if r.status in RETRYABLE:
-            raise DataError(f"{self.name}: HTTP {r.status} after {self.retries} retries (the server is busy or down; "
-                            f"wait a few minutes and run again): {snippet}", kind="http", status=r.status)
+            raise DataError(f"{self.name}: HTTP {r.status} after {self.retries} retries: {snippet}. Either the server is "
+                            "busy or down (wait a few minutes and run again), or this request makes it fail: if a "
+                            "simpler request to the same endpoint answers, fix the request (an unsupported field or "
+                            "syntax in a raw query) instead of waiting", kind="http", status=r.status)
         raise DataError(f"{self.name}: HTTP {r.status}: {snippet}", kind="http", status=r.status)
 
     # ------------------------------------------------------------------ helpers

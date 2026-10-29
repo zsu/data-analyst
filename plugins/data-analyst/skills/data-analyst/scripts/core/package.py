@@ -182,7 +182,8 @@ def write(out: str, pack, tables: dict, spec: dict, route: str, acquired: str = 
     cite = pol.citation(P, retrieved=local_day, vintage=vintage, dataset=spec.get("description", ""))
     if earlier:
         listed = [f"- {pol.local_stamp(e['retrieved'])} ({e['route']}): " + ", ".join(f"`{t['file']}`" for t in e["tables"])
-                  + "; spec and requests in request.json `earlier_fetches`" for e in earlier]
+                  + "; spec and requests in request.json `earlier_fetches`"
+                  + "".join(f"\n  - **Problem**: {p}" for p in e.get("problems") or []) for e in earlier]
         extra_readme = "\n\n".join(x for x in (extra_readme, "## Earlier fetches into this folder\n\n"
                                                + "\n".join(listed)) if x)
     write_readme(d, pack, meta_tables, cite, retrieved, acquired, notes or [], problems or [], extra_readme)
@@ -202,8 +203,11 @@ def earlier_fetches(d: str, new_files: set[str]) -> list[dict]:
         keep = [t for t in e.get("tables") or [] if t.get("file") not in new_files
                 and os.path.exists(os.path.join(d, t.get("file", "")))]
         if keep:
+            # a kept table keeps its caveats: a table cut at max_rows stays partial after a later fetch
+            mine = tuple(f"{t.get('name')}:" for t in keep if t.get("name"))
             out.append({k: e.get(k) for k in ("spec", "fingerprint", "route", "acquired", "retrieved", "vintage",
-                                              "requests")} | {"tables": keep})
+                                              "requests")} | {"tables": keep}
+                       | {k: [str(n) for n in e.get(k) or [] if str(n).startswith(mine)] for k in ("problems", "notes")})
             new_files = new_files | {t["file"] for t in keep}
     return out
 

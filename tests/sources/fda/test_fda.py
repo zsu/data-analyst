@@ -84,6 +84,18 @@ class TestFda(PackTest):
         self.assertIn("limit=999", text)
         self.assertNotIn("limit=1000", text)
 
+    def test_date_count_is_not_cut_at_1000(self):
+        # r007 recorded live 2026-10-28 (a date count ignores limit): six years of daily counts are 2,123 rows,
+        # all kept; only term counts are capped by openFDA's limit.
+        spec = {"requests": [{"name": "daily", "endpoint": "count",
+                               "params": {"dataset": "drug_event", "count": "receivedate",
+                                          "search": "receivedate:[20200101 TO 20251231] AND "
+                                                    "patient.drug.openfda.generic_name:\"metformin hydrochloride\""}}]}
+        code, r, out = self.fetch(spec)
+        self.assertEqual(code, 0, r)
+        self.assertEqual(r["status"], "ok", r)
+        self.assertEqual(len(self.csv(out, "daily")), 2123)
+
     def test_count_404_reports_openfda_message(self):
         # r006 (2026-10-22): drug/shortages cannot count therapeutic_category.exact; openFDA answers HTTP 404
         # "Nothing to count", which is not a "no records match" case.

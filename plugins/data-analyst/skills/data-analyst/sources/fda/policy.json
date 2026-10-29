@@ -112,7 +112,7 @@
   ],
   "clarify": [
     "Adverse events: count reports or count reactions? One report lists several drugs and reactions; say which is counted.",
-    "Which dates: when FDA received the report (receivedate) or when the event happened? Recalls: report_date or recall_initiation_date?",
+    "Which dates: when FDA received the report (receivedate) or when the event happened? Recalls: report_date or recall_initiation_date (device_recall: event_date_posted or event_date_initiated)?",
     "All recall classes, or Class I (most serious) only?"
   ],
   "formats": [

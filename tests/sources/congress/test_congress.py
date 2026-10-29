@@ -105,6 +105,46 @@ class TestCongress(PackTest):
                                                             "committeeCode": "ssfi00"}))
         self.assertEqual(path, "/committee/116/senate/ssfi00/bills")
 
+    def test_title_contains_matches_the_phrase_as_given(self):
+        a = adapter()
+        m = a.title_matcher("water rights")
+        self.assertTrue(m("Tribal Water Rights Settlement Act"))
+        self.assertTrue(m("A bill on water-rights adjudication"))          # punctuation between words is fine
+        self.assertFalse(m("Rights of Water Users Act"))                   # word order matters
+        self.assertFalse(m("Freshwater Rights Act"))                       # each word matches at a word start
+        self.assertTrue(m("Waters Rightsholders Act"))                     # plurals and longer forms still match
+        one = a.title_matcher("port")
+        self.assertFalse(one("Rural Support Act"))
+        self.assertTrue(a.title_matcher("veteran")("Veterans Housing Act"))
+        many = a.title_matcher(["levy", "levies"])
+        self.assertTrue(many("Special Levies Act") and many("Levy Relief Act"))
+        self.assertIsNone(a.title_matcher("  "))
+        rows = [{"title": "Port Infrastructure Act"}, {"title": "Passport Fee Act"}]
+        self.assertEqual(a.normalize({"params": {"title_contains": "port"}}, {}, rows), rows[:1])
+
+    def test_multi_word_title_phrase_that_keeps_nothing_explains_word_order(self):
+        a = adapter()
+        self.assertIsNone(a.phrase_order_hint({"params": {"title_contains": "harbor"}}))
+        h = a.phrase_order_hint({"params": {"title_contains": ["harbor", "dredging permits"]}})
+        self.assertIn("'dredging permits'", h)
+        self.assertIn("in that order", h)
+        self.assertIn("list each form", h)
+        from unittest import mock
+        from core import packs
+        from core.http import DataError
+        pack = packs.load("congress")
+        r = {"name": "b", "endpoint": "bills", "params": {"title_contains": "dredging permits"}}
+
+        def empty(pack, spec, client=None):
+            raise DataError("request(s) 'b' returned no rows: check the filter values", kind="bad_request")
+        with mock.patch.object(a.gr, "fetch", empty):
+            with self.assertRaises(DataError) as cm:
+                a.fetch({"requests": [r]}, pack, "api")
+        self.assertIn("in that order", str(cm.exception))
+        with mock.patch.object(a.gr, "fetch", lambda pack, spec, client=None: ({"b": []}, [])):
+            _, notes = a.fetch({"requests": [{**r, "allow_empty": True}]}, pack, "api")
+        self.assertTrue(any("no titles matched" in n and "in that order" in n for n in notes), notes)
+
     def test_senate_roll_call_needs_session(self):
         bad = {"requests": [{"name": "x", "endpoint": "roll_call", "params": {"chamber": "senate", "roll": 5}}]}
         code, r = self.check(bad)

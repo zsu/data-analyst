@@ -57,6 +57,12 @@ depth to water (ft below land surface). Daily statistic ids: 00003 mean, 00001 m
 - `eventtype` defaults to all events (quarry blasts and explosions included); set `eventtype=earthquake`
   for earthquake counts. `status` automatic events are revised; reviewed ones are final but can still
   change. `alert` is the PAGER level (green, yellow, orange, red), blank for most events.
+- **An area crossing the 180th meridian** (Pacific islands and arcs, far-eastern Russia) is one box with
+  `maxlongitude` above 180: 170E to 170W is `minlongitude` 170, `maxlongitude` 190 (the service takes
+  -360 to 360; rows still come back in -180..180; verified 2026-10: one box returns exactly the events of
+  the two halves). `minlongitude` above `maxlongitude` is refused. If you split one area into two boxes
+  (one ending at 180, one starting at -180), give both the same latitude bounds and filters, or the strip
+  where they differ is left out silently; one box avoids that.
 - FDSN returns at most 20,000 events per call (`maxAllowed`); the pack always sets `limit` and pages
   with `offset`. `depth_km` is kilometres; coordinates are WGS84.
 - **Water rows are not in time order** (verified): sort by `time`. `value` is text; `unit_of_measure`

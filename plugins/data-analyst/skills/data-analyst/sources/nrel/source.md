@@ -49,6 +49,12 @@ Catalog aliases (`--search`): `ev_chargers`, `hydrogen_stations`, `electricity_r
   count as `status=all&access=all`). For "open public stations" pass `status=E` and `access=public`;
   say which set was counted. When a fetch stops at `max_rows`, the notes give the matching total
   (`total_results`).
+- **City**: the API has no city filter (sent, `city` answers 0 rows, verified 2026-10-28). The pack never
+  sends it: it fetches the `state` (or `zip`) and keeps the rows whose `city` matches, ignoring case. Leave
+  `max_rows` unset with `city`: a state fetch cut short leaves the city's rows incomplete (the fetch is then
+  `partial` and says so). A
+  place's stations can be listed under a neighbouring city name or ZIP: check the state table's `city`
+  and `zip` values before counting.
 - **Addresses are not accepted**: the API removed `location` (nearest stations) and `address`
   (utility_rates, solar_resource) and answers HTTP 422; pass decimal `latitude`/`longitude` (`lat`/`lon`).
   Geocode a place name yourself (e.g. Census geocoder) and say which coordinates were used.

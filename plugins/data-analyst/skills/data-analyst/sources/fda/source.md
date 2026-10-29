@@ -79,6 +79,14 @@ or years in analysis.
   error naming the search (set `"allow_empty": true` to keep an empty table).
 - Dates are text `YYYYMMDD` (`report_date`, `receivedate`, `recall_initiation_date`). Recall
   `report_date` is when FDA published the enforcement report, often weeks after initiation.
+- Two device recall datasets with different fields. `device_enforcement` (enforcement reports, like drug and
+  food) has `report_date`, `recall_initiation_date`, `classification` and `recall_number`.
+  `device_recall` (FDA's recall database, one row per product recall) has no `report_date` or class: its
+  dates are `event_date_initiated`, `event_date_posted` (when FDA posted it) and `event_date_terminated`
+  (`YYYY-MM-DD`; a range search takes `event_date_posted:[20250101 TO 20251231]`), the firm is
+  `recalling_firm` (word match: `recalling_firm:acme`), and it adds `root_cause_description`,
+  `recall_status`, `product_res_number`, `res_event_number` (one event spans several product recalls: count
+  events, not rows, for "how many recalls") and `product_code` (verified 2026-10-28).
 - Exception: drug_shortages dates (`initial_posting_date`, `update_date`, `discontinued_date`) are
   `MM/DD/YYYY` text. A range search on them needs ISO dates (`initial_posting_date:[2020-01-01 TO
   2020-12-31]`); the `[20200101 TO 20201231]` form finds nothing (verified 2026-10-22). Sorting and date

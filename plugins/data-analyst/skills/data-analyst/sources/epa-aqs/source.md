@@ -7,8 +7,8 @@ annual, quarterly or daily summaries, raw samples, and monitor metadata. Histori
 - Measured pollutant concentrations by state, county, site, CBSA or box; annual means and percentiles;
   daily values during episodes (wildfire smoke); which monitors operate where.
 - Not here: facility emissions, toxic releases, compliance (epa: GHGRP, TRI, ECHO); today's AQI and
-  forecasts (AirNow, not covered); the UV index (epa). Without a key, the same AQS data come as
-  pre-generated yearly files (AirData, see Access) that the user downloads.
+  forecasts (AirNow, not covered); the UV index (epa). Without a key, annual and daily summaries come
+  from EPA's AirData yearly files through `--ingest` (see Access).
 
 ## Endpoints and datasets
 | Endpoint | Returns | Parameters |
@@ -76,10 +76,18 @@ https://aqs.epa.gov/data/api/signup?email=YOUR_EMAIL with your address). Store t
 "env" block of keys.json, where the setup script puts both); both are sent as query parameters and never recorded. Limits (AQS terms):
 no more than 10 requests a minute, a 5-second pause between requests, one request at a time; the pack
 waits 5 seconds between calls, so multi-year requests take a while. Accounts that break the terms may be
-disabled. Manual route without a key: EPA AirData pre-generated files,
-https://aqs.epa.gov/aqsweb/airdata/download_files.html (annual_conc_by_monitor_<year>.zip,
-daily_<param>_<year>.zip such as daily_88101_2023.zip; unzip, filter, upload the CSV), or
-https://www.epa.gov/outdoor-air-quality-data. With a key elsewhere: the links in
+disabled. Without a key (`keyless_file` in `--check`): EPA's AirData yearly files hold the same annual and
+daily summaries for every U.S. monitor, at https://aqs.epa.gov/aqsweb/airdata/ (list:
+download_files.html): `annual_conc_by_monitor_<year>.zip` (all parameters, about 4 MB) for `annualData`,
+`daily_<code>_<year>.zip` (one parameter, 2-10 MB; e.g. daily_88101_2023.zip) for `dailyData`; one file per
+year; sizes checked 2026-10-28 (hourly files are 70+ MB: not a keyless route here). Give the .zip as
+downloaded (or its CSV) to `--ingest` with the same spec: it keeps the rows the spec asks for (state,
+county, site or box, parameter, dates; never filter by hand) and renames the columns to the API's names
+where they differ (`site_num` -> `site_number`, `parameter_name` -> `parameter`, `1st_max_value` ->
+`first_max_value`, `98th_percentile` -> `ninety_eighth_percentile`, ...). Daily requests take one parameter
+code each; `quarterlyData`, `sampleData`, `monitors` and `byCBSA` (the files carry CBSA names, not codes)
+need the key. AirData files are rebuilt about twice a year, so they can lag the API. Or
+https://www.epa.gov/outdoor-air-quality-data (a browser page). With a key elsewhere: the links in
 `manual_download/INSTRUCTIONS.md` (replace `{API_KEY}` and `{AQS_EMAIL}`). Then `--ingest`.
 
 ## Citation and terms

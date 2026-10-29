@@ -124,7 +124,52 @@ def unit_for(endpoint: str, unit):
     return u.replace("/", "-per-") if endpoint == "frames" else u.replace("-per-", "/")
 
 
-def _fact_rows(cik, entity, taxonomy, tag, concept, params) -> list[dict]:
+def _near(a: dict, b: dict) -> bool:
+    """Two facts of about the same period (end dates and lengths within a week: 52/53-week years)."""
+    from datetime import date
+    try:
+        ends = abs((date.fromisoformat(a["end"]) - date.fromisoformat(b["end"])).days)
+    except (TypeError, ValueError):
+        return a["end"] == b["end"]
+    da, db = a["period_days"], b["period_days"]
+    return ends <= 7 and (da == db == "" or (da != "" and db != "" and abs(da - db) <= 7))
+
+
+def _length(days) -> str | None:
+    """A fact's period class: instant, annual or quarter (None: any other length, e.g. a 6- or 9-month YTD)."""
+    if days == "":
+        return "instant"
+    return next((k for k, (lo, hi) in DURATIONS.items() if lo <= days <= hi), None)
+
+
+def one_per_period(rows: list[dict], duration: str | None = None) -> tuple[list[dict], int, int]:
+    """frames_only: one value per period, periods that do not overlap. SEC gives a `frame` to one fact per calendar
+    period (the latest filed), but leaves some periods with no framed fact (a filer's later fiscal years, verified
+    2026-10-28). Dropping unframed facts would cut those years, so a period with no framed fact keeps its
+    latest-filed fact, but only when its length is one the series has (annual, quarter or instant, as the framed
+    facts or `duration` say): an unframed 6- or 9-month year-to-date fact overlaps the series and is skipped.
+    Returns (rows, periods restored, unframed periods skipped)."""
+    framed = [r for r in rows if r["frame"]]
+    kinds = {_length(r["period_days"]) for r in framed} | ({duration} if duration else set())
+    groups: dict = {}
+    for r in rows:
+        if not r["frame"]:
+            groups.setdefault((r["unit"], r["start"], r["end"]), []).append(r)
+    extra, skipped = [], 0
+    for g in sorted(groups.values(), key=lambda g: max(str(r["filed"]) for r in g), reverse=True):
+        best = max(g, key=lambda r: (str(r["filed"]), str(r["accn"])))
+        if any(f["unit"] == best["unit"] and _near(f, best) for f in framed + extra):
+            continue                                    # a framed (or already restored) fact covers this period
+        if _length(best["period_days"]) not in kinds - {None}:
+            skipped += 1
+            continue
+        extra.append(best)
+    out = framed + extra
+    out.sort(key=lambda r: (r["tag"], r["unit"], str(r["end"]), str(r["start"])))
+    return out, len(extra), skipped
+
+
+def _fact_rows(cik, entity, taxonomy, tag, concept, params, notes=None, name="") -> list[dict]:
     forms, unit = _split(params.get("forms")), unit_for("company_concept", params.get("unit"))
     rows = []
     for u, obs in (concept.get("units") or {}).items():
@@ -132,8 +177,6 @@ def _fact_rows(cik, entity, taxonomy, tag, concept, params) -> list[dict]:
             continue
         for o in obs:
             if forms and not any(str(o.get("form", "")).startswith(f) for f in forms):
-                continue
-            if _true(params.get("frames_only")) and not o.get("frame"):
                 continue
             days = _days(o.get("start"), o.get("end"))
             want = params.get("duration")
@@ -144,6 +187,12 @@ def _fact_rows(cik, entity, taxonomy, tag, concept, params) -> list[dict]:
                          "period_days": days,
                          "val": o.get("val"), "fy": o.get("fy", ""), "fp": o.get("fp", ""), "form": o.get("form", ""),
                          "filed": o.get("filed", ""), "accn": o.get("accn", ""), "frame": o.get("frame", "")})
+    if _true(params.get("frames_only")):
+        rows, restored, skipped = one_per_period(rows, params.get("duration"))
+        if (restored or skipped) and notes is not None:
+            notes.append(f"{name}: {tag}: {restored} period(s) with no SEC frame were restored from their latest-filed "
+                         f"fact (empty frame column); {skipped} unframed fact period(s) of another length (e.g. "
+                         "year-to-date) were skipped because they overlap the series. Label periods by end date.")
     return rows
 
 
@@ -208,87 +257,100 @@ def check_spec(spec):
 
 def fetch(spec, pack, route):
     c = client(pack)
-    tables, notes = {}, []
+    tables, notes, miss = {}, [], gr.Misses()
     for r in spec["requests"]:
         ep, params, probs = gr.resolve(pack, r)
         if probs:
             raise DataError("; ".join(probs), kind="bad_request")
         kind, name = r.get("endpoint"), r["name"]
         limit = int(r.get("max_rows") or ep.get("max_rows") or 100000)
-        if kind == "company_search":
-            rows = lookup(c, params["text"], 20)
-        elif kind == "submissions":
-            cik = resolve_cik(c, params)
-            d = c.get_json(f"/submissions/CIK{cik}.json")
-            prof = {"cik": cik, "entity_name": d.get("name", ""), "sic": d.get("sic", ""),
-                    "sic_description": d.get("sicDescription", ""), "tickers": "; ".join(d.get("tickers") or [])}
-            rows = _filings(cik, (d.get("filings") or {}).get("recent") or {}, prof)
-            older = (d.get("filings") or {}).get("files") or []
-            if _true(params.get("all")):
-                for f in older:
-                    rows += _filings(cik, c.get_json(f"/submissions/{f['name']}"), prof)
-            elif older:
-                notes.append(f"{name}: older filings are in {len(older)} more file(s); set params.all=true to include them.")
-            forms, since = _split(params.get("forms")), params.get("since")
-            if forms:
-                rows = [x for x in rows if x.get("form") in forms]
-            if since:
-                rows = [x for x in rows if str(x.get("filingDate", "")) >= since]
-        elif kind == "company_concept":
-            cik = resolve_cik(c, params)
-            tax = params.get("taxonomy") or "us-gaap"
-            d = c.get_json(f"/api/xbrl/companyconcept/CIK{cik}/{tax}/{params['tag']}.json")
-            rows = _fact_rows(cik, d.get("entityName", ""), tax, d.get("tag", params["tag"]), d, params)
-        elif kind == "company_facts":
-            cik = resolve_cik(c, params)
-            d = c.get_json(f"/api/xbrl/companyfacts/CIK{cik}.json")
-            tags, tax_only = set(_split(params.get("tags"))), params.get("taxonomy")
-            rows = []
-            for tax, concepts in (d.get("facts") or {}).items():
-                if tax_only and tax != tax_only:
-                    continue
-                for tag, concept in concepts.items():
-                    if tags and tag not in tags:
+        try:
+            if kind == "company_search":
+                rows = lookup(c, params["text"], 20)
+            elif kind == "submissions":
+                cik = resolve_cik(c, params)
+                d = c.get_json(f"/submissions/CIK{cik}.json")
+                prof = {"cik": cik, "entity_name": d.get("name", ""), "sic": d.get("sic", ""),
+                        "sic_description": d.get("sicDescription", ""), "tickers": "; ".join(d.get("tickers") or [])}
+                rows = _filings(cik, (d.get("filings") or {}).get("recent") or {}, prof)
+                older = (d.get("filings") or {}).get("files") or []
+                if _true(params.get("all")):
+                    for f in older:
+                        rows += _filings(cik, c.get_json(f"/submissions/{f['name']}"), prof)
+                elif older:
+                    notes.append(f"{name}: older filings are in {len(older)} more file(s); set params.all=true to include them.")
+                forms, since = _split(params.get("forms")), params.get("since")
+                if forms:
+                    rows = [x for x in rows if x.get("form") in forms]
+                if since:
+                    rows = [x for x in rows if str(x.get("filingDate", "")) >= since]
+            elif kind == "company_concept":
+                cik = resolve_cik(c, params)
+                tax = params.get("taxonomy") or "us-gaap"
+                d = c.get_json(f"/api/xbrl/companyconcept/CIK{cik}/{tax}/{params['tag']}.json")
+                rows = _fact_rows(cik, d.get("entityName", ""), tax, d.get("tag", params["tag"]), d, params, notes, name)
+            elif kind == "company_facts":
+                cik = resolve_cik(c, params)
+                d = c.get_json(f"/api/xbrl/companyfacts/CIK{cik}.json")
+                tags, tax_only = set(_split(params.get("tags"))), params.get("taxonomy")
+                rows = []
+                for tax, concepts in (d.get("facts") or {}).items():
+                    if tax_only and tax != tax_only:
                         continue
-                    rows += _fact_rows(cik, d.get("entityName", ""), tax, tag, concept, params)
-            missing = sorted(tags - {x["tag"] for x in rows})
-            if missing:
-                notes.append(f"{name}: not reported by this company (or filtered out): {', '.join(missing)}")
-        elif kind == "frames":
-            tax, unit = params.get("taxonomy") or "us-gaap", unit_for("frames", params.get("unit") or "USD")
-            d = c.get_json(f"/api/xbrl/frames/{tax}/{params['tag']}/{unit}/{params['period']}.json")
-            base = {"taxonomy": tax, "tag": d.get("tag", params["tag"]), "unit": d.get("uom", unit), "period": d.get("ccp", params["period"])}
-            rows = [{**base, **{k: v for k, v in x.items()}} for x in d.get("data") or []]
-        elif kind == "full_text_search":
-            q = {k: params[k] for k in ("q", "forms", "startdt", "enddt", "ciks") if params.get(k)}
-            rows, total = _efts_all(c, q, limit)
-            if total and total > len(rows):
-                notes.append(f"{name}: {len(rows):,} of {total:,}{'+' if total >= 10000 else ''} matching documents; "
-                             "narrow the dates or forms (the index returns at most 10,000).")
-        elif kind == "insider_filings":
-            cik = resolve_cik(c, params)
-            q = {"forms": params.get("forms") or "4", "ciks": cik}
-            q.update({k: params[k] for k in ("startdt", "enddt") if params.get(k)})
-            docs, total = _efts_all(c, q, limit)
-            rows = []
-            for x in docs:
-                cks, names = x["ciks"].split("; "), x["display_names"].split("; ")
-                i = next((j for j, v in enumerate(cks) if v != cik), None)
-                rows.append({"issuer_cik": cik, "form": x["form"], "file_date": x["file_date"],
-                             "period_ending": x["period_ending"],
-                             "insider": re.sub(r"\s*\(CIK \d+\)\s*$", "", names[i]).strip() if i is not None and i < len(names) else "",
-                             "insider_cik": cks[i] if i is not None else "", "adsh": x["adsh"],
-                             "index_url": f"{ARCHIVES}/{int(cik)}/{x['adsh'].replace('-', '')}/{x['adsh']}-index.htm"})
-            rows.sort(key=lambda z: z["file_date"], reverse=True)
-        else:
-            raise DataError(f"unknown endpoint {kind!r}", kind="bad_request")
+                    for tag, concept in concepts.items():
+                        if tags and tag not in tags:
+                            continue
+                        rows += _fact_rows(cik, d.get("entityName", ""), tax, tag, concept, params, notes, name)
+                missing = sorted(tags - {x["tag"] for x in rows})
+                if missing:
+                    notes.append(f"{name}: not reported by this company (or filtered out): {', '.join(missing)}")
+            elif kind == "frames":
+                tax, unit = params.get("taxonomy") or "us-gaap", unit_for("frames", params.get("unit") or "USD")
+                d = c.get_json(f"/api/xbrl/frames/{tax}/{params['tag']}/{unit}/{params['period']}.json")
+                base = {"taxonomy": tax, "tag": d.get("tag", params["tag"]), "unit": d.get("uom", unit), "period": d.get("ccp", params["period"])}
+                rows = [{**base, **{k: v for k, v in x.items()}} for x in d.get("data") or []]
+            elif kind == "full_text_search":
+                q = {k: params[k] for k in ("q", "forms", "startdt", "enddt", "ciks") if params.get(k)}
+                rows, total = _efts_all(c, q, limit)
+                if total and total > len(rows):
+                    notes.append(f"{name}: {len(rows):,} of {total:,}{'+' if total >= 10000 else ''} matching documents; "
+                                 "narrow the dates or forms (the index returns at most 10,000).")
+            elif kind == "insider_filings":
+                cik = resolve_cik(c, params)
+                q = {"forms": params.get("forms") or "4", "ciks": cik}
+                q.update({k: params[k] for k in ("startdt", "enddt") if params.get(k)})
+                docs, total = _efts_all(c, q, limit)
+                rows = []
+                for x in docs:
+                    cks, names = x["ciks"].split("; "), x["display_names"].split("; ")
+                    i = next((j for j, v in enumerate(cks) if v != cik), None)
+                    rows.append({"issuer_cik": cik, "form": x["form"], "file_date": x["file_date"],
+                                 "period_ending": x["period_ending"],
+                                 "insider": re.sub(r"\s*\(CIK \d+\)\s*$", "", names[i]).strip() if i is not None and i < len(names) else "",
+                                 "insider_cik": cks[i] if i is not None else "", "adsh": x["adsh"],
+                                 "index_url": f"{ARCHIVES}/{int(cik)}/{x['adsh'].replace('-', '')}/{x['adsh']}-index.htm"})
+                rows.sort(key=lambda z: z["file_date"], reverse=True)
+            else:
+                raise DataError(f"unknown endpoint {kind!r}", kind="bad_request")
+        except DataError as e:
+            if e.kind != "not_found":
+                raise DataError(f"request {name!r} ({kind}): {e}", kind=e.kind, status=getattr(e, "status", None)) from None
+            miss.not_found(r, tables, notes)      # one unknown tag or CIK must not stop the other requests
+            continue
         if len(rows) > limit:
             notes.append(f"{name}: stopped at {limit:,} of {len(rows):,} rows (max_rows).")
             rows = rows[:limit]
-        if not rows and not r.get("allow_empty"):
-            raise DataError(f"request {name!r} returned no rows: check the tag (case-sensitive), unit, forms filter "
-                            "or period (see source.md)", kind="bad_request")
+        if kind == "company_search" and not rows:   # no match is an answer, not a spec error: keep the others
+            notes.append(f"{name}: no SEC filer matched {params['text']!r} (EDGAR company search); kept as an empty "
+                         "table. Try a shorter or former name or the ticker; a company that files nothing with the "
+                         "SEC (private, or foreign without U.S. listings) has no record.")
+        else:
+            miss.check_empty(r, rows)
         tables[name] = [{k: ("" if v is None else v) for k, v in row.items()} for row in rows]
+    miss.raise_if_any(missing_hint="SEC has no such tag for that company or no such CIK (tags are case-sensitive). "
+                      "To see which of several tags a company reports, ask company_facts with \"tags\": it notes the "
+                      "unreported ones instead of failing",
+                      empty_hint="check the tag (case-sensitive), unit, forms filter or period (see source.md)")
     return tables, notes
 
 

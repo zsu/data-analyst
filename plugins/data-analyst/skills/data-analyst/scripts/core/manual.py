@@ -225,20 +225,26 @@ def candidate_files(paths: list[str] | None) -> list[str]:
 
 def match_uploads(paths: list[str] | None, items: list[dict]) -> tuple[dict, list[str]]:
     """Map each expected item to an uploaded file: exact filename, then the same name with a browser
-    suffix ("file (1).csv"), then a unique file with the same extension. Returns (found, missing names)."""
+    suffix ("file (1).csv"), then a unique file with the same extension; then the item's alt_filenames (the
+    agency's own keyless file that holds the same rows, under its published name). Returns (found, missing names)."""
     files = candidate_files(paths)
     by_name = {os.path.basename(f).lower(): f for f in files}
     found, missing = {}, []
-    for it in items:
-        want = safe_name(it["filename"]).lower()
+
+    def look(filename, also=()):
+        want = safe_name(filename).lower()
         stem, ext = os.path.splitext(want)
-        exts = (ext, *[e.lower() for e in it.get("also_ext") or ()])    # another format the pack can read
-        hit = by_name.get(want) or next((f for n, f in by_name.items() if n.startswith(stem) and n.endswith(exts)),
-                                        None)
+        exts = (ext, *[e.lower() for e in also])     # another format the pack can read
+        return by_name.get(want) or next((f for n, f in by_name.items() if n.startswith(stem) and n.endswith(exts)),
+                                         None)
+    for it in items:
+        hit = look(it["filename"], it.get("also_ext") or ()) or \
+            next((h for h in (look(a) for a in it.get("alt_filenames") or ()) if h), None)
         if hit:
             found[it["name"]] = hit
         elif not it.get("optional"):
-            missing.append(it["filename"])
+            alt = it.get("alt_filenames")
+            missing.append(it["filename"] + (f" (or {' / '.join(alt)})" if alt else ""))
     if missing and len(items) == 1 and len(files) == 1:
         found[items[0]["name"]], missing = files[0], []
     return found, missing

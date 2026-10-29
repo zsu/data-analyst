@@ -15,7 +15,8 @@
      "desc": "ZIP code(s)"
     },
     "city": {
-     "desc": "city name"
+     "in": "spec",
+     "desc": "city name: the API has no city filter (it answers 0 rows), so the pack keeps the rows whose city matches, ignoring case; give state (or zip) too"
     },
     "status": {
      "desc": "E open, P planned, T temporarily unavailable, all; comma-separated for several. Without it the API returns every status: pass E for open stations only"
@@ -68,7 +69,8 @@
      "desc": "ZIP code(s)"
     },
     "city": {
-     "desc": "city name"
+     "in": "spec",
+     "desc": "city name: the API has no city filter (it answers 0 rows), so the pack keeps the rows whose city matches, ignoring case; give state (or zip) too"
     },
     "status": {
      "desc": "E open, P planned, T temporarily unavailable, all; comma-separated for several. Without it the API returns every status: pass E for open stations only"
@@ -251,7 +253,8 @@
      "desc": "ZIP code(s)"
     },
     "city": {
-     "desc": "city name"
+     "in": "spec",
+     "desc": "city name: the API has no city filter (it answers 0 rows), so the pack keeps the rows whose city matches, ignoring case; give state (or zip) too"
     },
     "status": {
      "desc": "E open, P planned, T temporarily unavailable, all; comma-separated for several. Without it the API returns every status: pass E for open stations only"

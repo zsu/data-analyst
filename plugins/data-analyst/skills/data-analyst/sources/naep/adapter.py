@@ -222,11 +222,44 @@ class _Tolerant:
         return dataclasses.replace(resp, body=json.dumps(data, ensure_ascii=False).encode("utf-8"))
 
 
+def withheld_note(req, rows) -> str | None:
+    """A request (or a year of it) whose every estimate is withheld returns status ok and rows of 999: say so,
+    with the reasons, and name the variable that replaced a non-qualified one (SLUNCH3 has no 2024 estimates:
+    every cell is 999 "Non-qualified independent variable"; ECONDIS carries them, verified 2026-10-28)."""
+    flagged = [r for r in rows if "value_flag" in r]
+    if not flagged:
+        return None
+    by_year: dict = {}
+    for r in flagged:
+        by_year.setdefault(str(r.get("year", "")), []).append(r)
+    empty = sorted(y for y, rs in by_year.items() if all(r["value_flag"] == "suppressed" for r in rs))
+    if not empty:
+        return None
+    gone = [r for r in flagged if str(r.get("year", "")) in empty]
+    why = sorted({x.strip() for r in gone for k, v in r.items() if k.endswith("_notes") and v
+                  for x in str(v).split(";")})
+    which = "every estimate" if len(empty) == len(by_year) else f"every estimate for {', '.join(empty)}"
+    note = (f"{req['name']}: {which} is withheld (value 999, value_flag suppressed): "
+            f"{'; '.join(why) or 'no reason given'}. Do not report or average these cells.")
+    if "Non-qualified independent variable" in why:
+        var = str((req.get("params") or {}).get("variable") or "")
+        succ = [c.get("successor") for c in _catalog().values()
+                if c.get("kind") == "variable" and c["id"] in var.split("+") and c.get("successor")]
+        note += (f" The variable {var} is not reported for that assessment" +
+                 (f"; use {', '.join(succ)} instead (see source.md)." if succ else
+                  "; find its replacement with --search."))
+    return note
+
+
 def fetch(spec, pack, route):
-    """The generic fetch through the tolerant client; a note says how many responses needed the repair."""
+    """The generic fetch through the tolerant client; a note says how many responses needed the repair, and one
+    says when every estimate of a request or a year is withheld."""
     from core import generic_rest as gr
     c = _Tolerant(gr.client_for(pack))
     tables, notes = gr.fetch(pack, spec, c)
+    for r in spec["requests"]:
+        note = withheld_note(r, tables.get(r["name"]) or [])
+        notes += [note] if note else []
     if c.repaired:
         notes.append(f"{len(c.repaired)} NAEP response(s) were malformed JSON (unescaped quotes inside text "
                      "labels, e.g. type=independentvariables); the pack escaped them before parsing. Labels "

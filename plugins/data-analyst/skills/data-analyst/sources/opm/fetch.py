@@ -178,6 +178,20 @@ def load_spec(path: str) -> dict:
         if nums:      # codes are strings with leading zeros: 8 would never match "08"
             raise ValueError(f'filter {col!r}: values must be strings exactly as in the data '
                              f'(for example "08" or "0343", not {nums[0]!r})')
+    known = dataset_columns()                 # a name no requested dataset has would come back as an all-null column
+    if known:
+        have = set().union(*(known.get(d, set()) for d in ds)) | {c for d in ds for c in ALWAYS.get(d, [])} | \
+            {"file_yyyymm", "source_file"}
+        named = list(spec.get("columns") or []) + list(spec.get("filters") or {}) + \
+            list((spec.get("aggregate") or {}).get("by") or [])
+        bad = [c for c in dict.fromkeys(named) if c not in have]
+        if bad:
+            import difflib
+            near = {c: list(dict.fromkeys(difflib.get_close_matches(c, sorted(have), n=3, cutoff=0.5) +
+                                          [h for h in sorted(have) if any(len(w) > 4 and w in h for w in c.split("_"))]))[:4]
+                    for c in bad}
+            raise ValueError(f"unknown column(s) {bad} for {sorted(ds)} (lib/data_dictionary.csv); close: "
+                             + "; ".join(f"{c} -> {v or 'none'}" for c, v in near.items()))
     agg = spec.get("aggregate")
     if agg and spec.get("columns"):           # aggregate keeps only its "by" columns: say so before data is lost
         auto = {c for cols in ALWAYS.values() for c in cols} | set(PAY_COLS)

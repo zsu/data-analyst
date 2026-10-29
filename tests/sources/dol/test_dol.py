@@ -107,6 +107,31 @@ class TestDol(PackTest):
         self.assertEqual(r["route"], "fix_spec", r)
         self.assertIn("state", r["message"])
 
+    def test_unknown_field_names_are_fix_spec_without_a_key(self):
+        # the field dictionary (r007, dataset 10334) is keyless: a filter, search or sort on a field the dataset lacks
+        # is caught by --check (fix_spec), not after the user downloads a bundle of failing links
+        bad = {"requests": [{"name": "x", "endpoint": "query",
+                             "params": {"dataset": "osha_inspection", "state": "NH",
+                                        "filters": {"site_district": "NORTH", "insp_type": "B"},
+                                        "search": {"establishment": "acme"}}}]}
+        code, r = self.check(bad)
+        self.assertEqual(r["route"], "fix_spec", r)
+        self.assertIn("'site_district'", r["message"])
+        self.assertIn("'establishment'", r["message"])
+        self.assertNotIn("'insp_type'", r["message"].split("its fields")[0])
+        self.assertIn("site_city", r["message"])                    # the real fields are listed
+        bad["requests"][0]["check_fields"] = False                  # the escape when the dictionary is incomplete
+        code, r = self.check(bad)
+        self.assertEqual(r["route"], "run_setup", r)
+        good = {"requests": [{"name": "x", "endpoint": "query",
+                              "params": {"dataset": "osha_inspection", "state": "NH", "filters": {"site_city": "KEENE"}}}]}
+        code, r = self.check(good)
+        self.assertEqual(r["route"], "run_setup", r)
+        # run_setup names the pack's keyless way to the same data and the command that packages such a file
+        self.assertIn("https://", r["keyless_alternative"])
+        self.assertIn("--ingest", r["ingest_command"])
+        self.assertIn("ingest_command", r["action"])
+
     def test_search_catalog(self):
         code, r = self.cli("--search", "unemployment insurance weekly claims state")
         self.assertEqual(code, 0, r)

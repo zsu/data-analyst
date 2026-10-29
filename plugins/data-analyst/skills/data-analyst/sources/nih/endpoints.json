@@ -11,7 +11,10 @@
      "desc": "RePORTER criteria object, merged with the friendly keys below"
     },
     "text": {
-     "desc": "words searched in title, terms and abstract (advanced_text_search, operator and)"
+     "desc": "every word, anywhere in title, terms and abstract, any order (advanced_text_search operator and); not a phrase"
+    },
+    "phrase": {
+     "desc": "exact phrase in title, terms or abstract (operator advanced, quoted); a list = any of the phrases; instead of text"
     },
     "text_fields": {
      "desc": "where to search text: projecttitle,terms,abstracttext (default all three)"
@@ -46,7 +49,7 @@
     },
     "sort_field": {
      "in": "body",
-     "desc": "e.g. award_amount"
+     "desc": "default appl_id when the search may need more than one page (a unique field keeps pages stable); e.g. award_amount"
     },
     "sort_order": {
      "in": "body",
@@ -63,6 +66,11 @@
     "in": "body"
    },
    "max_rows": 15000,
+   "unique_key": "appl_id",
+   "truncated_note": {
+    "when_default": "sort_field",
+    "text": "The rows kept are those with the lowest appl_id (the pack pages in appl_id order so pages do not repeat or skip rows), not the most relevant: set sort_field (e.g. award_amount, desc) to choose which rows a cut keeps."
+   },
    "missing": [
     ""
    ],

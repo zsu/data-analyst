@@ -56,6 +56,131 @@ class TestNhtsa(PackTest):
         code, r = self.check(bad)
         self.assertEqual(r["route"], "fix_spec", r)
 
+    def test_variants_fetched_and_unmatched_name_is_a_note(self):
+        # Fixtures r005-r013 recorded live 2026-10-28 (model lists trimmed to the models used): by default only the
+        # name asked for is fetched and the other listed names are named in a note; "variants": true adds only
+        # the powertrain/body versions. A name NHTSA does not know (HTTP 400) is an empty table with a note.
+        base = {"make": "honda", "model": "accord", "modelYear": 2023}
+        spec = {"description": "Recalls for a 2023 sedan; a misspelled model",
+                "requests": [{"name": "sedan_2023", "endpoint": "recalls_by_vehicle", "params": base},
+                             {"name": "typo", "endpoint": "recalls_by_vehicle",
+                              "params": {"make": "honda", "model": "zzqx", "modelYear": 2023}},
+                             {"name": "odi", "endpoint": "complaint_odi", "params": {"odinumber": 11675912}}]}
+        code, r, out = self.fetch(spec)
+        self.assertEqual(code, 0, r)
+        self.assertEqual({x["model_requested"] for x in self.csv(out, "sedan_2023")}, {"accord"})
+        self.assertTrue(any(n.startswith("sedan_2023: NHTSA also lists ACCORD HYBRID, ACCORD SEDAN") for n in r["notes"]),
+                        r["notes"])
+        self.assertEqual(self.csv(out, "typo"), [])
+        self.assertTrue(any(n.startswith("typo: no vehicle matched") for n in r["notes"]), r["notes"])
+        self.assertTrue(self.csv(out, "odi"))
+        spec["requests"][0]["params"] = {**base, "variants": True}
+        code, r, out = self.fetch(spec)
+        rows = self.csv(out, "sedan_2023")
+        camp = [x["NHTSACampaignNumber"] for x in rows]
+        self.assertEqual(len(camp), len(set(camp)))                       # a shared campaign is kept once
+        self.assertIn("ACCORD HYBRID", {x["model_requested"] for x in rows})
+        self.assertTrue(any("ACCORD HYBRID (4)" in n and "no record under: ACCORD SEDAN" in n for n in r["notes"]),
+                        r["notes"])
+
+    def test_variant_5xx_marks_the_table_incomplete(self):
+        # a 5xx is not "no record": the table is marked incomplete (status partial) while other lookups answered;
+        # when no vehicle lookup answers at all, the source is down and the fetch fails
+        import json as _json
+        from unittest import mock
+        from testkit import load_pack_module
+        from core import generic_rest as gr
+        from core import packs
+        from core.http import DataError
+        ad = load_pack_module("nhtsa")
+        pack = packs.load("nhtsa")
+
+        class Resp:
+            def __init__(self, d):
+                self.body = _json.dumps(d).encode()
+            def json(self):
+                return _json.loads(self.body)
+
+        class Client:
+            def __init__(self, up):
+                self.up = up
+            def request(self, method, path, q, json_body=None):
+                if "products" in path:
+                    return Resp({"results": [{"model": "WREN"}, {"model": "WREN HYBRID"}, {"model": "WREN SPORT"}]})
+                if q["model"] == "wren" and self.up:
+                    return Resp({"Count": 1, "results": [{"NHTSACampaignNumber": "99V001000"}]})
+                raise DataError("nhtsa: HTTP 503", kind="http", status=503)
+
+        spec = {"requests": [{"name": "w", "endpoint": "recalls_by_vehicle",
+                              "params": {"make": "x", "model": "wren", "modelYear": 2023, "variants": True}}]}
+        with mock.patch.object(ad.gr, "client_for", lambda pack: Client(True)):
+            tables, notes = ad.fetch(spec, pack, "api")
+        self.assertEqual(len(tables["w"]), 1)
+        self.assertTrue(any(n.startswith("w" + gr.INCOMPLETE) and "WREN HYBRID (HTTP 503)" in n for n in notes), notes)
+        self.assertFalse(any("no vehicle matched" in n for n in notes), notes)
+        self.assertTrue(any("NHTSA also lists WREN SPORT" in n for n in notes), notes)   # a distinct model: not merged
+        with mock.patch.object(ad.gr, "client_for", lambda pack: Client(False)):
+            with self.assertRaises(DataError):
+                ad.fetch(spec, pack, "api")
+
+    def test_prefixed_names_unit(self):
+        from testkit import load_pack_module
+        ad = load_pack_module("nhtsa")
+        listed = ["SPARROW", "SPARROW HYBRID", "SPARROWHAWK", "SPARROW (CREW CAB) EV", "sparrow hybrid", "SPARROW SPORT",
+                  "SPARROW 4DR AWD", "WREN"]
+        self.assertEqual(ad.prefixed("sparrow", listed),
+                         (["SPARROW HYBRID", "SPARROW (CREW CAB) EV", "SPARROW 4DR AWD"], ["SPARROW SPORT"]))
+        self.assertEqual(ad._forms("SPARROW (CREW CAB) EV", True), ["SPARROW (CREW CAB) EV", "SPARROW EV"])
+        self.assertEqual(ad._forms("SPARROW (CREW CAB) EV", False), ["SPARROW (CREW CAB) EV"])
+
+    def test_car_seat_stations_follow_offset_paging(self):
+        # the station API returns 100 a page and pages with ?offset=; a state with more must not stop at 100
+        import json as _json
+        from core import generic_rest as gr
+        from core import packs
+        ep = packs.load("nhtsa").endpoints["endpoints"]["car_seat_stations_state"]
+        sent = []
+
+        class Resp:
+            def __init__(self, n, start=0):
+                self.body = _json.dumps({"Count": n, "Results": [{"Organization": f"o{start + i}"} for i in range(n)]}).encode()
+            def json(self):
+                return _json.loads(self.body)
+
+        class Client:
+            def request(self, method, path, q, json_body=None):
+                sent.append(q.get("offset"))
+                off = int(q.get("offset") or 0)
+                return Resp(max(0, min(100, 230 - off)), off)
+
+        rows, meta = gr.fetch_request(Client(), ep, {"state": "ZZ"})
+        self.assertEqual(len(rows), 230)
+        self.assertEqual(sent, [0, 100, 200])
+        self.assertFalse(meta["truncated"])
+
+    def test_paging_stops_when_a_page_repeats(self):
+        # an endpoint that ignores offset returns the same page again: the fetch stops and marks the table
+        # incomplete instead of reading that page up to max_rows
+        import json as _json
+        from core import generic_rest as gr
+        from core import packs
+        ep = packs.load("nhtsa").endpoints["endpoints"]["car_seat_stations_zip"]
+        sent = []
+
+        class Resp:
+            body = _json.dumps({"Count": 100, "Results": [{"Organization": f"o{i}"} for i in range(100)]}).encode()
+            def json(self):
+                return _json.loads(self.body)
+
+        class Client:
+            def request(self, method, path, q, json_body=None):
+                sent.append(q.get("offset"))
+                return Resp()
+
+        rows, meta = gr.fetch_request(Client(), ep, {"zip": "00000"})
+        self.assertEqual((len(rows), sent), (100, [0, 100]))
+        self.assertTrue(meta["truncated"] and meta["repeated_page"])
+
     def test_manual_bundle_vpic_host(self):
         sp, out = self.write_spec(SPEC)
         code, r = self.cli(sp, "--out", out, "--manual-bundle")

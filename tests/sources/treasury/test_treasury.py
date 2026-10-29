@@ -187,6 +187,22 @@ class TestTreasuryUnits(unittest.TestCase):
         m = {"mil_amt": "CURRENCY"}                         # millions by name though its format says $10.20
         self.assertIn("mil_amt are in MILLIONS", f.unit_hint("v1/accounting/mts/x", m, m, {"mil_amt": "$10.20"}))
 
+    def test_values_lists_every_value(self):
+        # --values is asked for a category list: it must list them all, not a few examples (the README keeps 40)
+        f = load("treasury_pack_fetch", os.path.join(PACK, "fetch.py"))
+        rows = [{"transaction_catg": f"Line {i:03d}", "record_date": "2026-01-02"} for i in range(120)]
+        cols = ["transaction_catg", "record_date"]
+        short = f.value_summary(rows, cols)["columns"]["transaction_catg"]
+        self.assertEqual(short["distinct"], 120)
+        self.assertIn("--values", short["all_values"])
+        full = f.value_summary(rows, cols, max_values=f.MAX_VALUES_CLI)["columns"]["transaction_catg"]
+        self.assertEqual(len(full), 120)
+        self.assertIn("Line 119", full)
+        many = [{"transaction_catg": f"Line {i:03d}"} for i in range(250)]      # capped, with how to see the rest
+        top = f.value_summary(many, ["transaction_catg"], max_values=f.MAX_VALUES_CLI)["columns"]["transaction_catg"]
+        self.assertEqual((top["distinct"], len(top["values"])), (250, 200))
+        self.assertIn("+50 more", top["more"])
+
     def test_string_filter_applied_on_ingest(self):
         f = load("treasury_pack_fetch", os.path.join(PACK, "fetch.py"))
         self.assertEqual(f.parse_filter_string("record_date:gte:2020-01-01,type:in:(Bills,Notes),record_date:lte:2025-09-30"),

@@ -20,7 +20,12 @@ Several sources for one question (plan.json: {"description", "sources": [{"sourc
   python fetch.py --plan <out>/plan.json --out <out>             # fetch every source that has a working route
   python fetch.py --plan <out>/plan.json --out <out> --ingest [FILES]
 When some sources need manual download, --check writes ONE bundle covering all of them, so the user is
-asked once.
+asked once. Every --check that does not fail (a route other than fix_spec or report_error; for a deep pack,
+exit code 0 or no exit) is recorded in <out>/specs/checked.json; a fetch of a spec with no such check says so
+(check_reminder).
+
+Hand-off (data-only replies; the route and date lines of any product)
+  python fetch.py --handoff --out <out>    # per source: files, rows, route, retrieval date, preview, as Markdown
 
 Common options: --env local|ssh|cloud|sandbox (override the guess), --force (download again), --no-cache.
 Exit codes: 0 ok; 2 source or spec error; 3 unexpected error or missing dependency; 4 blocked (follow the
@@ -29,6 +34,7 @@ printed route). Never invent data when a source cannot be reached: follow the ro
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import runpy
@@ -41,6 +47,7 @@ sys.dont_write_bytecode = True  # never write __pycache__ into the skill folder 
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from core import generic_rest as gr  # noqa: E402
+from core import handoff  # noqa: E402
 from core import manual, package, packfiles, packs, routes  # noqa: E402
 from core import policy as pol  # noqa: E402
 from core.env import detect_environment  # noqa: E402
@@ -50,6 +57,7 @@ from core.keys import redact  # noqa: E402
 HERE = os.path.abspath(__file__)
 PARALLEL = 4                                    # sources checked or fetched at once in a plan
 READY_ROUTES = ("api", "api_keyless", "bulk", "reuse_existing")
+FAILED_CHECK = ("fix_spec", "report_error")      # a check with these routes does not count as done
 
 
 def emit(obj, code: int = 0):
@@ -73,6 +81,62 @@ def expand_spec(spec: dict, path: str) -> dict:
         return gr.expand_for_each(spec, os.path.dirname(os.path.abspath(path)))
     except DataError as e:
         emit({"status": "error", "kind": "spec", "message": str(e)}, routes.EXIT_SPEC)
+
+
+# ---------------------------------------------------------------------- --check records
+def _spec_key(spec_path: str) -> str | None:
+    try:
+        with open(spec_path, encoding="utf-8-sig") as f:
+            return hashlib.sha256(json.dumps(json.load(f), sort_keys=True).encode()).hexdigest()[:16]
+    except (OSError, ValueError):
+        return None
+
+
+def _checked_file(out: str) -> str:
+    return os.path.join(os.path.abspath(out), "specs", "checked.json")
+
+
+def record_check(out: str, source: str, spec_path: str) -> None:
+    """Remember that this spec (by content) was route-checked for this source, so a fetch can tell."""
+    key = _spec_key(spec_path)
+    if not key or not out:
+        return
+    p = _checked_file(out)
+    try:
+        with open(p, encoding="utf-8") as f:
+            done = json.load(f)
+    except (OSError, ValueError):
+        done = {}
+    if key not in done.setdefault(source, []):
+        done[source].append(key)
+        try:
+            os.makedirs(os.path.dirname(p), exist_ok=True)
+            with open(p, "w", encoding="utf-8") as f:
+                json.dump(done, f, indent=1)
+        except OSError:
+            pass
+
+
+def check_reminder(out: str, source: str, spec_path: str) -> str | None:
+    """A note when this exact spec was fetched without a --check (a new or edited spec skips the spec checks and
+    the keyless or manual route the check would have offered)."""
+    key = _spec_key(spec_path)
+    try:
+        with open(_checked_file(out), encoding="utf-8") as f:
+            done = json.load(f)
+    except (OSError, ValueError):
+        done = {}
+    if not key or key in done.get(source, []):
+        return None
+    return (f"{source}: this spec ({os.path.basename(spec_path)}) was fetched without --check. Run --check after "
+            "every new or edited spec, before fetching: it catches spec errors and finds the keyless or manual route "
+            "when the API cannot be used.")
+
+
+def handoff_next(out: str) -> str:
+    """The printed next step after a fetch: the hand-off command for data-only replies, and the re-check rule."""
+    return (f"Data only: send the hand-off that `python {HERE} --handoff --out {out}` prints. A spec you edit "
+            "needs --check again before the next fetch.")
 
 
 # ---------------------------------------------------------------------- listing and routing
@@ -121,14 +185,24 @@ def key_only(pack, spec) -> list[str]:
     return pack.adapter.key_only_needs(spec) if pack.has("key_only_needs") else []
 
 
-def std_check(pack, spec, spec_path, out, env, force, failed=None) -> dict:
-    if failed is None and pack.has("refused_hosts"):    # a second host the spec needs refuses scripts
-        why = pack.adapter.refused_hosts(spec)
-        failed = {"route": "api", "kind": "blocked", "error": why} if why else None
+def refused(pack, spec) -> dict | None:
+    """A second host the spec needs that refuses scripts (the pack's refused_hosts), as a failed route."""
+    why = pack.adapter.refused_hosts(spec) if pack.has("refused_hosts") else None
+    return {"route": "api", "kind": "blocked", "error": why} if why else None
+
+
+def spec_problems(pack, spec) -> list[str]:
+    if pack.endpoints:
+        return gr.check_spec(pack, spec)
+    return gr.call_check_spec(pack, spec) if pack.has("check_spec") else []
+
+
+def std_check(pack, spec, spec_path, out, env, force, failed=None, bundle=True) -> dict:
+    """The route check of one standard source (a plan check passes bundle=False: it writes one bundle for all)."""
     return routes.route_check(pack, spec, spec_path, out, env, force=force, key_only_needs=key_only(pack, spec),
-                              ping=std_ping(pack), spec_problems=gr.check_spec(pack, spec) if pack.endpoints else
-                              (gr.call_check_spec(pack, spec) if pack.has("check_spec") else []),
-                              manual_items=lambda: items_for(pack, spec), failed=failed)
+                              ping=std_ping(pack), spec_problems=spec_problems(pack, spec),
+                              manual_items=(lambda: items_for(pack, spec)) if bundle else None,
+                              failed=failed if failed is not None else refused(pack, spec))
 
 
 def std_fetch(pack, spec, spec_path, out, env, force, route_name="api") -> dict:
@@ -148,16 +222,22 @@ def std_fetch(pack, spec, spec_path, out, env, force, route_name="api") -> dict:
             r.update(status="blocked", error=str(e), kind=e.kind)
             emit(r, routes.EXIT_BLOCKED)
         emit({"status": "error", "source": pack.id, "kind": e.kind, "message": str(e)}, routes.EXIT_SPEC)
-    truncated = [n for n in notes if "stopped at" in n]       # a row cap was hit: the tables are incomplete
+    # a row cap was hit, or a pack marked a table incomplete (a lookup the server did not answer): partial
+    truncated = [n for n in notes if "stopped at" in n or gr.INCOMPLETE in n]
     tables, spec = gr.merge_for_each(spec, tables), gr.collapse_for_each(spec)
     res = package.write(out, pack, tables, spec, route=route_name, acquired=route_name,
                         requests=SOURCES[n0:], notes=[n for n in notes if n not in truncated], problems=truncated)
     out_ = {"status": "partial" if truncated else "ok", "source": pack.id, "route": route_name,
             "data_dir": res["data_dir"], "tables": [{k: t[k] for k in ("file", "rows")} for t in res["tables"]],
             "notes": notes, "citation": res["citation"], "read_next": pack.source_md}
+    remind = check_reminder(out, pack.id, spec_path)
+    if remind:
+        out_["check_reminder"] = remind
+    out_["next"] = handoff_next(out)
     if truncated:
         out_.update(truncated=truncated, action="These tables are incomplete. Narrow the filter or raise max_rows and "
                     "fetch again (--force); if the cap is the API's own limit, tell the user the result is partial. "
+                    "A table marked incomplete after a server error: fetch again (--force) later. "
                     "Never present a truncated table as complete.")
     return out_
 
@@ -174,10 +254,13 @@ def std_ingest(pack, spec, out, paths) -> dict:
     tables = {}
     for r in spec["requests"]:
         files = [p for n, p in local.items() if n.split("#")[0] == r["name"]]
-        if pack.has("parse_upload"):
-            tables[r["name"]] = pack.adapter.parse_upload(pack, r, files)
-        else:
-            tables[r["name"]] = gr.parse_upload(pack, r, files)
+        try:
+            if pack.has("parse_upload"):
+                tables[r["name"]] = pack.adapter.parse_upload(pack, r, files)
+            else:
+                tables[r["name"]] = gr.parse_upload(pack, r, files)
+        except DataError as e:
+            emit({"status": "error", "source": pack.id, "kind": e.kind, "message": str(e)}, routes.EXIT_SPEC)
     tables, spec = gr.merge_for_each(spec, tables), gr.collapse_for_each(spec)
     res = package.write(out, pack, tables, spec, route="manual_download", acquired="manual_download",
                         notes=["Files downloaded outside the API route (by the user, or saved from the agency's own "
@@ -218,6 +301,8 @@ def run_standard(pack, argv: list[str]):
     spec = expand_spec(load_spec(a.spec), a.spec)
     if a.check:
         r = std_check(pack, spec, os.path.abspath(a.spec), a.out, env, a.force)
+        if r["route"] not in FAILED_CHECK:
+            record_check(a.out, pack.id, a.spec)
         emit(r, 0 if r["route"] not in ("report_error", "fix_spec") else routes.EXIT_SPEC)
     if a.dry_run:
         probs = gr.check_spec(pack, spec) if pack.endpoints else []
@@ -289,8 +374,9 @@ def plan_action(ready: list, blocked: list, bundles: bool) -> str:
                     "their system (user_commands; each script asks for its key with hidden input)")
     if by.get("run_setup"):
         asks.append(f"give the setup command of {', '.join(by['run_setup'])} (need_user next_command) to run in their "
-                    "own terminal (never ask for a key in chat), and offer each one's keyless alternative from its "
-                    "source.md (Access), e.g. the agency's published file to upload")
+                    "own terminal (never ask for a key in chat), and offer each one's keyless alternative (need_user "
+                    "keyless_alternative, e.g. the agency's published file); any such file goes through that source's "
+                    "ingest_command")
     if by.get("install_deps"):
         asks.append(f"install the missing package for {', '.join(by['install_deps'])} if the network allows")
     rest = [s for k, v in by.items() if k not in ("run_setup", "install_deps", "fix_spec", "report_error",
@@ -318,11 +404,13 @@ def run_plan(a):
             pack, spec, sp = item
             if pack.deep_cli:
                 return deep_json(pack, [sp, "--out", out, "--check", *extra])[1]
-            # no per-source bundle here: one combined bundle is written below
-            return routes.route_check(pack, spec, sp, out, env, force=a.force, key_only_needs=key_only(pack, spec),
-                                      ping=std_ping(pack), spec_problems=gr.check_spec(pack, spec) if pack.endpoints else [])
+            # the same check as --source --check (spec problems, refused hosts); one combined bundle is written below
+            return std_check(pack, spec, sp, out, env, a.force, bundle=False)
         with ThreadPoolExecutor(max_workers=PARALLEL) as ex:
             results = list(ex.map(one, items))
+        for (pack, _, sp), r in zip(items, results):
+            if r.get("route") and r["route"] not in FAILED_CHECK:
+                record_check(out, pack.id, sp)
         manual_groups = [(pack, items_for(pack, spec)) for (pack, spec, _), r in zip(items, results)
                          if not pack.deep_cli and r.get("route") in ("manual_download", "cloud_secret", "cloud_allowlist")]
         if manual_groups:
@@ -336,7 +424,10 @@ def run_plan(a):
         blocked = [r for r in results if r.get("source") not in ready]
         summary = {"status": "plan_check", "environment": env, "sources": results, "ready": ready,
                    "need_user": [{"source": r.get("source"), "route": r.get("route"), "message": r.get("message"),
-                                  "next_command": r.get("next_command")} for r in blocked]}
+                                  "next_command": r.get("next_command"),
+                                  **{k: r[k] for k in ("keyless_alternative", "keyless_file", "ingest_command")
+                                     if r.get(k)}}
+                                 for r in blocked]}
         if manual_groups:
             summary["manual_bundle"] = b["dir"]
             summary["instructions"] = b["instructions"]
@@ -350,6 +441,9 @@ def run_plan(a):
         args = [sp, "--out", out, "--ingest", *a.ingest] if a.ingest is not None else [sp, "--out", out, *extra]
         c, r = deep_json(pack, args)              # every source in its own process: no shared state
         r.setdefault("source", pack.id)
+        remind = None if a.ingest is not None else check_reminder(out, pack.id, sp)
+        if remind and not r.get("check_reminder"):
+            r["check_reminder"] = remind
         return c, r
     with ThreadPoolExecutor(max_workers=PARALLEL) as ex:
         done = list(ex.map(fetch_one, items))
@@ -357,7 +451,7 @@ def run_plan(a):
     code = max(c for c, _ in done)
     emit({"status": "plan_fetch", "results": results,
           "next": "Read each source's source.md caveats, then align units, periods (fiscal vs calendar), "
-                  "geography and vintages before joining (see SKILL.md, Combining sources)."}, code)
+                  "geography and vintages before joining (see SKILL.md, Combining sources). " + handoff_next(out)}, code)
 
 
 def main():
@@ -371,6 +465,22 @@ def main():
         if probs:
             emit({"status": "error", "source": pack.id, "message": "policy.json is invalid: " + "; ".join(probs)}, 3)
         rest = argv[:i] + argv[i + 2:]
+        if pack.deep_cli:                  # a deep pack's own CLI: record its --check, remind on an unchecked fetch
+            spec_arg = next((x for x in rest if x.lower().endswith(".json") and os.path.isfile(x)), None)
+            out_arg = next((rest[j + 1] for j, x in enumerate(rest[:-1]) if x == "--out"), None)
+            if spec_arg and out_arg and "--check" in rest:
+                try:
+                    run_deep(pack, rest)
+                except SystemExit as e:                # the deep CLI exits 0 unless the check failed
+                    if e.code in (0, None):
+                        record_check(out_arg, pack.id, spec_arg)
+                    raise
+                record_check(out_arg, pack.id, spec_arg)   # returned without exiting: no failure signalled
+                return None
+            elif spec_arg and out_arg and not {"--ingest", "--manual-bundle", "--dry-run", "--help"} & set(rest):
+                remind = check_reminder(out_arg, pack.id, spec_arg)
+                if remind:
+                    print(f"note: {remind}", file=sys.stderr, flush=True)
         if "--clarify" in rest:       # just the open choices and the statements an answer must carry
             P = packfiles.read_json(pack.dir, "policy.json")
             emit({"source": pack.id, "clarify": P.get("clarify") or [], "notices": P.get("notices") or [],
@@ -390,7 +500,12 @@ def main():
     ap.add_argument("--force", action="store_true")
     ap.add_argument("--ingest", nargs="*")
     ap.add_argument("--env")
+    ap.add_argument("--handoff", action="store_true")
     a = ap.parse_args(argv)
+    if a.handoff:
+        if not a.out:
+            ap.error("--handoff needs --out")
+        emit(handoff.summarize(a.out))
     if a.sources:
         list_sources(a.json)
     if a.route:

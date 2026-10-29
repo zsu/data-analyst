@@ -33,11 +33,14 @@ other years are separate data.cms.gov datasets with their own UUIDs (find them o
 "API" panel or in https://data.cms.gov/data.json) and work in `dataset` directly.
 
 Filters:
-- `where`: `{"column": "value"}` equality; a list value means IN. Provider column names are snake_case
+- `where`: `{"column": "value"}` equality; a list value means IN (both endpoints; matching ignores case on the
+  data-api). Rows outside the filter values fail the fetch rather than pass silently. Provider column names are snake_case
   (`state`, `citytown`, `facility_id`); data-api names are as published (`BENE_GEO_LVL`, `Brnd_Name`).
 - `conditions` (provider only): `[{"property": "facility_name", "value": "%MAYO%", "operator": "LIKE"}]`;
   operators `= <> < <= > >= LIKE IN "NOT IN" BETWEEN`. LIKE matching is case-insensitive.
-- `sort`: `"facility_id"` or `"-hospital_overall_rating"`; `columns`: a list of column names.
+- `sort`: `"facility_id"` or `"-hospital_overall_rating"`; `columns`: a list of column names. Column names
+  differ by dataset (the id column is not `facility_id` in every dataset): a name the dataset lacks answers
+  HTTP 400 "Column not found", and the pack then names the unknown column(s) and lists the dataset's columns.
 
 ## Spec examples
 ```json

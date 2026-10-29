@@ -282,11 +282,12 @@ def describe_csv(path: str, dfield: str) -> dict:
 # Category columns worth listing: codes, descriptions, types and categories (not ids, dates or amounts).
 CATEGORY_COL = re.compile(r"(_cd|_desc|_type|_catg|_category|_nm|_name|_txt|_term|_security|reopening)$")
 NOT_CATEGORY = re.compile(r"(_id|_date|_dt|_amt|_bal|_rate|_pct|_nbr)$")
-MAX_VALUES = 40          # list a column's values when it has at most this many distinct ones
+MAX_VALUES = 40          # README: list a column's values when it has at most this many distinct ones
+MAX_VALUES_CLI = 200     # --values: list values up to this many per column (the most frequent), then "+N more"
 MAX_CODE_VALUES = 12     # columns with at most this many values form the code combinations
 
 
-def value_summary(rows: list[dict], columns: list[str], types: dict | None = None) -> dict:
+def value_summary(rows: list[dict], columns: list[str], types: dict | None = None, max_values: int = MAX_VALUES) -> dict:
     """Distinct values (with counts) of the category columns, and the combinations of the low-cardinality code
     columns with an example description each. Shows which column holds a value before anyone filters on it
     (e.g. MTS Table 1: "Year-to-Date" rows are record_type_cd SL + data_type_cd T)."""
@@ -301,10 +302,16 @@ def value_summary(rows: list[dict], columns: list[str], types: dict | None = Non
             v = r.get(c)
             v = "(empty)" if v in blank else str(v)
             counts[v] = counts.get(v, 0) + 1
-        if len(counts) <= MAX_VALUES:
-            per_col[c] = dict(sorted(counts.items(), key=lambda kv: (-kv[1], kv[0])))
+        ranked = dict(sorted(counts.items(), key=lambda kv: (-kv[1], kv[0])))
+        if len(counts) <= max_values:
+            per_col[c] = ranked
+        elif max_values >= MAX_VALUES_CLI:            # --values: the most frequent, and how to see the rest
+            per_col[c] = {"distinct": len(counts), "values": dict(list(ranked.items())[:max_values]),
+                          "more": f"+{len(counts) - max_values:,} more: narrow --filter (one record_date, or a code "
+                                  "column such as a type or category) to list them"}
         else:
-            per_col[c] = {"distinct": len(counts), "examples": list(counts)[:8]}
+            per_col[c] = {"distinct": len(counts), "examples": list(counts)[:8],
+                          "all_values": "fetch.py --source treasury --fields <endpoint> --filter <filter> --values"}
         if 1 < len(counts) <= MAX_CODE_VALUES and c.endswith("_cd"):
             codes.append(c)
     desc = next((c for c in cols if c.endswith("_desc")), None)
@@ -333,7 +340,7 @@ def values_info(endpoint: str, filters=None, limit: int = 20000) -> dict:
     rows, _ = client.fetch_all(endpoint, None, api_f, None)
     rows = _apply_filter(rows, local_f)
     return {"endpoint": normalize_endpoint(endpoint), "filter": filters, **value_summary(
-        rows, list((m.get("labels") or {}).keys()), m.get("dataTypes") or {})}
+        rows, list((m.get("labels") or {}).keys()), m.get("dataTypes") or {}, max_values=MAX_VALUES_CLI)}
 
 
 def write_package(spec: dict, out: str, results: dict, route: str):

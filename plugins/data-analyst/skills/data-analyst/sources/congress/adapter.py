@@ -4,7 +4,9 @@
   January 3 of an odd year, so January 1-2 of an odd year still belong to the previous one);
   title_contains is removed (applied in normalize); a "+" in sort becomes a space (Congress.gov
   silently ignores an encoded "+").
-- normalize: title_contains filter; text_plain added to CRS summaries (HTML stripped, text kept as is).
+- normalize: title_contains filter (the phrase as given, each word matching at a word start, any case; a
+  list matches any of its phrases; a multi-word phrase that keeps nothing says the order is required);
+  text_plain added to CRS summaries (HTML stripped, text kept as is).
 - fetch: roll_call, senate_votes and bill_votes read the official XML (clerk.house.gov 1990 on,
   www.senate.gov 1989 on; no key). roll_call for the House falls back to the Congress.gov house-vote API
   (115th Congress on) when the Clerk file cannot be read. Every other endpoint goes through generic_rest.
@@ -103,10 +105,36 @@ def _strip_html(s) -> str:
     return re.sub(r"[ \t]+", " ", re.sub(r"\n\s*\n+", "\n", t)).strip()
 
 
+def title_matcher(value):
+    """title_contains -> a test on a title, or None. Each phrase matches as given: its words in that order, each
+    at the START of a word (so "port" never matches "support", while "veteran" still finds "Veterans" and
+    "small business" finds "Small Businesses"), any case, any spacing or punctuation between words. A list
+    matches a title holding any of its phrases (other word forms: ["levy", "levies"])."""
+    phrases = value if isinstance(value, (list, tuple)) else [value]
+    pats = [r"(?<!\w)" + r"\w*\W+".join(re.escape(w) for w in str(p).split())
+            for p in phrases if str(p or "").split()]
+    if not pats:
+        return None
+    rx = re.compile("|".join(pats), re.IGNORECASE)
+    return lambda title: bool(rx.search(str(title or "")))
+
+
+def phrase_order_hint(req) -> str | None:
+    """For a multi-word title_contains that kept nothing: the words must stand together and in that order, which
+    is easy to miss, so say so and how to match other orders."""
+    v = (req.get("params") or {}).get("title_contains")
+    multi = [str(p) for p in (v if isinstance(v, (list, tuple)) else [v]) if len(str(p or "").split()) > 1]
+    if not multi:
+        return None
+    return (f"title_contains needs each phrase's words adjacent and in that order ({', '.join(map(repr, multi))}); "
+            "to match them in another order or apart, list each form as its own phrase (a list matches any of "
+            "them), or filter on one distinctive word and check the titles in the CSV.")
+
+
 def normalize(req, ep, rows):
-    words = [w.lower() for w in str((req.get("params") or {}).get("title_contains") or "").split()]
-    if words:
-        rows = [r for r in rows if all(w in str(r.get("title", "")).lower() for w in words)]
+    match = title_matcher((req.get("params") or {}).get("title_contains"))
+    if match:
+        rows = [r for r in rows if match(r.get("title"))]
     if req.get("endpoint") in ("bill_summaries", "summaries"):
         rows = [{**r, "text_plain": _strip_html(r.get("text"))} for r in rows]
     return rows
@@ -350,9 +378,15 @@ def fetch(spec, pack, route):
     for r in spec["requests"]:
         ep_name = r.get("endpoint")
         if ep_name not in CUSTOM:
-            t, n = gr.fetch(pack, {"requests": [r]})
+            hint = phrase_order_hint(r)
+            try:
+                t, n = gr.fetch(pack, {"requests": [r]})
+            except DataError as e:
+                if hint and "returned no rows" in str(e):
+                    raise DataError(f"{e} {hint}", kind=e.kind) from None
+                raise
             tables.update(t)
-            notes += n
+            notes += n + ([f"{r['name']}: no titles matched. {hint}"] if hint and not t.get(r["name"]) else [])
             continue
         p = r.get("params") or {}
         if ep_name == "roll_call":

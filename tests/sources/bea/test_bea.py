@@ -268,6 +268,13 @@ class TestRegressions(unittest.TestCase):
     """Regression checks (bulk-file checks read the trimmed real fixtures)."""
 
     # ------------------------------------------------------------------ fetch.py
+    def test_s00_missing_requested_years_are_named(self):
+        # a request that gets some of its years succeeds; the years it asked for and did not get must be said
+        reqs = [{"id": "inc", "years": "2016,2017,2018"}, {"id": "all", "years": "X"}, {"id": "gone", "years": "2016"}]
+        rows = [{"request_id": "inc", "year": 2016}, {"request_id": "inc", "year": 2017},
+                {"request_id": "all", "year": 2010}]
+        self.assertEqual(fetch.missing_years(reqs, rows), {"inc": [2018]})
+
     def test_s01_nipa_bulk_keeps_every_line(self):
         rows, _ = fetch.nipa_from_flat(nipa_req("T10205", "2023"), FX, {}, FILES)
         lines = {int(r["line"]) for r in rows}
@@ -276,6 +283,16 @@ class TestRegressions(unittest.TestCase):
     def test_s02_nipa_bulk_raises_on_empty(self):
         self.assertTrue(raises(lambda: fetch.nipa_from_flat(nipa_req("T10101", "1900,1901"), FX, {}, FILES),
                                bea_api.BeaError))
+
+    def test_s02b_nipa_bulk_refuses_monthly_for_a_table_not_published_monthly(self):
+        # NipaDataM holds series shared with A/Q tables: the bulk route must not label monthly values with a table
+        # whose title does not say it is monthly (the API refuses frequency M for such tables)
+        with self.assertRaises(bea_api.BeaError) as cm:
+            fetch.nipa_from_flat(nipa_req("T10106", "2024", "M"), FX, {}, FILES)
+        self.assertIn("not monthly", str(cm.exception))
+        self.assertTrue(fetch.MONTHLY_TITLE.search("Table 2.6. Personal Income and Its Disposition, Monthly"))
+        self.assertTrue(fetch.MONTHLY_TITLE.search("Table 2.8.11. ... Percent Change from Month One Year Ago"))
+        self.assertFalse(fetch.MONTHLY_TITLE.search("Table 2.3.11. ... Percent Change from Quarter One Year Ago"))
 
     def test_s03_nipa_line_code_filters(self):
         q = fetch.normalize_requests({"requests": [{"id": "g", "dataset": "NIPA", "table": "T10106", "line_code": 1,

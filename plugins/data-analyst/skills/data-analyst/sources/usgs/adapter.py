@@ -6,6 +6,10 @@
 - before_request: site numbers get the "USGS-" agency prefix; state names or USPS codes become FIPS;
   skipGeometry defaults to true except for monitoring-locations, where a site id goes in `id`.
 - earthquakes with `eventid`: the service answers a single Feature, which becomes one row.
+- check_spec: an earthquake box crossing the 180th meridian is one box with maxlongitude above 180 (the service
+  takes -360..360; verified 2026-10: 170..190 returns exactly the events of 170..180 plus -180..-170). A box
+  with minlongitude at or above maxlongitude is refused (HTTP 400 upstream): when min is east (> 0) and max
+  west (< 0) the message gives the +360 form, otherwise it says the bounds look swapped.
 - normalize: GeoJSON "properties." prefixes go; earthquake times (epoch milliseconds) get ISO UTC columns
   and the coordinates become longitude, latitude, depth_km; points get longitude, latitude.
 """
@@ -20,6 +24,32 @@ from core import generic_rest as gr  # noqa: E402
 from core.http import Client, DataError  # noqa: E402
 
 WATER_BASE = "https://api.waterdata.usgs.gov/ogcapi/v1"
+QUAKE_EPS = ("earthquakes", "earthquake_count")
+
+
+def _num(v):
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return None
+
+
+def check_spec(spec):
+    probs = []
+    for r in spec.get("requests") or []:
+        if r.get("endpoint") not in QUAKE_EPS:
+            continue
+        p = r.get("params") or {}
+        lo, hi = _num(p.get("minlongitude")), _num(p.get("maxlongitude"))
+        if lo is None or hi is None or lo < hi:
+            continue
+        if lo > 0 > hi:             # east of 180 written as negative: a box across the 180th meridian
+            fix = (f"a box crossing the 180th meridian is one box with maxlongitude above 180 (minlongitude {lo:g}, "
+                   f"maxlongitude {hi + 360:g})")
+        else:
+            fix = "the two values look swapped"
+        probs.append(f"request {r.get('name')!r}: minlongitude must be below maxlongitude; {fix}")
+    return probs
 
 
 def _state_fips(v):

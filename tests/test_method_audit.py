@@ -605,6 +605,33 @@ class TestAnswerGate(MethodBase):
         r, _ = A.check_answer(self.out, facts, D)
         self.assertTrue(any("opening" in m for c, ok_, m in r if c == "disclosures" and not ok_))
 
+    def test_subset_count_in_words_is_a_fact(self):
+        """"three of the four" over the answer's four-row table summarizes it: like "3 of the 4" it must be a
+        registered count, so words the analysis never computed fail. Ordinary prose ("one of the two parties")
+        and counts of sets the answer does not tabulate are left alone."""
+        A = audit_answer
+        facts = {f"d{i}": {"value": v, "fmt": "dollars:0", "where": {"department": d}}
+                 for i, (d, v) in enumerate((("Agriculture", 93119), ("Treasury", 87250), ("Labor", 81002),
+                                             ("Energy", 79540)))}
+        table = ("| Department | Average |\n|---|---|\n| Agriculture | $93,119 |\n| Treasury | $87,250 |\n"
+                 "| Labor | $81,002 |\n| Energy | $79,540 |\n")
+
+        def flagged(txt, F):
+            write(os.path.join(self.out, "answer.md"), txt + "\n\n" + table)
+            r, _ = A.check_answer(self.out, F, {})
+            return any(c == "answer" and not ok_ and "not found among the facts" in m for c, ok_, m in r)
+
+        claim = "Three of the four departments pay more than $80,000."
+        self.assertTrue(flagged(claim.replace("$80,000", "the median"), facts))     # true positive: no such count
+        counted = {**facts, "n_above": {"value": 3, "fmt": "num:0", "label": "Departments above the median"}}
+        self.assertFalse(flagged(claim.replace("$80,000", "the median"), counted))  # computed in analysis.py
+        for prose in ("Spending was set by one of the two parties in Congress.",
+                      "Two of the three branches agreed; one of the twelve regional banks objected.",
+                      "All four departments are listed."):
+            self.assertFalse(flagged(prose, facts), prose)
+        self.assertEqual(A._subset_words("| two of the three |\n", {3}), [])      # table cells: their own rule
+        self.assertEqual(A._table_sizes(table), {4})
+
     def test_answer_round7_8_rules(self):
         A = audit_answer
         toks = [n["tok"] for n in A.answer_numbers(

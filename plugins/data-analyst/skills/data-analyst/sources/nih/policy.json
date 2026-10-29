@@ -78,7 +78,7 @@
   "clarify": [
     "Fiscal year of the award (fiscal_years) or project period? RePORTER rows are project-year awards by federal fiscal year (October-September).",
     "Topic by RCDC spending category (NIH's official categorization) or by text search (broader, noisier)? Official RCDC totals are at report.nih.gov and are not the sum of this search.",
-    "NIH only? RePORTER also holds AHRQ, FDA and VA awards (FY2024: 497, 560 and 2,181 projects); list the NIH institutes in agencies to exclude them."
+    "NIH only? RePORTER also holds AHRQ, CDC (its centers: NCEH, NIOSH, ...), FDA and VA awards (FY2024: AHRQ 497, FDA 560, VA 2,181 projects); list the NIH institutes in agencies, and check agency_ic_admin, to exclude them."
   ],
   "formats": [
     "json"

@@ -67,7 +67,7 @@
      "desc": "comma-separated forms to keep, e.g. '10-K' (prefix match: 10-K keeps 10-K/A)"
     },
     "frames_only": {
-     "desc": "true = keep only facts with a frame (one value per calendar period, the latest filed)"
+     "desc": "true = one value per period: the framed fact, or the latest filed when SEC gave a period of the series' own length (annual, quarter, instant) no frame; other lengths (YTD) are skipped"
     },
     "duration": {
      "desc": "annual (350-380 days) or quarter (80-100 days): keep duration facts of that length (period_days column); instant facts are dropped"
@@ -105,7 +105,7 @@
      "desc": "unit to keep: USD, shares, USD/shares, pure (default: all); USD-per-shares is accepted and sent as USD/shares"
     },
     "frames_only": {
-     "desc": "true = keep only facts with a frame"
+     "desc": "true = one value per period: the framed fact, or the latest filed when SEC gave a period of the series' own length (annual, quarter, instant) no frame; other lengths (YTD) are skipped"
     },
     "duration": {
      "desc": "annual (350-380 days) or quarter (80-100 days): keep duration facts of that length (period_days column); instant facts are dropped"

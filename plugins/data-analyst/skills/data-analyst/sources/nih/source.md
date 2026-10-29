@@ -1,5 +1,5 @@
 # NIH RePORTER (research grants)
-Depth: standard. Key: none. NIH (and AHRQ, FDA, VA) extramural and intramural research awards from the
+Depth: standard. Key: none. NIH (and AHRQ, CDC centers, FDA, VA) extramural and intramural research awards from the
 RePORTER API v2: one row per project per fiscal year, with organization, investigator, institute, award
 amount and RCDC spending categories; plus publications linked to projects.
 
@@ -20,8 +20,15 @@ Criteria keys (put directly in `params`; the adapter builds RePORTER's `criteria
 `criteria` object is merged too): `fiscal_years` [2024], `agencies` ["NCI", "NIA"], `org_states` ["VT"],
 `org_names`, `org_cities`, `activity_codes` ["R01"], `pi_names` [{"last_name": "...", "first_name": "..."}],
 `project_nums`, `appl_ids`, `award_amount_range` {"min_amount", "max_amount"}, `include_active_projects`,
-`covid_response`, `text` (searched in title, terms and abstract; `text_fields` narrows it),
+`covid_response`, `text` or `phrase` (searched in title, terms and abstract; `text_fields` narrows it),
 `spending_categories` (RCDC names or ids: `["Cancer", "Opioids"]`), `exclude_subprojects` (default true).
+
+Text search: `text` matches **every word anywhere** in those fields, in any order (RePORTER operator
+`and`), so a two-word topic also returns projects that use both words apart; `phrase` matches the **exact
+phrase** (operator `advanced`, quoted; a list matches any of the phrases). When the user names a topic of
+several words (a disease, a technique), use `phrase`; use `text` for words that may appear apart. The
+fetch note says which was used (verified 2026-10: a two-word disease name, one fiscal year: 312 projects
+with every word, 301 with the phrase).
 
 RCDC categories: `--search "alzheimer"` lists names and ids (308 categories observed in live records,
 e.g. Cancer 132, Breast Cancer 120, Alzheimer's Disease 40, Diabetes 224, HIV/AIDS 284, Opioids 3951,
@@ -39,7 +46,7 @@ SpendingCategoriesDesc, CongDist, ProjectDetailUrl. Add AbstractText or Terms if
 ```json
 {"description": "NCI breast cancer projects at Vermont organizations, FY2024",
  "requests": [{"name": "vt_nci_breast_2024", "endpoint": "projects",
-   "params": {"fiscal_years": [2024], "org_states": ["VT"], "agencies": ["NCI"], "text": "breast cancer"}}]}
+   "params": {"fiscal_years": [2024], "org_states": ["VT"], "agencies": ["NCI"], "phrase": "breast cancer"}}]}
 ```
 ```json
 {"description": "NIA Alzheimer's (RCDC) awards, FY2023 and FY2024",
@@ -69,6 +76,14 @@ One request per fiscal year keeps each under the 15,000-record cap and makes the
   A `publications` search returns at most 10,000 (offset above 9,999 answers HTTP 400, verified
   2026-10-22). The pack stops at the cap with a note ("stopped at N rows"); split by fiscal year, institute
   or state, or split the project numbers / PMIDs over several requests.
+- Paging needs a stable order: unsorted, the order shifts between pages, so rows repeat at a page boundary
+  while as many others are skipped (the row count still matches `meta.total`; verified 2026-10-28). The
+  pack sorts project searches that may need more than one page (no `max_rows`, or above 500) by `appl_id`
+  unless the spec sets `sort_field`, and drops any row repeated across pages with a note that rows may be
+  missing. With that default, a cut at `max_rows` keeps the lowest `appl_id`s, not the most relevant rows
+  (the note says so): to keep a top N, set `sort_field` (`award_amount`, `desc`); to rank every row, fetch
+  them all (no cut) and sort the CSV. A `max_rows` of 500 or less is one page in the API's own order
+  (relevance for a text search), so its cut carries no appl_id note.
 - `include_fields` names are PascalCase and case-sensitive; an unknown name is dropped without an error
   (the column is simply absent). Organization fields come as one block: ask for `Organization` (giving
   `organization.org_name`, `organization.org_state`, ...); `OrgName` or `OrgState` return nothing.

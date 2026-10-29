@@ -160,12 +160,21 @@ def route_check(pack, spec: dict, spec_path: str, out: str, env: str, force: boo
                 f". A free key is at {signup}.")
         if env in ("local", "ssh"):
             path, setup = setup_command(pack.id)
-            r.update(setup_script=path, run_command=setup)
+            # the pack's own keyless way to the same data (policy routes.manual.how, also in source.md Access), and
+            # the one command that packages a file obtained that way: data/<id>/ then has its dictionary and
+            # provenance like any fetch (a file copied in by hand has neither)
+            r.update(setup_script=path, run_command=setup, keyless_alternative=P["routes"]["manual"]["how"],
+                     ingest_command=ingest)
+            if P["routes"]["manual"].get("keyless_file"):    # a direct, small file that --ingest reads and filters
+                r["keyless_file"] = P["routes"]["manual"]["keyless_file"]
             return done("run_setup", lead + need + " The setup script asks for it with hidden input, checks it and "
                         "stores it in the skill's keys.json (~/.config/data-analyst).",
                         "Give the user run_command to run in their own terminal (never run it for them, never ask for "
-                        "the key in chat). Offer any keyless alternative. When they say it is stored, run --check again.",
-                        setup)
+                        "the key in chat), and offer keyless_alternative (the pack's keyless way to the same data). "
+                        "When they say the key is stored, run --check again. A file obtained the keyless way goes "
+                        "through ingest_command, never straight into the analysis. With nobody to ask, fetch only a "
+                        "keyless_file (a direct file the pack's ingest reads and filters); without one, report the "
+                        "data as not fetched, with run_command.", setup)
         b = bundle(f"the request needs a {a['env']} key")
         if env == "cloud":
             return done("cloud_secret", lead + need + f" Add {a['env']} to the cloud environment's secrets and restart "
