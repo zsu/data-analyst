@@ -1,0 +1,650 @@
+{
+  "skill_name": "data-analyst",
+  "evals": [
+    {
+      "id": "sec-walmart-fy-rev-income",
+      "prompt": "I'm updating our retail-sector tracker. From Walmart's own 10-K filings with the SEC (the XBRL financial data on EDGAR), give me Walmart's total revenues and its net income attributable to Walmart for each fiscal year from fiscal 2021 through fiscal 2026. Walmart's fiscal 2026 is the year that ended January 31, 2026. Then tell me how much each one grew from fiscal 2021 to fiscal 2026, as a percent and as a compound annual rate. This is a scheduled, unattended run: nobody can answer questions, so decide every open choice yourself by agency precedent and record it. Save the work in out/walmart-10k.",
+      "expected_output": "A 6-row table FY2021-FY2026: revenues $559.2B -> $713.2B (+27.5%, CAGR about 5.0%), net income attributable to Walmart $13.5B -> $21.9B (+62.1%, CAGR about 10.1%), labelled by fiscal year ending January 31, nominal dollars, with tags, accession numbers and a benchmark against Walmart's 10-K; audit passed.",
+      "files": [],
+      "expectations": [
+        "Labels every year by Walmart's fiscal year (fiscal 2026 = February 2025 to January 31, 2026) using each fact's end date, not by the XBRL fy field and not by the calendar frame (CY2025), and says so",
+        "Uses total revenues (us-gaap Revenues, which includes membership and other income) and NetIncomeLoss (attributable to Walmart, not consolidated ProfitLoss), and names the tags chosen",
+        "Keeps one value per fiscal year from 10-K annual-duration facts (no duplicate repeated-year rows, no quarterly or year-to-date values), and keeps the recent years that SEC left unframed rather than dropping them",
+        "Fetches only through fetch.py's sec pack (no ad-hoc EDGAR calls) and finishes without asking the user anything, recording open choices in decisions.json",
+        "Benchmarks at least the fiscal 2026 revenue against Walmart's published 10-K or earnings release figure and states that the growth rates are in nominal dollars"
+      ],
+      "rsi": {
+        "title": "SEC EDGAR XBRL: Walmart total revenues and net income, fiscal 2021-2026 (fiscal years end January 31), growth and CAGR",
+        "invoke": "explicit",
+        "interaction": "none",
+        "criteria": [
+          {
+            "id": "c1",
+            "text": "Labels every year by Walmart's fiscal year (fiscal 2026 = February 2025 to January 31, 2026) using each fact's end date, not by the XBRL fy field and not by the calendar frame (CY2025), and says so",
+            "severity": "critical"
+          },
+          {
+            "id": "c2",
+            "text": "Uses total revenues (us-gaap Revenues, which includes membership and other income) and NetIncomeLoss (attributable to Walmart, not consolidated ProfitLoss), and names the tags chosen",
+            "severity": "major"
+          },
+          {
+            "id": "c3",
+            "text": "Keeps one value per fiscal year from 10-K annual-duration facts (no duplicate repeated-year rows, no quarterly or year-to-date values), and keeps the recent years that SEC left unframed rather than dropping them",
+            "severity": "major"
+          },
+          {
+            "id": "c4",
+            "text": "Fetches only through fetch.py's sec pack (no ad-hoc EDGAR calls) and finishes without asking the user anything, recording open choices in decisions.json",
+            "severity": "major"
+          },
+          {
+            "id": "c5",
+            "text": "Benchmarks at least the fiscal 2026 revenue against Walmart's published 10-K or earnings release figure and states that the growth rates are in nominal dollars",
+            "severity": "minor"
+          }
+        ],
+        "deterministic_checks": [
+          {
+            "id": "answer-exists",
+            "type": "file_exists",
+            "path": "out/walmart-10k/answer.md",
+            "severity": "critical"
+          },
+          {
+            "id": "analysis-exists",
+            "type": "file_exists",
+            "path": "out/walmart-10k/analysis.py",
+            "severity": "major"
+          },
+          {
+            "id": "facts-exists",
+            "type": "file_exists",
+            "path": "out/walmart-10k/facts.json",
+            "severity": "major"
+          },
+          {
+            "id": "decisions-exists",
+            "type": "file_exists",
+            "path": "out/walmart-10k/decisions.json",
+            "severity": "major"
+          },
+          {
+            "id": "benchmark-exists",
+            "type": "file_exists",
+            "path": "out/walmart-10k/exhibits/benchmark.csv",
+            "severity": "minor"
+          },
+          {
+            "id": "specs-checked",
+            "type": "file_exists",
+            "path": "out/walmart-10k/specs/checked.json",
+            "severity": "minor"
+          },
+          {
+            "id": "audit-answer",
+            "type": "command",
+            "cmd": "{python} {skill}/scripts/report/audit_answer.py {sandbox}/out/walmart-10k --rerun",
+            "expect_exit": 0,
+            "timeout": 600,
+            "severity": "major"
+          },
+          {
+            "id": "handoff",
+            "type": "command",
+            "cmd": "{python} {skill}/scripts/fetch.py --handoff --out {sandbox}/out/walmart-10k",
+            "expect_exit": 0,
+            "severity": "minor"
+          },
+          {
+            "id": "no-secrets",
+            "type": "command",
+            "cmd": "{python} {skill}/scripts/report/scan_secrets.py {sandbox}/out/walmart-10k",
+            "expect_exit": 0,
+            "severity": "critical"
+          },
+          {
+            "id": "no-pycache-in-skill",
+            "type": "file_absent",
+            "path": "{skill}/**/__pycache__",
+            "severity": "minor"
+          },
+          {
+            "id": "sec-data",
+            "type": "file_exists",
+            "path": "out/walmart-10k/data/sec/*.csv",
+            "severity": "critical"
+          },
+          {
+            "id": "rev-fy2026",
+            "type": "command",
+            "cmd": "{python} -I {case}/verify.py facts {sandbox}/out/walmart-10k 713163000000 0.001 --rel",
+            "expect_exit": 0,
+            "severity": "major",
+            "desc": "FY2026 (ended 2026-01-31) total revenues $713,163M registered as a fact (any scale)"
+          },
+          {
+            "id": "rev-fy2021",
+            "type": "command",
+            "cmd": "{python} -I {case}/verify.py facts {sandbox}/out/walmart-10k 559151000000 0.001 --rel",
+            "expect_exit": 0,
+            "severity": "major",
+            "desc": "FY2021 (ended 2021-01-31) total revenues $559,151M"
+          },
+          {
+            "id": "ni-fy2026",
+            "type": "command",
+            "cmd": "{python} -I {case}/verify.py facts {sandbox}/out/walmart-10k 21893000000 0.003 --rel",
+            "expect_exit": 0,
+            "severity": "major",
+            "desc": "FY2026 net income attributable to Walmart $21,893M"
+          },
+          {
+            "id": "rev-growth",
+            "type": "command",
+            "cmd": "{python} -I {case}/verify.py facts {sandbox}/out/walmart-10k 27.544 0.15",
+            "expect_exit": 0,
+            "severity": "major",
+            "desc": "revenue growth FY2021-FY2026 27.5 percent (fraction or percent)"
+          },
+          {
+            "id": "ni-growth",
+            "type": "command",
+            "cmd": "{python} -I {case}/verify.py facts {sandbox}/out/walmart-10k 62.05 0.2",
+            "expect_exit": 0,
+            "severity": "major",
+            "desc": "net income growth FY2021-FY2026 62.0-62.1 percent"
+          },
+          {
+            "id": "rev-cagr",
+            "type": "command",
+            "cmd": "{python} -I {case}/verify.py facts {sandbox}/out/walmart-10k 4.986 0.05",
+            "expect_exit": 0,
+            "severity": "minor",
+            "desc": "revenue CAGR about 4.99 percent"
+          },
+          {
+            "id": "fy2026-row-label",
+            "type": "command",
+            "cmd": "{python} -I {case}/verify.py row {sandbox}/out/walmart-10k 713163000000 0.001 2026 --rel",
+            "expect_exit": 0,
+            "severity": "major",
+            "desc": "the exhibit row holding $713.2B carries 2026 (fiscal-year label or end date), not only the CY2025 frame"
+          },
+          {
+            "id": "fy2021-row-label",
+            "type": "command",
+            "cmd": "{python} -I {case}/verify.py row {sandbox}/out/walmart-10k 13510000000 0.003 2021 --rel",
+            "expect_exit": 0,
+            "severity": "minor",
+            "desc": "FY2021 net income row is labelled with 2021"
+          }
+        ],
+        "ground_truth": {
+          "revenues_usd_millions": {
+            "FY2021": 559151,
+            "FY2022": 572754,
+            "FY2023": 611289,
+            "FY2024": 648125,
+            "FY2025": 680985,
+            "FY2026": 713163
+          },
+          "net_income_attrib_usd_millions": {
+            "FY2021": 13510,
+            "FY2022": 13673,
+            "FY2023": 11680,
+            "FY2024": 15511,
+            "FY2025": 19436,
+            "FY2026": 21893
+          },
+          "revenue_growth_pct": 27.544,
+          "revenue_cagr_pct": 4.986,
+          "net_income_growth_pct": 62.05,
+          "net_income_cagr_pct": 10.136,
+          "tolerance": "0.1-0.3 percent relative on dollar values; 0.15 pp on growth",
+          "source": "SEC data.sec.gov companyconcept CIK0000104169 us-gaap Revenues and NetIncomeLoss, 10-K annual facts, latest filed per period end, fetched 2026-10-28; FY2022+ NetIncomeLoss facts carry no frame",
+          "source_url": "https://data.sec.gov/api/xbrl/companyconcept/CIK0000104169/us-gaap/Revenues.json"
+        },
+        "case_files": [
+          "case/sec-walmart-fy-rev-income/verify.py"
+        ],
+        "coverage_tags": [
+          "single keyless pack (sec)",
+          "regulation/justice: sec (EDGAR XBRL)",
+          "fiscal vs calendar year alignment (fiscal year ending January)",
+          "repeated facts / dedup",
+          "unframed recent periods",
+          "unattended no_user",
+          "live API"
+        ],
+        "why": "Filed 10-K XBRL facts are a stable ground truth; guards the Jan fiscal-year-end vs CY frame labelling and fact dedup",
+        "origin": {
+          "run": "20261028-231458",
+          "iteration": 0,
+          "case": "i000-sec-walmart-fy-rev-income"
+        },
+        "added_at": "2026-10-29T11:48:06+00:00"
+      }
+    },
+    {
+      "id": "public-laws-119-vs-118",
+      "prompt": "Is the 119th Congress passing more laws than the 118th did at the same point? Compare the number of public laws enacted by September 30, 2026 in the 119th Congress with the number enacted by September 30, 2024 in the 118th, as counts and a percent change, and tell me how many of each were joint resolutions rather than bills. Use Congress.gov data. Put the CSVs and the answer in out/public-laws-119-vs-118. It's a scheduled job with nobody around to answer questions, so make the open choices yourself by precedent and note them.",
+      "expected_output": "118 public laws in the 119th by 2026-09-30 vs 90 in the 118th by 2024-09-30 (+31%); joint resolutions 25 vs 5; laws dated by enactment, all 274 118th laws retrieved; audited answer.md with CSVs.",
+      "files": [],
+      "expectations": [
+        "Laws are cut off by enactment date (the 'Became Public Law' action date, consistent with the P.L. number sequence: P.L. 119-118 signed 2026-09-30 is the last counted for the 119th, P.L. 118-90 of 2024-09-30 for the 118th), not by update date or introduced date.",
+        "Does not drop P.L. 119-68 (H.R. 1043, La Paz County Solar Energy and Job Creation Act), whose latestAction in the law list is a later committee report rather than the enactment; the 119th count is 118, not 117.",
+        "Counts public laws only (the 119th's two private laws are excluded or reported separately) and identifies joint resolutions by bill type (H.J.Res./S.J.Res.).",
+        "Benchmarks the counts against Congress.gov's public law listing or the law numbers (or states 'not checked' with the reason), and says the data are as of the retrieval date.",
+        "The percent change is computed from the two counts (about +31%) and framed as a same-point-in-Congress comparison, without claims about full-Congress totals it did not compute."
+      ],
+      "rsi": {
+        "title": "Congress.gov: public laws enacted by Sept 30 of the second year, 119th vs 118th, with joint resolutions (pagination past 250, enactment-date cutoff)",
+        "invoke": "explicit",
+        "interaction": "none",
+        "criteria": [
+          {
+            "id": "c1",
+            "severity": "critical",
+            "text": "Laws are cut off by enactment date (the 'Became Public Law' action date, consistent with the P.L. number sequence: P.L. 119-118 signed 2026-09-30 is the last counted for the 119th, P.L. 118-90 of 2024-09-30 for the 118th), not by update date or introduced date."
+          },
+          {
+            "id": "c2",
+            "severity": "major",
+            "text": "Does not drop P.L. 119-68 (H.R. 1043, La Paz County Solar Energy and Job Creation Act), whose latestAction in the law list is a later committee report rather than the enactment; the 119th count is 118, not 117."
+          },
+          {
+            "id": "c3",
+            "severity": "major",
+            "text": "Counts public laws only (the 119th's two private laws are excluded or reported separately) and identifies joint resolutions by bill type (H.J.Res./S.J.Res.)."
+          },
+          {
+            "id": "c4",
+            "severity": "minor",
+            "text": "Benchmarks the counts against Congress.gov's public law listing or the law numbers (or states 'not checked' with the reason), and says the data are as of the retrieval date."
+          },
+          {
+            "id": "c5",
+            "severity": "minor",
+            "text": "The percent change is computed from the two counts (about +31%) and framed as a same-point-in-Congress comparison, without claims about full-Congress totals it did not compute."
+          }
+        ],
+        "deterministic_checks": [
+          {
+            "id": "congress-csv",
+            "type": "file_exists",
+            "path": "out/public-laws-119-vs-118/data/congress/*.csv",
+            "severity": "critical"
+          },
+          {
+            "id": "answer-exists",
+            "type": "file_exists",
+            "path": "out/public-laws-119-vs-118/answer.md",
+            "severity": "critical"
+          },
+          {
+            "id": "facts-exists",
+            "type": "file_exists",
+            "path": "out/public-laws-119-vs-118/facts.json",
+            "severity": "major"
+          },
+          {
+            "id": "analysis-exists",
+            "type": "file_exists",
+            "path": "out/public-laws-119-vs-118/analysis.py",
+            "severity": "major"
+          },
+          {
+            "id": "specs-checked",
+            "type": "file_exists",
+            "path": "out/public-laws-119-vs-118/specs/checked.json",
+            "severity": "major",
+            "desc": "every spec was --check'ed before its first fetch"
+          },
+          {
+            "id": "benchmark-exhibit",
+            "type": "file_exists",
+            "path": "out/public-laws-119-vs-118/exhibits/benchmark.csv",
+            "severity": "minor"
+          },
+          {
+            "id": "audit-answer",
+            "type": "command",
+            "cmd": "{python} {skill}/scripts/report/audit_answer.py {sandbox}/out/public-laws-119-vs-118 --rerun",
+            "expect_exit": 0,
+            "timeout": 600,
+            "severity": "major"
+          },
+          {
+            "id": "no-secrets",
+            "type": "command",
+            "cmd": "{python} {skill}/scripts/report/scan_secrets.py {sandbox}/out/public-laws-119-vs-118",
+            "expect_exit": 0,
+            "severity": "critical"
+          },
+          {
+            "id": "no-local-paths-in-answer",
+            "type": "not_regex",
+            "path": "out/public-laws-119-vs-118/answer.md",
+            "pattern": "(?i)([a-z]:\\\\(users|zsu)\\\\|/home/[a-z]|/Users/[a-z]|AppData)",
+            "severity": "minor"
+          },
+          {
+            "id": "no-pycache-in-skill",
+            "type": "file_absent",
+            "path": "{skill}/**/__pycache__",
+            "severity": "minor"
+          },
+          {
+            "id": "all-118th-laws-fetched",
+            "type": "command",
+            "cmd": "{python} -I {case}/verify.py {sandbox}/out/public-laws-119-vs-118 --group pagination_118",
+            "expect_exit": 0,
+            "severity": "major",
+            "desc": "all 274 public laws of the 118th were retrieved (the list exceeds one 250-row page)"
+          },
+          {
+            "id": "law-counts",
+            "type": "command",
+            "cmd": "{python} -I {case}/verify.py {sandbox}/out/public-laws-119-vs-118 --group counts",
+            "expect_exit": 0,
+            "severity": "major",
+            "desc": "119th: 118 public laws by 2026-09-30 (P.L. 119-1..119-118); 118th: 90 by 2024-09-30"
+          },
+          {
+            "id": "joint-resolutions",
+            "type": "command",
+            "cmd": "{python} -I {case}/verify.py {sandbox}/out/public-laws-119-vs-118 --group joint",
+            "expect_exit": 0,
+            "severity": "major",
+            "desc": "joint resolutions: 25 (19 H.J.Res. + 6 S.J.Res.) vs 5 (H.J.Res.)"
+          },
+          {
+            "id": "percent-change",
+            "type": "command",
+            "cmd": "{python} -I {case}/verify.py {sandbox}/out/public-laws-119-vs-118 --group pct",
+            "expect_exit": 0,
+            "severity": "minor",
+            "desc": "+31.1 percent"
+          }
+        ],
+        "ground_truth": {
+          "value": {
+            "pl_119_by_2026_09_30": 118,
+            "pl_118_by_2024_09_30": 90,
+            "joint_res_119": 25,
+            "joint_res_118": 5,
+            "pct_change": 31.1,
+            "pl_118_total": 274,
+            "pl_119_to_date_2026_10_28": 136,
+            "private_laws_119": 2
+          },
+          "tolerance": {
+            "counts": 0,
+            "pct": 0.15
+          },
+          "source": "api.congress.gov v3 /law/118/pub and /law/119/pub (limit 250, offsets 0 and 250), retrieved 2026-10-28; cutoff by the 'Became Public Law' date, confirmed by P.L. numbering (119-118 on 2026-09-30, 119-119 on 2026-10-07; 118-90 on 2024-09-30, 118-91 on 2024-10-01). P.L. 119-68 (H.R. 1043) has a non-enactment latestAction (committee report, 2026-02-11).",
+          "source_url": "https://www.congress.gov/public-laws/119"
+        },
+        "case_files": [
+          "case/public-laws-119-vs-118/verify.py"
+        ],
+        "coverage_tags": [
+          "keyed-key-present-data-gov",
+          "congress",
+          "legislation",
+          "pagination",
+          "two-congress-list-request",
+          "enactment-date-cutoff",
+          "latest-action-trap",
+          "quick-answer",
+          "unattended-no_user",
+          "live-api"
+        ],
+        "why": "Fixed enactment-date cutoff gives a stable count; guards Congress.gov pagination past one page and the latestAction-vs-enactment trap",
+        "origin": {
+          "run": "20261028-231458",
+          "iteration": 1,
+          "case": "i001-public-laws-119-vs-118"
+        },
+        "added_at": "2026-10-29T11:48:07+00:00"
+      }
+    },
+    {
+      "id": "usgs-m6-quakes-2025-vs-decade",
+      "prompt": "For a hazards briefing: how many earthquakes of magnitude 6 or larger did the USGS catalog record worldwide in calendar year 2025 (UTC), and how does that compare with the yearly average for 2015 through 2024? Do the same for magnitude 7 or larger. Also, how many of the 2025 magnitude 6+ quakes got an orange or red PAGER alert, and what was the largest earthquake of 2025: its magnitude, where it was, and its date in UTC? This is a scheduled, unattended run: nobody can answer questions, so decide every open choice yourself by agency precedent and record it. Save the work in out/quakes-2025.",
+      "expected_output": "2025 had 145 M6+ earthquakes vs a 2015-2024 average of 133.3 (above), and 16 M7+ vs 13.7; 11 M6+ events had orange (5) or red (6) PAGER alerts; the largest was the M8.8 Kamchatka earthquake on 2025-07-29 UTC. Table of yearly counts, decisions recorded, audit passed.",
+      "files": [],
+      "expectations": [
+        "Counts are for 2025-01-01 to 2026-01-01 UTC with an exclusive end, magnitude >= 6.0 (and >= 7.0) inclusive, and the answer states the threshold and time basis",
+        "Restricts to eventtype=earthquake or shows that this does not change the counts, and notes that catalog values can be revised",
+        "Gives the largest event as the M8.8 Kamchatka Peninsula, Russia earthquake on 2025-07-29 UTC (noting the local date is July 30 is fine)",
+        "The PAGER count uses the event's alert field (orange or red only, not yellow) for M6+ events in 2025, and says alert levels are PAGER's estimated-impact levels",
+        "Gets all data through fetch.py's usgs pack (earthquakes / earthquake_count), finishes without asking, and records the threshold and time-zone choices in decisions.json",
+        "Compares 2025 with the 10-year average (difference or percent) using a direction word that matches the sign (2025 is above the average for both thresholds)"
+      ],
+      "rsi": {
+        "title": "USGS ComCat: M6+ and M7+ earthquakes worldwide in 2025 vs the 2015-2024 average, PAGER orange/red count, largest event (UTC date)",
+        "invoke": "explicit",
+        "interaction": "none",
+        "criteria": [
+          {
+            "id": "c1",
+            "text": "Counts are for 2025-01-01 to 2026-01-01 UTC with an exclusive end, magnitude >= 6.0 (and >= 7.0) inclusive, and the answer states the threshold and time basis",
+            "severity": "major"
+          },
+          {
+            "id": "c2",
+            "text": "Restricts to eventtype=earthquake or shows that this does not change the counts, and notes that catalog values can be revised",
+            "severity": "minor"
+          },
+          {
+            "id": "c3",
+            "text": "Gives the largest event as the M8.8 Kamchatka Peninsula, Russia earthquake on 2025-07-29 UTC (noting the local date is July 30 is fine)",
+            "severity": "critical"
+          },
+          {
+            "id": "c4",
+            "text": "The PAGER count uses the event's alert field (orange or red only, not yellow) for M6+ events in 2025, and says alert levels are PAGER's estimated-impact levels",
+            "severity": "major"
+          },
+          {
+            "id": "c5",
+            "text": "Gets all data through fetch.py's usgs pack (earthquakes / earthquake_count), finishes without asking, and records the threshold and time-zone choices in decisions.json",
+            "severity": "major"
+          },
+          {
+            "id": "c6",
+            "text": "Compares 2025 with the 10-year average (difference or percent) using a direction word that matches the sign (2025 is above the average for both thresholds)",
+            "severity": "minor"
+          }
+        ],
+        "deterministic_checks": [
+          {
+            "id": "answer-exists",
+            "type": "file_exists",
+            "path": "out/quakes-2025/answer.md",
+            "severity": "critical"
+          },
+          {
+            "id": "analysis-exists",
+            "type": "file_exists",
+            "path": "out/quakes-2025/analysis.py",
+            "severity": "major"
+          },
+          {
+            "id": "facts-exists",
+            "type": "file_exists",
+            "path": "out/quakes-2025/facts.json",
+            "severity": "major"
+          },
+          {
+            "id": "decisions-exists",
+            "type": "file_exists",
+            "path": "out/quakes-2025/decisions.json",
+            "severity": "major"
+          },
+          {
+            "id": "benchmark-exists",
+            "type": "file_exists",
+            "path": "out/quakes-2025/exhibits/benchmark.csv",
+            "severity": "minor"
+          },
+          {
+            "id": "specs-checked",
+            "type": "file_exists",
+            "path": "out/quakes-2025/specs/checked.json",
+            "severity": "minor"
+          },
+          {
+            "id": "audit-answer",
+            "type": "command",
+            "cmd": "{python} {skill}/scripts/report/audit_answer.py {sandbox}/out/quakes-2025 --rerun",
+            "expect_exit": 0,
+            "timeout": 600,
+            "severity": "major"
+          },
+          {
+            "id": "handoff",
+            "type": "command",
+            "cmd": "{python} {skill}/scripts/fetch.py --handoff --out {sandbox}/out/quakes-2025",
+            "expect_exit": 0,
+            "severity": "minor"
+          },
+          {
+            "id": "no-secrets",
+            "type": "command",
+            "cmd": "{python} {skill}/scripts/report/scan_secrets.py {sandbox}/out/quakes-2025",
+            "expect_exit": 0,
+            "severity": "critical"
+          },
+          {
+            "id": "no-pycache-in-skill",
+            "type": "file_absent",
+            "path": "{skill}/**/__pycache__",
+            "severity": "minor"
+          },
+          {
+            "id": "usgs-data",
+            "type": "file_exists",
+            "path": "out/quakes-2025/data/usgs/*.csv",
+            "severity": "critical"
+          },
+          {
+            "id": "m6-2025",
+            "type": "command",
+            "cmd": "{python} -I {case}/verify.py facts {sandbox}/out/quakes-2025 145 2",
+            "expect_exit": 0,
+            "severity": "major",
+            "desc": "M6+ earthquakes 2025 = 145 (ComCat count, 2026-10-28; +/-2 for catalog revisions)"
+          },
+          {
+            "id": "m6-avg",
+            "type": "command",
+            "cmd": "{python} -I {case}/verify.py facts {sandbox}/out/quakes-2025 133.3 0.5",
+            "expect_exit": 0,
+            "severity": "major",
+            "desc": "M6+ yearly average 2015-2024 = 133.3"
+          },
+          {
+            "id": "m7-avg",
+            "type": "command",
+            "cmd": "{python} -I {case}/verify.py facts {sandbox}/out/quakes-2025 13.7 0.2",
+            "expect_exit": 0,
+            "severity": "major",
+            "desc": "M7+ yearly average 2015-2024 = 13.7"
+          },
+          {
+            "id": "m7-2025",
+            "type": "command",
+            "cmd": "{python} -I {case}/verify.py facts {sandbox}/out/quakes-2025 16 1",
+            "expect_exit": 0,
+            "severity": "minor",
+            "desc": "M7+ earthquakes 2025 = 16"
+          },
+          {
+            "id": "pager-orange-red",
+            "type": "command",
+            "cmd": "{python} -I {case}/verify.py facts {sandbox}/out/quakes-2025 11 1",
+            "expect_exit": 0,
+            "severity": "minor",
+            "desc": "2025 M6+ with orange or red PAGER alert = 11 (5 orange, 6 red)"
+          },
+          {
+            "id": "largest-mag",
+            "type": "regex",
+            "path": "out/quakes-2025/answer.md",
+            "pattern": "(?:M|magnitude|Mw|mww)\\s*[- ]?\\s*8\\.8",
+            "severity": "major"
+          },
+          {
+            "id": "largest-date-utc",
+            "type": "regex",
+            "path": "out/quakes-2025/answer.md",
+            "pattern": "(2025-07-29|July\\s+29,?\\s+2025|29\\s+July\\s+2025)",
+            "severity": "major"
+          }
+        ],
+        "ground_truth": {
+          "m6_count_by_year": {
+            "2015": 146,
+            "2016": 147,
+            "2017": 110,
+            "2018": 134,
+            "2019": 145,
+            "2020": 121,
+            "2021": 157,
+            "2022": 127,
+            "2023": 147,
+            "2024": 99,
+            "2025": 145
+          },
+          "m7_count_by_year": {
+            "2015": 19,
+            "2016": 16,
+            "2017": 7,
+            "2018": 17,
+            "2019": 10,
+            "2020": 9,
+            "2021": 19,
+            "2022": 11,
+            "2023": 19,
+            "2024": 10,
+            "2025": 16
+          },
+          "m6_avg_2015_2024": 133.3,
+          "m7_avg_2015_2024": 13.7,
+          "pager_orange_2025": 5,
+          "pager_red_2025": 6,
+          "largest_2025": {
+            "mag": 8.8,
+            "place": "2025 Kamchatka Peninsula, Russia",
+            "time_utc": "2025-07-29T23:24:52Z"
+          },
+          "tolerance": "counts +/-2 (M6+), +/-1 (M7+, PAGER) for ComCat revisions",
+          "source": "USGS FDSN event count/query API with eventtype=earthquake (same result without it), queried 2026-10-28",
+          "source_url": "https://earthquake.usgs.gov/fdsnws/event/1/count?starttime=2025-01-01&endtime=2026-01-01&minmagnitude=6&eventtype=earthquake"
+        },
+        "case_files": [
+          "case/usgs-m6-quakes-2025-vs-decade/verify.py"
+        ],
+        "coverage_tags": [
+          "single keyless pack (usgs ComCat)",
+          "safety/hazards/transport: usgs",
+          "aggregate/grouped query (counts per year)",
+          "UTC vs local date",
+          "catalog revisions",
+          "unattended no_user",
+          "live API"
+        ],
+        "why": "ComCat counts for closed years with tolerances; guards exclusive end dates, eventtype filter, pagination and UTC dates",
+        "origin": {
+          "run": "20261028-231458",
+          "iteration": 0,
+          "case": "i000-usgs-m6-quakes-2025-vs-decade"
+        },
+        "added_at": "2026-10-29T11:48:07+00:00"
+      }
+    }
+  ]
+}
