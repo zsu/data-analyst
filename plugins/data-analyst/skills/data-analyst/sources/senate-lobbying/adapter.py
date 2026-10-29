@@ -6,10 +6,16 @@
   (state, client_id, registrant_id) are sent under the names those endpoints filter on (ALIASES).
 - normalize: filing_activities -> one row per lobbying activity; contributions -> one row per contribution
   item; filings get is_amendment / is_termination flags derived from filing_type (values unchanged).
+  First, every list is cut to one row per filing (filing_uuid) or record (id): a filter on what a filing holds
+  (its activities' issue text, lobbyists, foreign entities, contribution items) makes the API return the
+  filing once per matching item (verified 2026-10-28: an issue-text filter gave 25 rows for 17 filings on one
+  page), which would inflate counts and income/expense sums. fetch notes how many repeats were dropped.
 """
 from __future__ import annotations
 
 import json
+
+from core import generic_rest as gr
 
 PAGED_FILTERED = ("/filings/", "/contributions/")
 NOT_FILTERS = {"page_size", "ordering", "issue_code"}
@@ -71,7 +77,58 @@ BASE = ("filing_uuid", "filing_type", "filing_type_display", "filing_year", "fil
         "filing_document_url")
 
 
+# filters on what a filing holds: the API joins to those items and returns the filing once per match
+NESTED = ("filing_specific_lobbying_issues", "lobbyist_name", "lobbyist_covered_position", "foreign_entity_name",
+          "foreign_entity_country", "affiliated_organization_name", "lobbyist_conviction_disclosure_indicator",
+          "foreign_entity_listed_indicator", "contribution_contributor", "contribution_payee", "contribution_honoree",
+          "contribution_type", "contribution_amount_min", "contribution_amount_max", "contribution_date_after",
+          "contribution_date_before", "lobbyist_id")
+UNIQUE = {"/filings/": "filing_uuid", "/contributions/": "filing_uuid", "/registrants/": "id", "/clients/": "id",
+          "/lobbyists/": "id"}
+_REPEATS: dict[str, list] = {}      # request (or for_each group) -> [rows the API sent, distinct records, key]
+
+
+def one_per_record(req, ep, rows) -> list[dict]:
+    """The rows with each filing (or registrant, client, lobbyist) once, in the API's order; the repeats dropped
+    are counted for fetch's note."""
+    col = UNIQUE.get(ep.get("path", ""))
+    if not col or not rows or any(col not in r for r in rows):
+        return rows
+    seen, out = set(), []
+    for r in rows:
+        if r[col] not in seen:
+            seen.add(r[col])
+            out.append(r)
+    if len(out) < len(rows):
+        got = _REPEATS.setdefault(req.get("_group") or req.get("name") or "", [0, 0, col, []])
+        got[0] += len(rows)
+        got[1] += len(out)
+        got[3] += [k for k in (req.get("params") or {}) if k in NESTED and k not in got[3]]
+    return out
+
+
+def repeat_notes() -> list[str]:
+    out = []
+    for name, (sent, kept, col, filters) in _REPEATS.items():
+        why = f" (here: {', '.join(filters)})" if filters else ""
+        unit = "filings" if col == "filing_uuid" else "records"
+        out.append(f"{name}: the LDA API sent {sent:,} rows for {kept:,} distinct {unit}: a filter on what a filing "
+                   f"holds{why} returns a filing once per matching activity, lobbyist or item. The {sent - kept:,} "
+                   f"repeats were dropped (one row per {col} before any per-activity or per-item rows), so counts and "
+                   "income/expense sums are per filing. The API's own count (and max_rows) counts the repeats too.")
+    return out
+
+
+def fetch(spec, pack, route):
+    _REPEATS.clear()
+    tables, notes = gr.fetch(pack, spec)
+    notes += repeat_notes()
+    _REPEATS.clear()
+    return tables, notes
+
+
 def normalize(req, ep, rows):
+    rows = one_per_record(req, ep, rows)
     if ep.get("path") not in PAGED_FILTERED and not ep.get("path", "").startswith("/filings/{"):
         return rows
     name = req.get("endpoint")

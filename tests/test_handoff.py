@@ -89,6 +89,26 @@ class TestHandoff(unittest.TestCase):
         self.assertIsNone(r["sources"][0]["files"][0]["preview"])
         self.assertIn("Microdata: no preview", r["text"])
 
+    def test_tables_of_an_earlier_fetch_are_listed(self):
+        # a second spec fetched into the same folder must not hide the first spec's tables from the hand-off
+        from core import package, packs
+        pack = packs.load("congress")
+        with tempfile.TemporaryDirectory() as out:
+            package.write(out, pack, {"acts": [{"number": "1"}, {"number": "2"}], "votes": [{"n": "1"}]},
+                          {"requests": [{"name": "acts", "endpoint": "laws"}, {"name": "votes", "endpoint": "laws"}]},
+                          "api", notes=["acts: an earlier note"])
+            package.write(out, pack, {"bill_1": [{"sponsor": "A"}]},
+                          {"requests": [{"name": "bill_1", "endpoint": "bill"}]}, "api", notes=["bill_1: a new note"])
+            r = handoff.summarize(out)
+        s = next(x for x in r["sources"] if x["source"] == "congress")
+        self.assertEqual([f["file"] for f in s["files"]],
+                         ["data/congress/bill_1.csv", "data/congress/acts.csv", "data/congress/votes.csv"])
+        self.assertEqual(s["files"][1]["rows"], 2)
+        self.assertIn("earlier", s["files"][1])
+        self.assertIn("`data/congress/acts.csv`: 2 rows (earlier fetch: route api", r["text"])
+        self.assertIn("(earlier fetch, table still in the folder) acts: an earlier note", r["text"])
+        self.assertIn("bill_1: a new note", r["text"])
+
 
 class TestCheckRecords(unittest.TestCase):
     def test_a_fetch_of_an_unchecked_spec_is_named(self):

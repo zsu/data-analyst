@@ -57,7 +57,7 @@ class TestNhtsa(PackTest):
         self.assertEqual(r["route"], "fix_spec", r)
 
     def test_variants_fetched_and_unmatched_name_is_a_note(self):
-        # Fixtures r005-r013 recorded live 2026-10-28 (model lists trimmed to the models used): by default only the
+        # Fixtures r005-r013 recorded live 2026-10-28 (r005/r009: the full model lists, max=10000): by default only the
         # name asked for is fetched and the other listed names are named in a note; "variants": true adds only
         # the powertrain/body versions. A name NHTSA does not know (HTTP 400) is an empty table with a note.
         base = {"make": "honda", "model": "accord", "modelYear": 2023}
@@ -82,6 +82,43 @@ class TestNhtsa(PackTest):
         self.assertIn("ACCORD HYBRID", {x["model_requested"] for x in rows})
         self.assertTrue(any("ACCORD HYBRID (4)" in n and "no record under: ACCORD SEDAN" in n for n in r["notes"]),
                         r["notes"])
+
+    def test_model_list_is_asked_in_full(self):
+        # products/vehicle/models and modelYears send only their first ~20 rows unless max is given [live
+        # 2026-10-28: 13 rows by default, 57 with max]: the variant lookup and the endpoints must ask for all
+        import json as _json
+        from unittest import mock
+        from core import generic_rest as gr
+        from core import packs
+        pack = packs.load("nhtsa")
+        ad = pack.adapter
+        sent = []
+
+        class Resp:
+            def __init__(self, d):
+                self.body = _json.dumps(d).encode()
+            def json(self):
+                return _json.loads(self.body)
+
+        class Client:
+            def request(self, method, path, q, json_body=None):
+                if "products" in path:
+                    sent.append(dict(q))
+                    names = [f"OTHER {i}" for i in range(19)] + ["WREN"] + ([] if not q.get("max") else
+                                                                         ["SPARROW", "WREN HYBRID"])
+                    return Resp({"results": [{"model": n} for n in names]})
+                return Resp({"Count": 1, "results": [{"NHTSACampaignNumber": "99V00%d000" % len(q["model"])}]})
+
+        spec = {"requests": [{"name": "w", "endpoint": "recalls_by_vehicle",
+                              "params": {"make": "x", "model": "wren", "modelYear": 2023, "variants": True}}]}
+        with mock.patch.object(ad.gr, "client_for", lambda pack: Client()):
+            tables, notes = ad.fetch(spec, pack, "api")
+        self.assertEqual(sent[0].get("max"), 10000)
+        self.assertEqual({r["model_requested"] for r in tables["w"]}, {"wren", "WREN HYBRID"})
+        for name in ("products_models", "products_model_years"):
+            _, params, _ = gr.resolve(pack, {"name": "m", "endpoint": name,
+                                             "params": {"modelYear": 2023, "make": "x", "issueType": "c"}})
+            self.assertEqual(params.get("max"), 10000, name)
 
     def test_variant_5xx_marks_the_table_incomplete(self):
         # a 5xx is not "no record": the table is marked incomplete (status partial) while other lookups answered;

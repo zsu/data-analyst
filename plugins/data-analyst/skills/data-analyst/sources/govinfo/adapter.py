@@ -3,7 +3,7 @@
 - search: GovInfo filters by collection, congress, bill type, publisher and date only through field:value
   terms INSIDE the query string (the same names as JSON body fields are silently ignored; verified Oct 2026),
   so before_request builds the query. User text is escaped: query operators, field syntax and punctuation
-  are removed from `text` and `phrase` (a stray ':' or '\\' once drew HTTP 500). `query` is raw
+  are removed from `text`, `phrase` and `title` (a stray ':' or '\\' once drew HTTP 500). `query` is raw
   syntax for experts and is passed unchanged.
 - text: fetch a package's summary, then its text link (api.govinfo.gov, with key) or the public content
   link (www.govinfo.gov, never with key), strip the HTML and return one row.
@@ -28,8 +28,8 @@ from core.http import Client, DataError
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 BILL_TYPES = ("hr", "s", "hjres", "sjres", "hconres", "sconres", "hres", "sres")
-SEARCH_KEYS = ("text", "phrase", "all_words", "any", "query", "collection", "congress", "billtype", "publisher",
-               "date_from", "date_to", "sort")
+SEARCH_KEYS = ("text", "phrase", "all_words", "any", "title", "query", "collection", "congress", "billtype",
+               "publisher", "date_from", "date_to", "sort")
 SORTS = {"relevance": [{"field": "score", "sortOrder": "DESC"}],
          "newest": [{"field": "publishdate", "sortOrder": "DESC"}],
          "oldest": [{"field": "publishdate", "sortOrder": "ASC"}]}
@@ -123,6 +123,9 @@ def build_query(p: dict) -> str:
         terms.append('("' + " ".join(w) + '")' if len(w) > 1 else "(" + " ".join(w) + ")")
     if p.get("all_words"):                     # every word anywhere: the complete candidate list, an upper bound
         terms.append("(" + " ".join(_words(p["all_words"])) + ")")
+    if p.get("title"):                         # the title field (official, short and display titles), not the text
+        w = _words(p["title"])
+        terms.append('title:"' + " ".join(w) + '"' if len(w) > 1 else f"title:{w[0]}")
     if p.get("any"):
         alts = [w for w in (_words(x) for x in _alternatives(p["any"])) if w]
         terms.append("(" + " OR ".join(('"' + " ".join(w) + '"') if len(w) > 1 else w[0] for w in alts) + ")")
@@ -156,7 +159,8 @@ def phrase_count_note(pack, req: dict, got: int) -> str | None:
     return (f"{req['name']}: the quoted search returned {got:,} documents, under half of the {total:,} containing all "
             f"the words of '{' '.join(_words(p['phrase']))}', so it may be missing documents that hold the phrase "
             "(GovInfo's quoted search can skip them): use all_words for the complete candidate list (an upper bound: "
-            "the words may stand apart) and confirm the phrase in the text where the count matters.")
+            "the words may stand apart) and confirm the phrase in the text where the count matters. A full-text "
+            "phrase search is not a title search: for 'X in the title' search the title field (param title).")
 
 
 def bill_package_id(p: dict) -> str:
@@ -176,16 +180,18 @@ def check_spec(spec):
         p, ep = r.get("params") or {}, r.get("endpoint")
         n = r.get("name")
         if ep == "search":
-            if not any(p.get(k) for k in ("text", "phrase", "all_words", "any", "query", "collection", "publisher")):
-                probs.append(f"request {n!r}: search needs text, phrase, all_words, any, query, collection or publisher")
+            if not any(p.get(k) for k in ("text", "phrase", "all_words", "any", "title", "query", "collection",
+                                          "publisher")):
+                probs.append(f"request {n!r}: search needs text, phrase, all_words, any, title, query, collection or "
+                             "publisher")
             if p.get("any") is not None and not any(_words(x) for x in _alternatives(p["any"])):
                 probs.append(f"request {n!r}: any needs a list of words or phrases")
             if re.search(r"(?i)\bdateissued\s*:", str(p.get("query") or "")):
                 probs.append(f"request {n!r}: GovInfo answers HTTP 500 to dateIssued: inside query (verified "
                              "2026-10-28): use date_from / date_to, which the pack sends as publishdate:range(...)")
-            if (p.get("text") and not _words(p["text"])) or (p.get("phrase") and not _words(p["phrase"])):
-                probs.append(f"request {n!r}: text/phrase has no searchable words")
-            if "*" in " ".join(str(p.get(k) or "") for k in ("text", "phrase", "all_words", "any", "query")):
+            if any(p.get(k) and not _words(p[k]) for k in ("text", "phrase", "title")):
+                probs.append(f"request {n!r}: text/phrase/title has no searchable words")
+            if "*" in " ".join(str(p.get(k) or "") for k in ("text", "phrase", "all_words", "any", "title", "query")):
                 probs.append(f"request {n!r}: GovInfo search answers a wildcard (*) with HTTP 500: list the word "
                              "forms instead (title:tariff OR title:tariffs)")
             bad = [c for c in _list(p.get("collection") or []) if c.upper() not in known]
@@ -239,13 +245,63 @@ def html_to_text(raw: str) -> str:
 MAX_GRANULES = 25          # a package whose text is only at granule level (CRPT, CHRG): read at most this many
 
 
-def _text_row(pid: str, summary: dict, text: str, link: str, max_chars, committees: str = "") -> dict:
+# GPO's text rendition of a document it did not convert holds a cover page and this marker ("[TEXT NOT AVAILABLE
+# REFER TO PDF]"), and the API serves it like any other text: the words are only in the PDF
+PDF_ONLY = re.compile(r"\[\s*TEXT\s+NOT\s+AVAILABLE\b[^\]]{0,60}\]", re.I)
+COVER_CHARS = 5000         # a cover page and a placeholder stay under this
+THIN_PER_PAGE = 100        # characters per PDF page under which a rendition is a stub (a full page has ~2,000+)
+
+
+def text_status(text: str, pages) -> str:
+    """full; pdf_only (GPO's placeholder and little else: the text is in the PDF only); partial_pdf (a placeholder
+    inside otherwise real text: some parts are in the PDF only); near_empty (no placeholder, but far too few
+    characters for the document's page count)."""
+    try:
+        pages = int(pages)
+    except (TypeError, ValueError):
+        pages = 0
+    n = len(text)
+    if PDF_ONLY.search(text):
+        return "pdf_only" if n < COVER_CHARS or (pages and n < 3 * THIN_PER_PAGE * pages) else "partial_pdf"
+    return "near_empty" if pages >= 5 and n < THIN_PER_PAGE * pages else "full"
+
+
+def pdf_url(pid: str, gid: str = "") -> str:
+    """GovInfo's public (keyless) PDF of a package or granule."""
+    return f"https://www.govinfo.gov/content/pkg/{pid}/pdf/{gid or pid}.pdf"
+
+
+def _text_row(pid: str, summary: dict, text: str, link: str, max_chars, committees: str = "", gid: str = "") -> dict:
     full = len(text)
+    status = text_status(text, summary.get("pages", ""))
     if max_chars:
         text = text[:int(max_chars)]
     return {"package_id": pid, "title": summary.get("title", ""), "collection": summary.get("collectionCode", ""),
             "date_issued": summary.get("dateIssued", ""), "pages": summary.get("pages", ""), "committees": committees,
-            "text_url": link, "characters": full, "truncated": bool(max_chars) and full > int(max_chars), "text": text}
+            "text_url": link, "characters": full, "truncated": bool(max_chars) and full > int(max_chars),
+            "text_status": status, "pdf_url": pdf_url(pid, gid), "text": text}
+
+
+def text_notes(name: str, rows: list[dict]) -> list[str]:
+    """A note naming the rows whose text is not the document's text: their words are not in the table, so a term
+    count over them is not zero, it is unread."""
+    out = []
+    bad = [r for r in rows if r.get("text_status") in ("pdf_only", "near_empty")]
+    part = [r for r in rows if r.get("text_status") == "partial_pdf"]
+
+    def ids(rs):
+        shown = [str(r.get("granule_id") or r.get("package_id")) for r in rs[:10]]
+        return ", ".join(shown) + (f" and {len(rs) - 10} more" if len(rs) > 10 else "")
+    if bad:
+        out.append(f"{name}{gr.INCOMPLETE} {len(bad)} of {len(rows)} rows have no usable text ({ids(bad)}): GovInfo's "
+                   "text rendition is GPO's 'TEXT NOT AVAILABLE, REFER TO PDF' placeholder or far too short for the "
+                   "page count (text_status pdf_only / near_empty). They were not searched: read each one's pdf_url, "
+                   "and count them as unread, never as 0 matches or as full text.")
+    if part:
+        out.append(f"{name}: {len(part)} of {len(rows)} rows have parts only in the PDF ({ids(part)}; text_status "
+                   "partial_pdf): GPO left a 'TEXT NOT AVAILABLE' placeholder inside the text, so a term may be "
+                   "missing from the text but present in the pdf_url.")
+    return out
 
 
 def _get_raw(api, link: str) -> tuple[str, str]:
@@ -305,7 +361,8 @@ def _fetch_text(pack, req) -> list[dict]:
                             kind="bad_request")
         text, shown = _link_text(api, link)
         row = _text_row(pid, gs, text, shown, p.get("max_chars"),
-                        "; ".join(c.get("committeeName", "") for c in gs.get("committees") or [] if c.get("committeeName")))
+                        "; ".join(c.get("committeeName", "") for c in gs.get("committees") or [] if c.get("committeeName")),
+                        gid)
         return [{"granule_id": gid, "granule_class": gs.get("granuleClass", ""), **row}]
     try:
         summary = api.get_json(f"/packages/{urllib.parse.quote(pid)}/summary")
@@ -448,10 +505,11 @@ def _fetch_sections(pack, req) -> list[dict]:
 
 
 def fetch(spec, pack, route):
-    tables, notes = {}, []
+    tables, notes, texts = {}, [], {}
     for r in spec["requests"]:
         if r.get("endpoint") == "text":
             tables[r["name"]] = _fetch_text(pack, r)
+            texts.setdefault(r.get("_group") or r["name"], []).extend(tables[r["name"]])   # for_each: one note
         elif r.get("endpoint") == "sections":
             tables[r["name"]] = _fetch_sections(pack, r)
         else:
@@ -462,6 +520,8 @@ def fetch(spec, pack, route):
             if r.get("endpoint") == "search" and not capped:
                 note = phrase_count_note(pack, r, len(t.get(r["name"]) or []))
                 notes += [note] if note else []
+    for name, rows in texts.items():
+        notes += text_notes(name, rows)
     return tables, notes
 
 

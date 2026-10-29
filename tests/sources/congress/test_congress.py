@@ -145,6 +145,31 @@ class TestCongress(PackTest):
             _, notes = a.fetch({"requests": [{**r, "allow_empty": True}]}, pack, "api")
         self.assertTrue(any("no titles matched" in n and "in that order" in n for n in notes), notes)
 
+    def test_title_contains_says_display_titles_only_and_gives_the_title_search(self):
+        # the list's title is the display title: a bill whose official title alone holds the phrase is missed, so
+        # every such fetch says so and names the GovInfo title search plus bill_titles as the follow-up
+        from unittest import mock
+        from core import packs
+        a = adapter()
+        pack = packs.load("congress")
+        rows = [{"title": "Harbor Dredging Act", "number": "12", "type": "HR"}]
+        spec = {"requests": [{"name": "b", "endpoint": "bills_congress",
+                              "params": {"congress": 118, "title_contains": "harbor dredging"}},
+                             {"name": "plain", "endpoint": "bills_congress", "params": {"congress": 118}}]}
+        with mock.patch.object(a.gr, "fetch", lambda pack, spec, client=None: ({spec["requests"][0]["name"]: rows}, [])):
+            _, notes = a.fetch(spec, pack, "api")
+        self.assertEqual(len(notes), 1, notes)                            # none for the list without the filter
+        n = notes[0]
+        self.assertTrue(n.startswith("b: title_contains matched the list's display title only"), n)
+        self.assertIn('{"collection": "BILLS", "congress": 118, "title": "harbor dredging"}', n)
+        self.assertIn("bill_titles", n)
+        self.assertIn("missing", n)                                       # a caveat word: the hand-off always shows it
+        law = a.display_title_note({"name": "l", "endpoint": "laws", "params": {"congress": "current",
+                                                                                "title_contains": ["levy", "levies"]}})
+        self.assertIn('"collection": "PLAW", "congress": <the Congress number>, "title": "levies"', law)
+        self.assertIsNone(a.display_title_note({"name": "c", "endpoint": "crs_reports",
+                                                "params": {"title_contains": "harbor"}}))
+
     def test_senate_roll_call_needs_session(self):
         bad = {"requests": [{"name": "x", "endpoint": "roll_call", "params": {"chamber": "senate", "roll": 5}}]}
         code, r = self.check(bad)

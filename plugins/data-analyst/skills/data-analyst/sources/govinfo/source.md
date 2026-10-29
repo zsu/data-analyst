@@ -14,13 +14,13 @@ agency publications catalogued by GPO.
 ## Endpoints and datasets
 | Endpoint | Returns (one row per) | Key parameters |
 |---|---|---|
-| `search` (POST) | matching package or granule: title, packageId, dateIssued, collectionCode, governmentAuthor, links | `text` (plain words, escaped), `phrase` (exact, escaped), `all_words` (every word, anywhere: an upper bound), `any` (list of words or phrases, OR), `query` (raw syntax, unescaped), `collection`, `congress`, `billtype`, `publisher`, `date_from`, `date_to`, `sort` (relevance, newest, oldest) |
+| `search` (POST) | matching package or granule: title, packageId, dateIssued, collectionCode, governmentAuthor, links | `text` (plain words, escaped), `phrase` (exact, escaped), `all_words` (every word, anywhere: an upper bound), `any` (list of words or phrases, OR), `title` (words or phrase in the title field: the title search, escaped), `query` (raw syntax, unescaped), `collection`, `congress`, `billtype`, `publisher`, `date_from`, `date_to`, `sort` (relevance, newest, oldest) |
 | `published` | package issued in a date range (complete list) | `start_date`, `end_date`, `collection` (required), `congress`, `docClass`, `billVersion` |
 | `package` | one package's metadata | `packageId` |
 | `related_collection` | related package of one collection (an enrolled bill's public law) | `accessId`, `collection` |
 | `granules` | granule in a package (CREC articles, FR documents, CFR parts) | `packageId` |
 | `related` | related collection for a package (bill versions, status, reports, CREC, signing statements) | `accessId` |
-| `text` | one row: package_id, title, date_issued, pages, characters, text (+ granule_id, granule_class with `granuleId`) | `packageId`, or `congress` + `billtype` + `number` (+ `version`, default `enr`); `granuleId` for one granule (a Record article: packages of over 25 granules have no whole text); `max_chars` |
+| `text` | one row: package_id, title, date_issued, pages, characters, text_status, pdf_url, text (+ granule_id, granule_class with `granuleId`) | `packageId`, or `congress` + `billtype` + `number` (+ `version`, default `enr`); `granuleId` for one granule (a Record article: packages of over 25 granules have no whole text); `max_chars` |
 | `sections` | section of a public law (USLM XML): identifier, num, heading, within (enclosing titles), usc_amended, usc_cited, usc_classified, amending_actions, characters, text | `packageId` (PLAW, 113th Congress on), `max_chars` (per section) |
 
 Collections (catalog aliases, `--search "reports"`): BILLS, BILLSTATUS, BILLSUM, PLAW, STATUTE, USCODE,
@@ -77,6 +77,12 @@ chamber), enr enrolled (passed both).
   the words". Unquoted words are stemmed only for dictionary words (a new coinage's plural is not): search
   every form with `any` (`["levy", "levies", "levied"]`), deduplicate by `packageId`, and say in the method
   note which forms and which search (`text`, `phrase`, `all_words`, `any`) were used.
+- **A full-text phrase search is not a title search.** `phrase`, `text`, `all_words` and `any` search the whole
+  document, and the quoted search misses many documents (above). For "X in the title" (a bill's official or
+  short title), search the title field: `query: 'title:"<phrase>"'` with `collection: BILLS` and `congress`
+  (`collection:BILLS AND congress:<n> AND title:"<phrase>"` is what is sent), deduplicate versions to bills,
+  then confirm each bill's titles with the congress pack's `bill_titles` (`for_each`). That is the route the
+  congress pack's `title_contains` note points to.
 - BILLS has one package per printed version, so a search counts versions, not bills: strip the version
   suffix from `packageId` (`BILLS-118hr4763eh` -> 118 hr 4763) and deduplicate before counting bills. A
   version code can end in a digit (`BILLS-118hr7643rh2`, a second reported print): parse `[a-z]+\d*`.
@@ -107,7 +113,15 @@ chamber), enr enrolled (passed both).
 - `text` returns the GPO plain-text rendition (`[[Page 138 STAT. 2687]]` page markers kept). Large
   packages (an omnibus law) give a text column of several MB; set `max_chars` to keep a sample. Some
   packages have only PDF: the request then fails with "no text rendition". Committee reports and hearings
-  keep their text per granule: `text` reads the granules (up to 25) and fills `committees` from them.
+  keep their text per granule: `text` reads the granules and fills `committees` from them; a package of
+  more than 25 granules fails with a hint (list `granules`, then `text` per `granuleId`), it is never cut.
+- **A text rendition can be a placeholder.** For a document GPO did not convert, the text is a cover page plus
+  `[TEXT NOT AVAILABLE REFER TO PDF]`, served like real text (`truncated` false). Every `text` row carries
+  `text_status`: `full`; `pdf_only` (the placeholder and little else); `partial_pdf` (a placeholder inside
+  real text: some parts are only in the PDF); `near_empty` (no placeholder, but under 100 characters per PDF
+  page). The fetch marks the table incomplete and names the `pdf_only`/`near_empty` rows. Their words were not
+  read: keep them out of term counts and "the full text of all N" (say "N - k read; k only as PDF"), and read
+  them at `pdf_url` (GovInfo's public PDF) when they matter.
 - `sections` reads GPO's USLM XML (United States Legislative Markup), which GovInfo has for public laws from
   the 113th Congress (2013) on. Bills have only the older bill XML, Statutes at Large only a whole-volume file
   (tens of MB), and most private laws have no USLM: use `text` for those (GovInfo answers a missing USLM

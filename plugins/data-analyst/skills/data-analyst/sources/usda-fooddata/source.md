@@ -12,7 +12,7 @@ NHANES), and the Branded Foods database (label data of commercial products).
 ## Endpoints and datasets
 | Endpoint | Returns | Parameters |
 |---|---|---|
-| `search` | foods matching words, with nutrients (200 a page) | `query` (required), `dataType`, `brandOwner`, `sortBy`, `sortOrder` |
+| `search` | foods matching words or field queries (`foodCategory:"Cheese"`), with nutrients (200 a page) | `query` (required), `dataType`, `brandOwner`, `sortBy`, `sortOrder` |
 | `food` | one food (all nutrients) | `fdcId`, `format` (full, abridged), `nutrients` |
 | `foods` | up to 20 foods by id per request (the pack's limit; see traps) | `fdcIds` (list), `format` (default abridged), `nutrients` |
 | `list` | every food of a data type, paged | `dataType`, `sortBy`, `sortOrder` |
@@ -38,6 +38,11 @@ Request option `layout`: `"long"` (default) gives one row per food and nutrient 
  "requests": [{"name": "two_cheeses", "endpoint": "foods", "params": {"fdcIds": [328637, 169901], "nutrients": "203,204,208"}}]}
 ```
 ```json
+{"description": "Branded products in one food category (first 5,000; totalHits says how many), with nutrients",
+ "requests": [{"name": "cheese_category", "endpoint": "search", "max_rows": 5000,
+   "params": {"query": "foodCategory:\"Cheese\"", "dataType": ["Branded"]}}]}
+```
+```json
 {"description": "Sodium in branded potato chips (first 1,000 products)",
  "requests": [{"name": "chips_sodium", "endpoint": "search", "max_rows": 1000,
    "params": {"query": "potato chips", "dataType": ["Branded"]}}]}
@@ -56,7 +61,21 @@ Search, then pick foods by `fdcId` and `dataType`; keep the id in the report so 
   use "g", "mg", "kcal". Compare case-insensitively.
 - Search matches words loosely and ranks by score: "cheddar cheese" returned 301 Foundation and SR
   Legacy hits, including imitation cheese. Check `description` and `dataType`, or use `+word` and quoted
-  phrases. `totalHits` can be large for Branded (60,638 for "cheese").
+  phrases (a quoted phrase must stand in that order in the description, so it can return very few rows;
+  check the count, and use a field query for a category). `totalHits` can be large for Branded (60,638 for "cheese").
+- **Field queries** (Lucene style, verified 2026-10-28): `query` can name a field, `foodCategory:"Cheese"`
+  (Branded: 23,601 products), `ingredients:"annatto"`, `brandOwner:"..."`, `description:...`, and combine
+  them with `+` (must) and `-` (must not): `+foodCategory:"Cheese" +ingredients:"annatto"`. **For "products in
+  a category", filter on `foodCategory`, never a union of word searches** (word searches pull in other
+  products and miss products whose names lack the word). Quote a value of several words: unquoted, only the
+  first word is bound to the field (`foodCategory:Breakfast Cereals` searched "Cereals" everywhere, 12,661
+  hits). The quoted value matches those words in order within the category name, any case: "Breakfast
+  Cereals" also matches "Breakfast Cereals - Hot And Cold". A value that differs from FDC's spelling (an
+  extra space or other separator, a made-up name) returns 0 rows, another category, or the front server's
+  HTML 400 page: copy the name exactly. Category names: run a word search with `"layout": "foods"` and count
+  its `foodCategory` column (Branded names such as "Cheese", "Yogurt"; Foundation and SR Legacy use groups
+  such as "Dairy and Egg Products"); the complete Branded list is the `branded_food_category` column of the
+  Branded download (https://fdc.nal.usda.gov/download-datasets). Say which category names the answer used.
 - The same food appears in several data types with different values (Foundation vs SR Legacy cheddar).
   Do not mix data types in one comparison without saying so.
 - A missing nutrient is not zero: Branded products only list label nutrients; SR Legacy and Foundation

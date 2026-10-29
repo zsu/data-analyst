@@ -58,6 +58,9 @@ class TestGovinfo(PackTest):
         self.assertEqual(text["date_issued"], "2024-12-23")
         self.assertIn("Public Law 118-201", text["text"])
         self.assertNotIn("<pre>", text["text"])
+        self.assertEqual(text["text_status"], "full")
+        self.assertEqual(text["pdf_url"], "https://www.govinfo.gov/content/pkg/PLAW-118publ201/pdf/PLAW-118publ201.pdf")
+        self.assertFalse(any("no usable text" in n for n in r["notes"]), r["notes"])
 
     def test_query_built_and_escaped(self):
         a = adapter()
@@ -67,6 +70,11 @@ class TestGovinfo(PackTest):
         self.assertEqual(q, '(collection:PLAW OR collection:STATUTE) AND publishdate:range(2024-01-01,) AND ("say hi")')
         q = a.build_query({"all_words": 'say "hi"'})
         self.assertEqual(q, '(say hi)')
+        # the title search (not a full-text phrase search): escaped, quoted for several words
+        q = a.build_query({"collection": "BILLS", "congress": 118, "title": 'harbor: "dredging"'})
+        self.assertEqual(q, 'collection:BILLS AND congress:118 AND title:"harbor dredging"')
+        self.assertEqual(a.build_query({"title": "harbor"}), "title:harbor")
+        self.assertEqual(a.check_spec({"requests": [{"name": "t", "endpoint": "search", "params": {"title": "harbor"}}]}), [])
         self.assertEqual(a.bill_package_id({"congress": 117, "billtype": "HR", "number": 5376}), "BILLS-117hr5376enr")
 
     def test_word_forms_and_one_word_phrases(self):
@@ -188,6 +196,37 @@ class TestGovinfo(PackTest):
         # Daily Digest renditions carried NUL characters in 2025
         self.assertEqual(a.html_to_text("<pre>(Vote No.\x00 7)</pre>"), "(Vote No. 7)")
         self.assertEqual(a._calls({"requests": [{"endpoint": "text", "params": {"packageId": "C", "granuleId": "G"}}]}), 2)
+
+    def test_pdf_only_placeholder_is_flagged(self):
+        # GPO serves a cover page plus "[TEXT NOT AVAILABLE REFER TO PDF]" as the text of a document it did not
+        # convert [live 2026-10-28]: the row must say so, and the fetch must say which rows were not read
+        a = adapter()
+        cover = "[House Hearing]\n\nA SAMPLE HEARING TITLE\n\nHEARING BEFORE THE COMMITTEE\n\n"
+        stub = cover + "[TEXT NOT AVAILABLE REFER TO PDF]"
+        body = "Witness testimony on the sample topic. " * 2000
+        self.assertEqual(a.text_status(stub, 120), "pdf_only")
+        self.assertEqual(a.text_status(stub, ""), "pdf_only")
+        self.assertEqual(a.text_status(body + "[TEXT NOT AVAILABLE REFER TO PDF]" + body, 40), "partial_pdf")
+        self.assertEqual(a.text_status(cover, 200), "near_empty")      # no marker, but a stub for 200 pages
+        self.assertEqual(a.text_status(cover, 1), "full")              # a short one-page document is fine
+        self.assertEqual(a.text_status(body + "[GRAPHIC NOT AVAILABLE IN TIFF FORMAT]", 30), "full")
+        rows = {"HX-1": stub, "HX-2": body, "HX-3": cover}
+
+        def fake_text(pack, req):
+            pid = req["params"]["packageId"]
+            return [a._text_row(pid, {"pages": 150}, rows[pid], "link", None)]
+        a._fetch_text = fake_text
+        spec = {"requests": [{"name": f"hearing_text#{i}", "endpoint": "text", "_group": "hearing_text",
+                              "params": {"packageId": pid}} for i, pid in enumerate(rows)]}
+        tables, notes = a.fetch(spec, None, "api")
+        self.assertEqual([t[0]["text_status"] for t in tables.values()], ["pdf_only", "full", "near_empty"])
+        bad = [n for n in notes if "no usable text" in n]
+        self.assertEqual(len(bad), 1, notes)                             # one note for the for_each group
+        self.assertTrue(bad[0].startswith("hearing_text: incomplete: 2 of 3 rows"), bad)
+        self.assertIn("HX-1, HX-3", bad[0])
+        self.assertIn("pdf_url", bad[0])
+        self.assertEqual(tables["hearing_text#0"][0]["pdf_url"],
+                         "https://www.govinfo.gov/content/pkg/HX-1/pdf/HX-1.pdf")
 
     def test_sections_without_uslm(self):
         a = adapter()                                   # bills carry the older bill XML, not USLM [live 2026-10-25]

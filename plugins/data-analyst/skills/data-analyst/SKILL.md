@@ -241,7 +241,8 @@ not one string `"FY2026 December"`) (a number that is not a statistic goes in
 as 21.6) needs full precision in the exhibit or a `rounding_ties_ok` entry `{"fact", "reason"}` when the value is
 exact (published at that precision); every `disclosures` line must be there word for
 word; preliminary, projected and past-vintage facts must be called so; direction words must agree with the sign
-(register a fall as a negative change, or label a positive size "decline"/"drop"); each source's required statements
+(register a fall as a negative change, or label a positive size "decline"/"drop"); dollar amounts of different years
+compared must say their basis (nominal/current dollars or real, with the index), or `dollar_basis_ok` `{"reason"}`; each source's required statements
 (its `audit_hooks`; wording in `data/<id>/README.md` and `--clarify`) must appear. In prose, a number right after a name the facts are keyed by ("Colorado
 (19.8 percent)"), the one row its clause names, or a measure acronym in its label ("CPI-U, up 26.5"), and a
 number with a year beside it ("in 2024", "1929 (0.55") must be a fact of that year (so give facts a `label`

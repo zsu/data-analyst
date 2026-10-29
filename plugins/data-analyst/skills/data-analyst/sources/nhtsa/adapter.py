@@ -126,7 +126,10 @@ def _models(c, pack, p, issue, state) -> list[str]:
     if key not in state.setdefault("models", {}):
         mep = pack.endpoints["endpoints"]["products_models"]
         try:
-            listed, _ = gr.fetch_request(c, mep, {"modelYear": p["modelYear"], "make": p["make"], "issueType": issue})
+            # without max the API sends only its first page of about 20 names, cut before many models and their
+            # variants (live 2026-10-28: 13 rows by default, 57 with max for one make and year): ask for all
+            listed, _ = gr.fetch_request(c, mep, {"modelYear": p["modelYear"], "make": p["make"], "issueType": issue,
+                                                  **(mep.get("defaults") or {})})
         except DataError:
             listed = []                      # the list only suggests names: never fail a fetch for it
         state["models"][key] = [x.get("model", "") for x in listed]

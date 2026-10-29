@@ -71,6 +71,12 @@ consumer issues, HOM homeland security, INS insurance, CPT copyright/patent/trad
   annual totals, not quarters, across 2008. The database starts in 1999.
 - Government entities per activity exist only for filings posted after 2021-02-14; older filings list
   entities for the filing as a whole (LDA API caveat).
+- **Repeated filings.** A filter on what a filing holds (`filing_specific_lobbying_issues`, `lobbyist_name`,
+  `lobbyist_covered_position`, `foreign_entity_*`, and for LD-203 the `contribution_*` item filters) makes
+  the API return a filing once per matching activity, lobbyist or item (live 2026-10-28: one page held 25
+  rows for 17 filings), and its `count` counts the repeats. The pack keeps one row per `filing_uuid` (per `id`
+  for registrants, clients, lobbyists) before splitting into activities or items, and the fetch notes how
+  many repeats it dropped. Count filings by distinct `filing_uuid` in any file you build yourself.
 - `filing_specific_lobbying_issues` searches free text written by the filer: bill numbers appear in many
   forms ("H.R. 4763", "HR 4763", "H.R.4763"); try several. Search syntax (verified 2026-10-22): plain
   words must all match (AND: `broadband spectrum` found fewer filings than either word), `OR` between

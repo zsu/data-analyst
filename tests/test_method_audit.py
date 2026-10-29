@@ -605,6 +605,37 @@ class TestAnswerGate(MethodBase):
         r, _ = A.check_answer(self.out, facts, D)
         self.assertTrue(any("opening" in m for c, ok_, m in r if c == "disclosures" and not ok_))
 
+    def test_dollars_of_different_years_need_their_basis(self):
+        """"$X in 2025, up from $Y in 2019" with no word on nominal or real fails; the same sentence with the basis
+        stated anywhere in the answer passes, and so does ordinary prose with one amount and other years."""
+        A = audit_answer
+
+        def flagged(txt, D=None):
+            write(os.path.join(self.out, "answer.md"), txt)
+            r, _ = quiet(A.check_answer, self.out, {}, D or {})
+            return any(c == "answer" and not ok_ and "never says their basis" in m for c, ok_, m in r[0])
+
+        cmp = "Average spending per visitor was $1,840 in 2025, up from $1,320 in 2019."
+        self.assertTrue(flagged(cmp))                                          # true positive
+        self.assertTrue(flagged("Grants rose to $4.1 million in 2024 from 2018."))         # one amount, a change word
+        self.assertTrue(flagged("The median fee was $1,250 in 2019. By 2024 it reached $1,610, an increase."))
+        self.assertTrue(flagged("| Item | 2019 | 2024 |\n|---|---|---|\n| Fees | $5.0 | $6.1 |\n"))
+        for basis in ("(nominal dollars)", "Amounts are not adjusted for inflation.", "in current dollars",
+                      "(in 2025 dollars)", "Both are in constant 2025 dollars.", "adjusted for inflation with the CPI-U",
+                      "In real terms the rise is smaller."):
+            self.assertFalse(flagged(cmp + " " + basis), basis)
+        self.assertFalse(flagged(cmp, {"dollar_basis_ok": {"reason": "both are statutory caps, set in dollars"}}))
+        self.assertTrue(flagged(cmp, {"dollar_basis_ok": {"reason": " "}}))      # an escape needs its reason
+        self.assertTrue(flagged("Real estate loans were $3.2 billion in 2024, up from $2.9 billion in 2019."))
+        for prose in ("The program, created in 1998, spent $4.2 billion in 2024.",
+                      "In 2024 the office awarded $4.2 million to 31 grantees. The 2019 report counted 25 grantees.",
+                      "Enrollment grew from 1.2 million in 2019 to 1.5 million in 2024.",
+                      "In fiscal 2024 (October 2023 to September 2024) outlays were $6.75 trillion.",
+                      "Of the 2,019 claims filed in 2024, 1,512 were paid, totaling $3.1 million.",
+                      "The fee is $25; it was set in 2015.",
+                      "| State | 2024 |\n|---|---|\n| A | $5.0 |\n| B | $6.1 |\n"):
+            self.assertFalse(flagged(prose), prose)
+
     def test_subset_count_in_words_is_a_fact(self):
         """"three of the four" over the answer's four-row table summarizes it: like "3 of the 4" it must be a
         registered count, so words the analysis never computed fail. Ordinary prose ("one of the two parties")

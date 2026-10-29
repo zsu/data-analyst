@@ -43,9 +43,12 @@ as its own phrase (`["water rights", "rights to water"]`) or filter on one disti
 titles in the CSV: this matters most for `crs_reports`, where `title_contains` is the only text filter; a
 multi-word phrase that keeps nothing says so in the error or note. It filters after download, so combine
 it with `max_rows` or a date range. It reads the list's display `title` only: a bill whose official title alone has
-the word is missed (often more bills than the display titles hold). For any title, search
-GovInfo (`collection: BILLS`, `query: "title:tariff OR title:tariffs"`) and confirm each bill with
-`bill_titles`; say which title the count uses. `--search votes` lists catalog aliases (committee codes, bill types).
+the word is missed (often more bills than the display titles hold), and the fetch notes this every time.
+**For "X in the title", the route is GovInfo's title search, never a full-text phrase search** (`phrase`
+searches the whole text and misses many bills): source govinfo, endpoint `search`, params
+`{"collection": "BILLS", "congress": 118, "title": "<phrase>"}` (one per word form, or
+`query: "title:tariff OR title:tariffs"`), strip the version suffix from `packageId` and deduplicate, then
+confirm each bill with `bill_titles` (`for_each` on congress, billType, billNumber); say which title the count uses. `--search votes` lists catalog aliases (committee codes, bill types).
 
 ## Spec examples
 ```json
