@@ -4,5 +4,7 @@
  "GET https://echodata.epa.gov/echo/air_rest_services.get_facilities?output=JSON&p_st=VT&p_maj=Y&responseset=1000": "r003.json",
  "GET https://echodata.epa.gov/echo/air_rest_services.get_qid?output=JSON&qid=932&pageno=1": "r004.json",
  "GET https://echodata.epa.gov/echo/case_rest_services.get_case_info?output=JSON&p_state=VT&p_law=CAA&responseset=1000": "r005.json",
- "GET https://echodata.epa.gov/echo/case_rest_services.get_qid?output=JSON&qid=937&pageno=1": "r006.json"
+ "GET https://echodata.epa.gov/echo/case_rest_services.get_qid?output=JSON&qid=937&pageno=1": "r006.json",
+ "GET https://echodata.epa.gov/echo/air_rest_services.get_facilities?output=JSON&p_st=VT&p_maj=Y&qcolumns=1%2C2%2C4%2C5&responseset=1000": "r007.json",
+ "GET https://echodata.epa.gov/echo/air_rest_services.get_qid?output=JSON&qid=192&pageno=1&qcolumns=1%2C2%2C4%2C5": "r008.json"
 }

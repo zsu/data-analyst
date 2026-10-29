@@ -35,9 +35,15 @@ roll-call votes from the House Clerk (1990 on) and the Senate (1989 on).
 | `crs_reports`, `crs_report` | CRS report (id, title, date, status); one report with authors, summary, links | `fromDateTime`, `toDateTime`, `title_contains`, `reportNumber` |
 
 `congress` may be `"current"`. Bill types: hr, s, hjres, sjres, hconres, sconres, hres, sres.
-`title_contains` keeps rows whose title has all the words; it filters after download, so combine it with
-`max_rows` or a date range. It reads the list's display `title` only: a bill whose official title alone has the
-word is missed (119th "tariff" bills: 36 by display title, at least 94 by any title). For any title, search
+`title_contains` keeps rows whose title holds the phrase as given: its words in that order, each matching
+at the start of a word, any case ("water rights" never matches "Rights of ... Water Users"; "port" never
+matches "support", but "veteran" finds "Veterans"); a list keeps titles holding any of its phrases (forms
+that do not start the same: `["levy", "levies"]`). To match words in any order or apart, list each form
+as its own phrase (`["water rights", "rights to water"]`) or filter on one distinctive word and read the
+titles in the CSV: this matters most for `crs_reports`, where `title_contains` is the only text filter; a
+multi-word phrase that keeps nothing says so in the error or note. It filters after download, so combine
+it with `max_rows` or a date range. It reads the list's display `title` only: a bill whose official title alone has
+the word is missed (often more bills than the display titles hold). For any title, search
 GovInfo (`collection: BILLS`, `query: "title:tariff OR title:tariffs"`) and confirm each bill with
 `bill_titles`; say which title the count uses. `--search votes` lists catalog aliases (committee codes, bill types).
 

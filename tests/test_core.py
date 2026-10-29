@@ -218,6 +218,59 @@ class TestHttp(unittest.TestCase):
                 s.shutdown()
                 s.server_close()
 
+    def test_html_400_retried_only_when_enabled_and_only_html(self):
+        """A front server's HTML 400 page is retried (bounded) when the pack opts in; the API's own JSON or text 400
+        is a parameter error and is never retried."""
+        import http.server
+        import threading
+        calls = {}
+
+        class H(http.server.BaseHTTPRequestHandler):
+            def log_message(self, *a):
+                pass
+
+            def do_GET(self):
+                n = calls[self.path] = calls.get(self.path, 0) + 1
+                html = b"<html><head><title>400 Bad Request</title></head><body>nginx</body></html>"
+                if self.path == "/flaky" and n < 3:
+                    code, ctype, body = 400, "text/html", html
+                elif self.path == "/always":
+                    code, ctype, body = 400, "text/html", html
+                elif self.path == "/json400":
+                    code, ctype, body = 400, "application/json", b'{"error": "pageSize above 200"}'
+                else:
+                    code, ctype, body = 200, "application/json", b'{"ok": 1}'
+                self.send_response(code)
+                self.send_header("Content-Type", ctype)
+                self.end_headers()
+                self.wfile.write(body)
+
+        srv = http.server.HTTPServer(("127.0.0.1", 0), H)
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        env = {"NO_PROXY": "127.0.0.1", "no_proxy": "127.0.0.1"}
+        try:
+            with mock.patch.dict(os.environ, env), mock.patch("core.http.time.sleep"):
+                os.environ.pop("DATA_ANALYST_FIXTURES", None)
+                os.environ.pop("DATA_ACCESS_FORCE", None)
+                base = f"http://127.0.0.1:{srv.server_port}"
+                c = Client(base, name="t", retries=0, retry_html_400=3)
+                self.assertEqual(c.get_json("/flaky"), {"ok": 1})
+                self.assertEqual(calls["/flaky"], 3)
+                with self.assertRaises(DataError) as cm:
+                    c.get("/always")
+                self.assertEqual((calls["/always"], cm.exception.kind), (4, "bad_request"))
+                self.assertIn("run again", str(cm.exception))
+                with self.assertRaises(DataError) as cm:
+                    c.get("/json400")
+                self.assertEqual(calls["/json400"], 1)                 # the API's own error: no retry
+                self.assertIn("pageSize", str(cm.exception))
+                with self.assertRaises(DataError):
+                    Client(base, name="t", retries=0).get("/always")   # not opted in: one try
+                self.assertEqual(calls["/always"], 5)
+        finally:
+            srv.shutdown()
+            srv.server_close()
+
 
 class TestRouteAfterFailure(unittest.TestCase):
     """A probe can answer (any HTTP status counts) while the real request is blocked: the route that just
@@ -684,6 +737,26 @@ class TestPackage(unittest.TestCase):
             self.assertIn("laws,number", dd)
             self.assertIn("bill_1,sponsor", dd)
 
+    def test_earlier_fetch_keeps_its_truncation_problem(self):
+        # a table cut at max_rows stays partial when a later spec fetches other tables into the same folder
+        from core import handoff, packs
+        pack = packs.load("congress")
+        with tempfile.TemporaryDirectory() as t:
+            package.write(t, pack, {"acts": [{"number": "1"}], "votes": [{"n": "2"}]},
+                          {"requests": [{"name": "acts", "endpoint": "laws"}, {"name": "votes", "endpoint": "laws"}]},
+                          "api", notes=["votes: one note"],
+                          problems=["acts: stopped at 1 rows (max_rows); the source has more."])
+            package.write(t, pack, {"votes": [{"n": "3"}]}, {"requests": [{"name": "votes", "endpoint": "laws"}]}, "api")
+            d = os.path.join(t, "data", "congress")
+            req = json.load(open(os.path.join(d, "request.json"), encoding="utf-8"))
+            e = req["earlier_fetches"][0]
+            self.assertEqual([x["file"] for x in e["tables"]], ["acts.csv"])
+            self.assertEqual(e["problems"], ["acts: stopped at 1 rows (max_rows); the source has more."])
+            self.assertEqual(e["notes"], [])                       # the replaced table's note goes with it
+            self.assertIn("**Problem**: acts: stopped at", open(os.path.join(d, "README.md"), encoding="utf-8").read())
+            s = handoff.source_summary(t, d)
+            self.assertTrue(any("earlier fetch" in p and "acts: stopped at" in p for p in s["problems"]), s)
+
     def test_hook_conditions(self):
         from core import policy as pol
         P = {"id": "x", "audit_hooks": [
@@ -914,3 +987,84 @@ class TestCatalogParamList(unittest.TestCase):
         self.assertEqual(p["series"], ["A.1", "B.2"])
         _, p, _ = gr.resolve(pack, {"name": "b", "endpoint": "q", "params": {"series": "pop"}})
         self.assertEqual(p["series"], "POP.TOTAL")
+
+
+class TestUnstablePaging(unittest.TestCase):
+    """Offset paging over an order the API does not keep: page 2 repeats rows of page 1 and skips others. With the
+    endpoint's `unique` column the repeats are dropped and a note says rows may be missing."""
+
+    def run_pages(self, unique, max_rows=None, params=None, default_order=True):
+        eps = {"base_url": "https://example.gov", "endpoints": {"q": {
+            "path": "/items", "records": "results", "total": "total",
+            "params": {"order": {"desc": "x"}},
+            **({"defaults": {"order": "id"}} if default_order else {}),
+            "truncated_note": {"when_default": "order", "text": "Kept rows are the lowest ids."},
+            "paging": {"type": "offset", "limit_param": "limit", "offset_param": "offset", "size": 3},
+            **({"unique_key": unique} if unique else {})}}}
+        P = {"id": "t", "title": "T", "auth": {"required": "none", "placement": "none"}, "limits": {},
+             "routes": {"api": {"base": "https://example.gov"}}}
+        pack = Pack("t", "", P, eps, None)
+        with tempfile.TemporaryDirectory() as t:
+            o = "&order=id" if default_order else ""
+            json.dump({f"GET https://example.gov/items?limit=3&offset=0{o}": "p1.json",
+                       f"GET https://example.gov/items?limit=3&offset=3{o}": "p2.json",
+                       f"GET https://example.gov/items?limit=3&offset=6{o}": "p3.json"}, open(os.path.join(t, "index.json"), "w"))
+            json.dump({"total": 7, "results": [{"id": "k1"}, {"id": "k2"}, {"id": "k3"}]}, open(os.path.join(t, "p1.json"), "w"))
+            json.dump({"total": 7, "results": [{"id": "k3"}, {"id": "k5"}, {"id": "k6"}]}, open(os.path.join(t, "p2.json"), "w"))
+            json.dump({"total": 7, "results": [{"id": "k7"}]}, open(os.path.join(t, "p3.json"), "w"))
+            with mock.patch.dict(os.environ, {"DATA_ANALYST_FIXTURES": t}):
+                r = {"name": "items", "endpoint": "q", "params": params or {}}
+                return gr.fetch(pack, {"requests": [{**r, "max_rows": max_rows} if max_rows else r]})
+
+    def test_repeats_dropped_and_named(self):
+        tables, notes = self.run_pages("id")
+        self.assertEqual([r["id"] for r in tables["items"]], ["k1", "k2", "k3", "k5", "k6", "k7"])
+        self.assertTrue(any("came back twice" in n and "of 7" in n for n in notes), notes)
+
+    def test_truncation_note_says_which_rows_a_cut_keeps(self):
+        _, notes = self.run_pages("id", max_rows=3)
+        self.assertTrue(any("stopped at 3 rows" in n and "lowest ids" in n for n in notes), notes)
+
+    def test_truncation_note_only_when_the_pack_order_was_sent(self):
+        # sent without the pack's order (API order): the cut says nothing about which rows it kept
+        _, notes = self.run_pages("id", max_rows=3, default_order=False)
+        self.assertTrue(any("stopped at 3 rows" in n for n in notes), notes)
+        self.assertFalse(any("lowest ids" in n for n in notes), notes)
+
+    def test_without_a_unique_column_nothing_changes(self):
+        tables, notes = self.run_pages(None)
+        self.assertEqual(len(tables["items"]), 7)
+        self.assertFalse(any("twice" in n for n in notes))
+
+
+class TestAltUploadNames(unittest.TestCase):
+    def test_agency_file_name_matches_the_item(self):
+        with tempfile.TemporaryDirectory() as t:
+            for n in ("yearly_77_2021 (1).zip", "other.csv"):
+                open(os.path.join(t, n), "w").close()
+            items = [{"name": "r#1", "filename": "r_1.json", "also_ext": [".csv"],
+                      "alt_filenames": ["yearly_77_2021.zip", "yearly_77_2021.csv"]},
+                     {"name": "r#2", "filename": "r_2.json", "alt_filenames": ["yearly_77_2022.zip"]}]
+            found, missing = manual.match_uploads([t], items)
+        self.assertTrue(found["r#1"].endswith("yearly_77_2021 (1).zip"))
+        self.assertEqual(missing, ["r_2.json (or yearly_77_2022.zip)"])
+
+
+class TestPlanCheckRefusedHosts(unittest.TestCase):
+    def test_plan_check_runs_the_refused_host_probe(self):
+        # --plan --check uses the same std_check as --source --check (bundle=False), so a second host that refuses
+        # scripts is found before the fetch, not by it
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("fetch_cli_r", os.path.join(SKILL, "scripts", "fetch.py"))
+        cli = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(cli)
+        from core import packs
+        pack = packs.load("congress")
+        with tempfile.TemporaryDirectory() as t, mock.patch.dict(os.environ, {"DATA_ANALYST_FIXTURES": t,
+                                                                              "DATA_GOV_API_KEY": FAKE}), \
+                mock.patch.object(pack.adapter, "refused_hosts", lambda s: "host-x: HTTP 403: the host refused"):
+            spec = {"requests": [{"name": "b", "endpoint": "bills", "params": {"congress": 118, "billType": "hr"}}]}
+            r = cli.std_check(pack, spec, os.path.join(t, "spec.json"), t, "local", False, bundle=False)
+        self.assertEqual(r["route"], "manual_download", r)
+        self.assertIn("host-x", r["message"])
+        self.assertNotIn("manual_bundle", r)                 # the plan writes one bundle for every source

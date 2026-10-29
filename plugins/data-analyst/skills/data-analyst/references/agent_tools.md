@@ -10,7 +10,7 @@ look. Where no tool exists, the right-hand fallback applies.
 | Send a file | `SendUserFile` when offered, else print the path | `present_files` | print the path (the app links it) | print the path |
 | Web search / fetch (§2b) | `WebSearch`, `WebFetch` (load them if deferred) | the web search tool | the web search tool when enabled (`--search`, or `web_search` in config.toml) | any search or fetch tool; none: record `no_search_tool` |
 | Run `fetch.py` and the audits | Bash / PowerShell | code execution | the shell tool | any shell or code tool; none: say Python is missing |
-| Deliverables folder (`<out>`) | `out/<short-name>/` in the working directory, or the folder the environment names | the outputs folder the environment names | `out/<short-name>/` in the working directory | `out/<short-name>/`, or `$DATA_ANALYST_OUT` |
+| Deliverables folder (`<out>`) | `out/<short-name>/` in the directory the session started in (never above it), or the folder the environment names | the outputs folder the environment names | `out/<short-name>/` in the directory the session started in | `out/<short-name>/`, or `$DATA_ANALYST_OUT` |
 
 When asking in a chat message (no question tool): one message, at most 4 numbered questions, each with
 lettered options, the recommended one first, and a "Don't know — decide for me" option, exactly as §1 says.

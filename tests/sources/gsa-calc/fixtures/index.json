@@ -8,5 +8,6 @@
  "GET https://api.gsa.gov/acquisition/calc/v3/api/ceilingrates/?ordering=sin&sort=asc&keyword=economist&page=1&page_size=5": {
   "file": "r007.bin",
   "status": 406
- }
+ },
+ "GET https://api.gsa.gov/acquisition/calc/v3/api/ceilingrates/?page=1&page_size=0&keyword=data+scientist&filter=education_level%3APHD&filter=price_range%3A150%2C200": "r008.json"
 }

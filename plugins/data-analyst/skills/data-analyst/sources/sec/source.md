@@ -21,7 +21,7 @@ insider ownership filings (Forms 3, 4, 5).
 | `submissions` | filing | `cik`/`ticker`, `forms` ("10-K,10-Q"), `since` (YYYY-MM-DD), `all` (older files too) |
 | `full_text_search` | matching document | `q`, `forms`, `startdt`, `enddt`, `ciks` |
 | `insider_filings` | Form 4 (or 3, 5) filing | `cik`/`ticker`, `forms` (4), `startdt`, `enddt` |
-| `company_search` | matching company or person | `text` |
+| `company_search` | matching company or person (none: an empty table with a note, the other requests still run) | `text` |
 Fact rows: cik, entity_name, taxonomy, tag, label, unit, start, end, period_days, val, fy, fp, form,
 filed, accn, frame. Common tags (`--search "revenue"`): Revenues,
 RevenueFromContractWithCustomerExcludingAssessedTax, NetIncomeLoss, OperatingIncomeLoss, Assets,
@@ -55,8 +55,13 @@ Liabilities, StockholdersEquity, EarningsPerShareDiluted, NetCashProvidedByUsedI
   always reads `USD/shares`.
 - One fact appears many times: each 10-K repeats prior years (and 10-Ks contain Q4-only durations),
   so a raw concept has several rows per period. For a clean annual series use `forms: "10-K"`,
-  `frames_only: true` (the latest filed value per calendar period) and `duration: "annual"` (350-380
+  `frames_only: true` (one value per period, the latest filed) and `duration: "annual"` (350-380
   day facts; `period_days` shows the length). Instant (balance-sheet) facts have no `start`.
+  SEC leaves many periods without any framed fact (two retailers' last 5-6 fiscal years, checked
+  2026-10-28), so `frames_only` keeps the framed fact where there is one and otherwise the latest-filed
+  fact of that period (its `frame` is empty), but only for lengths the series has (annual, quarter, instant,
+  from the framed facts or `duration`): unframed 6- and 9-month year-to-date facts overlap and are skipped.
+  The fetch notes how many periods were restored and skipped.
 - `fy` and `fp` describe the FILING, not the fact: Apple's fiscal 2007 net income carries fy 2009 from a
   10-K/A. Label periods by `end` (or `frame`), never by `fy`.
 - Fiscal vs calendar: `frame` (CY2023, CY2023Q4, CY2023Q4I) maps each fact to the nearest calendar
@@ -65,7 +70,9 @@ Liabilities, StockholdersEquity, EarningsPerShareDiluted, NetCashProvidedByUsedI
 - Tags differ across companies and years: revenue is `Revenues` for some filers and
   `RevenueFromContractWithCustomerExcludingAssessedTax` (ASC 606, 2018-) for others; `Liabilities` is
   missing for many filers (use LiabilitiesAndStockholdersEquity minus StockholdersEquity and say so).
-  Tags are case-sensitive; an unknown tag answers 404 (not found).
+  Tags are case-sensitive; a tag the company never used answers 404: the fetch still runs every other
+  request and names each missing one. To try several candidate tags at once, use `company_facts` with
+  `tags` (it notes the ones not reported), or mark the uncertain requests `"allow_empty": true`.
 - `frames` lists only companies that tagged that concept for that exact period; absence is not zero.
 - Full-text search returns documents, not filings: a filing's main document and each exhibit are
   separate rows (same `adsh`). Count distinct `adsh` for filings. The index returns at most 10,000

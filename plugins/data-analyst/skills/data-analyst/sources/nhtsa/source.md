@@ -12,9 +12,9 @@ Investigation (ODI), NCAP 5-Star crash ratings, VIN decoding (vPIC), and child c
 ## Endpoints and datasets
 | Endpoint | Returns | Key parameters |
 |---|---|---|
-| `recalls_by_vehicle` | recall campaigns for one vehicle | `make`, `model`, `modelYear` (all required) |
+| `recalls_by_vehicle` | recall campaigns for one vehicle (variants on request) | `make`, `model`, `modelYear` (all required), `variants` |
 | `recall_campaign` | one campaign, a row per make/model/year covered | `campaignNumber` (23V838000) |
-| `complaints_by_vehicle` | every ODI complaint for one vehicle | `make`, `model`, `modelYear` |
+| `complaints_by_vehicle` | every ODI complaint for one vehicle (variants on request) | `make`, `model`, `modelYear`, `variants` |
 | `complaint_odi` | one complaint | `odinumber` |
 | `products_model_years` / `products_makes` / `products_models` | years, makes, models that have recalls (`issueType` r) or complaints (c) | `modelYear`, `make`, `issueType` |
 | `ratings_model_years` / `ratings_makes` / `ratings_models` | NCAP-rated years, makes, models | `modelYear`, `make` |
@@ -24,7 +24,8 @@ Investigation (ODI), NCAP 5-Star crash ratings, VIN decoding (vPIC), and child c
 | `vpic_models_for_make_year` / `vpic_models_for_make` / `vpic_all_makes` | vPIC make and model lists | `make`, `modelYear` |
 | `car_seat_stations_state` / `_zip` | car seat inspection stations | `state` or `zip` (the API's lat/long radius search ignores the point and returns the first 100 stations nationwide, verified 2026-10, so the pack does not offer it) |
 
-Every endpoint answers in one page (no paging). Recalls cover model years 1949 to the coming year, and
+Car seat stations come 100 a page and the pack follows the `offset` pages; every other endpoint
+answers in one page. Recalls cover model years 1949 to the coming year, and
 `products_model_years` also lists `9999` for records with no model year (recalls and complaints; drop it from
 year ranges, verified 2026-10);
 NCAP ratings start with model year 1990 (`ratings_model_years` lists them). `--endpoints` lists all.
@@ -55,12 +56,23 @@ A range of model years is one request per year (`modelYear` takes one year).
 - Dates differ by endpoint (verified 2026-10): recalls `ReportReceivedDate` is **DD/MM/YYYY**
   ("28/05/2020"); complaints `dateOfIncident` and `dateComplaintFiled` are **MM/DD/YYYY** ("07/24/2025").
   The pack keeps the published column and adds `<column>_iso` (YYYY-MM-DD). Use the `_iso` columns.
-- A make/model/year that matches nothing answers **HTTP 400 with `Count: 0`**, which the fetch reports as
-  a bad request: either the name did not match or there is no such model year (no recalls is not 400).
-  `recalls_by_vehicle` matches its own base model names, which are not always the ones `products_models`
-  lists: variant suffixes fail ("MODEL Y 5-SEAT", "MUSTANG MACH-E BEV") and hyphens are inconsistent
-  ("mustang mach e" matches, "mustang mach-e" does not, while "f-150" does; verified 2026-10). Try the
-  plain base name, then the variant without suffixes or hyphens, and report which name matched.
+- A make/model/year that matches nothing answers **HTTP 400 with `Count: 0`**: either the name did not
+  match or there is no such model year (no recalls is not 400).
+- **Variants are separate vehicles** (verified 2026-10): hybrid, plug-in, EV and cab-style versions are
+  filed under their own model names ("<MODEL> HYBRID", "<MODEL> (CREW CAB) HEV"), with recalls and
+  complaints the plain name does not return; for some trucks the plain name has no complaints at all. A
+  name that starts with the model can also be a different vehicle ("<MODEL> SPORT", "<MODEL> <NAME>"), so
+  the pack never merges them unasked: every vehicle fetch notes the other names `products_models` lists for
+  that make and year that start with the requested one. To see them first, fetch `products_models`
+  (`modelYear`, `make`, `issueType` r for recalls, c for complaints). Request each version the question
+  covers as its own request (counts stay per name), or set `"variants": true` to add only the names whose
+  extra words are powertrain, body, cab, door or drive qualifiers (HYBRID, PHEV, EV, SEDAN, "(CREW CAB)",
+  AWD); each campaign or complaint is then kept once, with `model_requested`. Recall names do not always
+  follow `products_models` (hyphens and suffixes differ: "mustang mach e" matches, "mustang mach-e" does
+  not); the pack also tries a listed name without its parenthesized cab style, and a campaign's own rows
+  (`recall_campaign`) show the names NHTSA uses. A request where no name matched (HTTP 400) is kept as an
+  empty table with a note: fix the name and fetch again; never report it as "no recalls". A lookup NHTSA did
+  not answer (HTTP 5xx after retries) marks the table incomplete (status partial): fetch again later.
   `ratings_models` gives NCAP names. Matching is case-insensitive.
 - Model names differ between databases: NCAP rates variants ("2019 Honda CIVIC 4 DR FWD", one VehicleId
   each), recalls and complaints use the plain model, vPIC has its own spelling ("Civic"). `products_models`

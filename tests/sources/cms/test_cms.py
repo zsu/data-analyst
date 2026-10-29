@@ -78,6 +78,17 @@ class TestCms(PackTest):
         self.assertEqual({x["GE65_Sprsn_Flag"] for x in flagged}, {"*"})
         self.assertNotIn("GE65_Sprsn_Flag_flag", flagged[0])
 
+    def test_unknown_sort_column_is_named(self):
+        # Provider Data answers HTTP 400 "Column not found." without saying which (r007, recorded 2026-10-28); the
+        # pack reads the dataset's columns (r008) and names the unknown one
+        spec = {"requests": [{"name": "vt_hosp_badsort", "endpoint": "provider",
+                              "params": {"dataset": "hospital_info", "where": {"state": "VT"}, "sort": "ccn",
+                                         "columns": ["facility_id", "facility_name"]}}]}
+        code, r, _ = self.fetch(spec)
+        self.assertEqual((code, r["kind"]), (2, "bad_request"), r)
+        self.assertIn("['ccn']", r["message"])
+        self.assertIn("facility_id", r["message"])
+
     def test_bad_operator_is_fix_spec(self):
         bad = {"requests": [{"name": "x", "endpoint": "provider",
                              "params": {"dataset": "hospital_info", "conditions": [{"property": "state", "value": "VT",
@@ -92,6 +103,34 @@ class TestCms(PackTest):
         code, r = self.check(bad)
         self.assertEqual(r["route"], "fix_spec", r)
         self.assertIn("TEXT", r["message"])
+
+    def test_medicare_list_filter_is_one_in_group(self):
+        # r006 recorded live on 2026-10-28: repeated filter[COL]= parameters keep only the last value, so a list
+        # in `where` must reach the data-api as one IN condition group and return a row for every value
+        spec = {"requests": [{"name": "three_states", "endpoint": "medicare",
+                              "params": {"dataset": "geo_variation",
+                                         "where": {"YEAR": "2022", "BENE_GEO_LVL": "State", "BENE_AGE_LVL": "All",
+                                                   "BENE_GEO_DESC": ["VT", "NH", "ME"]},
+                                         "columns": ["YEAR", "BENE_GEO_DESC", "BENES_TOTAL_CNT"]}}]}
+        code, r, out = self.fetch(spec)
+        self.assertEqual(code, 0, r)
+        self.assertEqual(sorted(x["BENE_GEO_DESC"] for x in self.csv(out, "three_states")), ["ME", "NH", "VT"])
+        sp, out = self.write_spec(spec, "manual.json")
+        code, r = self.cli(sp, "--out", out, "--dry-run")
+        url = r["manual_items"][0]["url"]
+        self.assertIn("filter%5Bin3%5D%5Bcondition%5D%5Boperator%5D=IN", url)
+        self.assertNotIn("filter%5BBENE_GEO_DESC%5D", url)
+
+    def test_medicare_rows_outside_the_filter_fail(self):
+        from testkit import load_pack_module
+        ad = load_pack_module("cms")
+        ep = {"path": "/data-api/v1/dataset/{dataset}/data"}
+        req = {"name": "x", "params": {"where": {"STATE": ["AK", "HI"]}}}
+        self.assertEqual(len(ad.normalize(req, ep, [{"STATE": "ak"}, {"STATE": "HI"}])), 2)   # API matches any case
+        with self.assertRaises(Exception) as cm:
+            ad.normalize(req, ep, [{"STATE": "AK"}, {"STATE": "WA"}])
+        self.assertIn("did not apply the filter", str(cm.exception))
+        self.assertTrue(ad.check_spec({"requests": [{"name": "e", "params": {"where": {"STATE": []}}}]}))
 
     def test_manual_links_carry_filters(self):
         sp, out = self.write_spec(SPEC)

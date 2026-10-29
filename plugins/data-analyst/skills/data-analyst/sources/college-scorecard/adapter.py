@@ -44,6 +44,19 @@ def _fields(v) -> str:
     return ",".join(dict.fromkeys(out))
 
 
+def _sort(v) -> str:
+    """sort=<field>[:asc|desc][,...] with the same short names as filters and fields (name -> school.name, catalog
+    aliases): the API answers HTTP 400 to a short name inside sort."""
+    cat = _catalog()
+    out = []
+    for part in (x.strip() for x in str(v).split(",")):
+        if part:
+            f, sep, d = part.partition(":")
+            f = ALIASES.get(f.strip(), cat[f.strip()]["id"] if f.strip() in cat else f.strip())
+            out.append(f + sep + d.strip())
+    return ",".join(out)
+
+
 def before_request(req, ep, params):
     p = dict(params)
     for short, full in ALIASES.items():
@@ -51,6 +64,8 @@ def before_request(req, ep, params):
             v = p.pop(short)
             p.setdefault(full, v)
     p["fields"] = _fields(p.get("fields") or POPULAR)
+    if p.get("sort"):
+        p["sort"] = _sort(p["sort"])
     p.pop("_fields", None)
     for k, v in list(p.items()):
         if isinstance(v, list):

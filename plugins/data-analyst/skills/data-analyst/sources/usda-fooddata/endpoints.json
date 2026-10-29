@@ -1,5 +1,6 @@
 {
  "base_url": "https://api.nal.usda.gov/fdc/v1",
+ "retry_html_400": 3,
  "endpoints": {
   "search": {
    "path": "/foods/search",

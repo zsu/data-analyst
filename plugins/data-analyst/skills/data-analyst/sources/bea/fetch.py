@@ -103,6 +103,7 @@ COLUMNS = ["request_id", "dataset", "table", "line", "series_code", "description
            "geo_level", "industry", "time_period", "date", "year", "subperiod", "frequency", "value", "flag", "unit",
            "metric", "unit_mult", "note_ref", "dims"]
 NIPA_TXT = "https://apps.bea.gov/national/Release/TXT/"
+MONTHLY_TITLE = re.compile(r"\bmonth", re.I)     # a NIPA table published monthly names it in its title
 REGIONAL_ZIP = "https://apps.bea.gov/regional/zip/"
 INDUSTRY_XLS = "https://apps.bea.gov/industry/Release/XLS/GDPxInd/"
 WORKBOOKS = {"TVA": "ValueAdded.xlsx", "TGO": "GrossOutput.xlsx", "TII": "IntermediateInputs.xlsx"}
@@ -620,7 +621,6 @@ def nipa_from_flat(req: dict, src_dir: str, manifest: dict, files: dict | None =
     f = req["frequency"] or "A"
     files = files or {}
     reg = files.get("SeriesRegister.txt") or fetch_source(NIPA_TXT + "SeriesRegister.txt", src_dir, manifest)
-    dat = files.get(f"NipaData{f}.txt") or fetch_source(NIPA_TXT + f"NipaData{f}.txt", src_dir, manifest)
     tables_reg = files.get("TablesRegister.txt")
     if not tables_reg:
         try:
@@ -628,11 +628,15 @@ def nipa_from_flat(req: dict, src_dir: str, manifest: dict, files: dict | None =
         except (BeaError, OSError):
             tables_reg = None
     table = req["table"].upper()
+    titles = {row[0].upper(): row[1] for row in csv.reader(io.StringIO(read_text_member(tables_reg)))
+              if len(row) > 1} if tables_reg else {}
     lines: dict[str, list[dict]] = {}      # one series can sit on several lines of a table (T10205 lines 3 and 6)
+    homes: dict[str, set] = {}             # series code -> every table it sits in
     for row in csv.reader(io.StringIO(read_text_member(reg))):
         if not row or row[0].startswith("%"):
             continue
         code, label, metric, calc, scale, locs = row[0], row[1], row[2], row[3], row[4], row[5]
+        homes[code] = {x.split(":")[0].upper() for x in locs.split("|") if ":" in x}
         for loc in locs.split("|"):
             if ":" in loc and loc.split(":")[0].upper() == table:
                 lines.setdefault(code, []).append(
@@ -640,6 +644,16 @@ def nipa_from_flat(req: dict, src_dir: str, manifest: dict, files: dict | None =
                      "unit_mult": str(-int(scale)) if scale.lstrip("-").isdigit() else ""})
     if not lines:
         raise BeaError(f"NIPA table {table} is not in SeriesRegister.txt (check the name with --find).", kind="api")
+    if f == "M" and table.startswith("T") and table in titles and not MONTHLY_TITLE.search(titles[table]):
+        # NipaDataM holds series that several tables share: a quarterly table's series also sit in a monthly
+        # table, so the flat files alone would label monthly values with a table BEA publishes only A/Q (the API
+        # refuses frequency M for it). BEA's monthly NIPA tables say so in their titles ("..., Monthly", or
+        # "from Month One Year Ago"; checked against TablesRegister.txt 2026-10-28).
+        alt = sorted({t for c in lines for t in homes.get(c, ()) if MONTHLY_TITLE.search(titles.get(t, ""))})
+        raise BeaError(f"NIPA {table} ({titles[table]}) is published annually and quarterly, not monthly. "
+                       + (f"Its series' monthly values are in {', '.join(alt)}: request that table with frequency M "
+                          "(check its line numbers with --lines)." if alt else "Use frequency A or Q."), kind="api")
+    dat = files.get(f"NipaData{f}.txt") or fetch_source(NIPA_TXT + f"NipaData{f}.txt", src_dir, manifest)
     ys = year_set(req["years"])
     lastn = int(req["years"][4:]) if req["years"].upper().startswith("LAST") else None
     out, seen_years = [], set()
@@ -667,11 +681,7 @@ def nipa_from_flat(req: dict, src_dir: str, manifest: dict, files: dict | None =
         keep = sorted({r["year"] for r in out})[-lastn:]
         out = [r for r in out if r["year"] in keep]
     out.sort(key=lambda r: (int(r["line"]) if str(r["line"]).isdigit() else 0, r["time_period"]))
-    title = ""
-    if tables_reg:
-        for row in csv.reader(io.StringIO(read_text_member(tables_reg))):
-            if row and row[0].upper() == table:
-                title = row[1]
+    title = titles.get(table, "")
     notes = [{"request_id": req["id"], "table": table, "note_ref": table,
               "note_text": (title + ". " if title else "") + "Rebuilt from the NIPA flat files (SeriesRegister.txt "
               "TableId:LineNo); line descriptions are BEA's series labels, which can differ slightly from the "
@@ -997,10 +1007,14 @@ def package(out: str, reqs: list[dict], spec: dict, rows: list[dict], notes: lis
     by_req: dict[str, int] = {}
     for r in rows:
         by_req[r["request_id"]] = by_req.get(r["request_id"], 0) + 1
+    gaps = missing_years(reqs, rows)
+    gap_notes = [f"{k}: no rows for year(s) {', '.join(map(str, v))}, which the spec asks for (BEA has not published "
+                 "them, or the table does not hold them); the data end earlier: say so" for k, v in gaps.items()]
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
     rec = {"source": SOURCE, "description": spec.get("description", ""), "fingerprint": fingerprint(reqs),
            "route": route, "acquired": acquired, "downloaded": date.today().isoformat(), "retrieved": now,
-           "rows": len(rows), "rows_by_request": by_req, "flags": flags, "vintage": vintage, "spec": spec,
+           "rows": len(rows), "rows_by_request": by_req, "missing_years": gaps, "notes": gap_notes, "flags": flags,
+           "vintage": vintage, "spec": spec,
            "requests": [{k: v for k, v in q.items()} for q in reqs], "api_calls": calls_log,
            "bulk_files": manifest, "csv_sha256": sha256(csv_path),
            "tables": [{"name": "bea_data", "file": "bea_data.csv", "rows": len(rows)},
@@ -1019,6 +1033,8 @@ def package(out: str, reqs: list[dict], spec: dict, rows: list[dict], notes: lis
         f"- Downloaded: {date.today().isoformat()} ({acquired})",
         f"- Route: {route}",
         f"- Rows: {len(rows):,} (" + ", ".join(f"{k}: {v:,}" for k, v in by_req.items()) + ")",
+        *[f"- **Years asked for but not in the data**: `{k}`: {', '.join(map(str, v))} (not published yet, or not "
+          "in this table): say so wherever the period is given" for k, v in gaps.items()],
         "- File: `bea_data.csv`, tidy long format (one row per series, area and period)",
         "- Notes from BEA: `notes.csv`; exact request and checksums: `request.json`", "",
         "## Requests",
@@ -1063,10 +1079,28 @@ def package(out: str, reqs: list[dict], spec: dict, rows: list[dict], notes: lis
     with open(os.path.join(ddir, "README.md"), "w", encoding="utf-8") as f:
         f.write("\n".join(lines) + "\n")
     core_package.copy_pack_lib(os.path.dirname(os.path.dirname(ddir)), SOURCE)   # analysis.py reruns alone
-    return {"status": "ok", "source": SOURCE, "route": route, "rows": len(rows), "rows_by_request": by_req,
-            "data_dir": ddir, "csv": csv_path, "notes": os.path.join(ddir, "notes.csv"),
-            "readme": os.path.join(ddir, "README.md"), "flags": flags, "citation": cite,
-            "read_next": os.path.join(HERE, "source.md")}
+    res = {"status": "ok", "source": SOURCE, "route": route, "rows": len(rows), "rows_by_request": by_req,
+           "data_dir": ddir, "csv": csv_path, "notes": os.path.join(ddir, "notes.csv"),
+           "readme": os.path.join(ddir, "README.md"), "flags": flags, "citation": cite,
+           "read_next": os.path.join(HERE, "source.md")}
+    if gaps:                                   # "notes" stays the path of notes.csv
+        res.update(missing_years=gaps, warnings=gap_notes)
+    return res
+
+
+def missing_years(reqs: list[dict], rows: list[dict]) -> dict[str, list[int]]:
+    """{request id: years the request names explicitly that no row has}. A request that gets some years but not
+    others succeeds (only a request with none fails), so the gap must be said, not left for the reader to find."""
+    have: dict[str, set] = {}
+    for r in rows:
+        have.setdefault(r["request_id"], set()).add(r.get("year"))
+    out = {}
+    for q in reqs:
+        ys = year_set(str(q.get("years") or "X"))
+        miss = sorted(ys - have.get(q["id"], set())) if ys and q["id"] in have else []
+        if miss:
+            out[q["id"]] = miss
+    return out
 
 
 def run_api(client: BeaClient, reqs: list[dict], out: str) -> tuple[list, list, list]:

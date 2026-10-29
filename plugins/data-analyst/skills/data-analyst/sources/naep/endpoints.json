@@ -8,7 +8,7 @@
         "subject": {"required": true, "catalog": true, "desc": "reading, math (mathematics), science, writing, civics, history, geography, economics, tel, music"},
         "grade": {"required": true, "enum": [4, 8, 12], "desc": "4, 8 or 12"},
         "subscale": {"desc": "scale code; default is the subject's composite (math grade 12: MWPCM). --search sub: lists them"},
-        "variable": {"desc": "student group: TOTAL, SDRACE, GENDER, SLUNCH3, PARED, SCHTYPE, UTOL4, IEP, LEP; crosstab A+B (SDRACE+GENDER)"},
+        "variable": {"desc": "student group: TOTAL, SDRACE, GENDER, ECONDIS (SLUNCH3 before 2024), PARED, SCHTYPE, UTOL4, IEP, LEP; crosstab A+B (SDRACE+GENDER)"},
         "jurisdiction": {"desc": "NP (national public), NT (national), state codes (CA), districts (XN = New York City); comma-separated for several"},
         "stattype": {"desc": "MN:MN mean (default); ALC:AB / ALC:AP / ALC:AD at or above Basic/Proficient/Advanced; RP:RP row percent; PC:P1/P2/P5/P7/P9 = 10th/25th/50th/75th/90th percentile (no other PC codes); comma-separated for several"},
         "Year": {"desc": "2024, comma list 2024,2022,2019, or Current / Prior / Base; R2 suffix = non-accommodated sample (e.g. 1998R2)"},
@@ -64,7 +64,7 @@
       "params": {
         "subject": {"required": true, "catalog": true, "desc": "subject"},
         "grade": {"required": true, "enum": [4, 8, 12], "desc": "grade"},
-        "variable": {"required": true, "desc": "SDRACE, GENDER, SLUNCH3, ... (not TOTAL)"},
+        "variable": {"required": true, "desc": "SDRACE, GENDER, ECONDIS, ... (not TOTAL)"},
         "subscale": {"desc": "default composite"}, "jurisdiction": {"desc": "default NP"},
         "Year": {"desc": "default Current"}, "categoryindex": {"desc": "restrict categories"}, "stattype": {"desc": "default MN:MN"}
       },
@@ -157,7 +157,8 @@
     "var:SDRACE": {"id": "SDRACE", "kind": "variable", "name": "Race/ethnicity used to report trends (school-reported)"},
     "var:SRACE10": {"id": "SRACE10", "kind": "variable", "name": "Race/ethnicity, 2011 guidelines"},
     "var:GENDER": {"id": "GENDER", "kind": "variable", "name": "Sex"},
-    "var:SLUNCH3": {"id": "SLUNCH3", "kind": "variable", "name": "National School Lunch Program eligibility (poverty proxy)"},
+    "var:SLUNCH3": {"id": "SLUNCH3", "kind": "variable", "name": "National School Lunch Program eligibility (poverty proxy), to 2022", "successor": "ECONDIS"},
+    "var:ECONDIS": {"id": "ECONDIS", "kind": "variable", "name": "Economically disadvantaged status (poverty proxy; 2024 on, same values as SLUNCH3 in earlier years)"},
     "var:PARED": {"id": "PARED", "kind": "variable", "name": "Parental education (grades 8, 12, student-reported)"},
     "var:SCHTYPE": {"id": "SCHTYPE", "kind": "variable", "name": "School type: public / private"},
     "var:CHRTRPT": {"id": "CHRTRPT", "kind": "variable", "name": "Charter school"},

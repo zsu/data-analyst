@@ -86,6 +86,10 @@ Field rules (`core/policy.py: validate` enforces the starred ones):
 - **`routes`**\*: `manual.how` is always required: every source must be obtainable by a user with a browser.
   Each network route needs a cheap `probe` URL that needs no key and returns quickly (any HTTP status means
   reachable). Use `api_keyless` for a different keyless host (FRED graph CSVs), `bulk` for flat files.
+  `manual.keyless_file` (optional) names a direct, small agency file that holds a keyed request's rows and
+  that the pack's `--ingest` reads and filters by the spec (epa-aqs AirData files); `--check` returns it with
+  `run_setup`, and it is the only keyless download an unattended run makes. Never set it for an interactive
+  page, a large bulk file or a file that must be filtered by hand.
 - **`cache.mode`**\*: `none` when the terms forbid copies (FRED); `run_only` by default; `persistent` (with
   `ttl_hours`) only for large, slowly changing files whose terms allow caching.
 - **`redistribution.mode`**\*: `allowed` (public domain or open licence), `aggregates_only` (row-level files
@@ -146,6 +150,7 @@ Standard packs run through `scripts/fetch.py` → `core.generic_rest`. An adapte
 | `check_error` | `(status, body: bytes) -> str \| None` | Error inside an HTTP 200 (BLS `REQUEST_NOT_PROCESSED`, BEA `Error`). |
 | `check_spec` | `(spec) -> list[str]` | Extra spec validation (problems become route `fix_spec`). |
 | `before_request` | `(req, ep, params) -> params` | Resolve names (state name → FIPS), build IDs, escape query text. |
+| `request_note` | `(req, ep, params) -> str \| None` | A fetch note saying how the pack read a request when the reading changes the rows (exact phrase vs every word). |
 | `normalize` | `(req, ep, rows) -> rows` | Source quirks: `(NA)`/`(D)` → empty with a flag column, sentinel values, unit columns. Never change published values silently: add a column instead (e.g. `value_flag`). |
 | `fetch` | `(spec, pack, route) -> (tables, notes)` | Replace the generic fetch entirely (XML APIs, multi-step lookups). Use `core.http.Client` for every call. |
 | `ping` | `(client) -> {"auth_ok", "kind", "detail"}` | One cheap call that proves the key works. |

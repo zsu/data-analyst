@@ -64,6 +64,9 @@ Search, then pick foods by `fdcId` and `dataType`; keep the id in the report so 
 - `derivation` tells analytical vs calculated or imputed values (Foundation, SR Legacy).
 - `publishedDate` (search) and `publicationDate` (food records) name the release of the record.
 - Paging: `pageSize` at most 200 (HTTP 400 above it, verified).
+- An HTML "400 Bad Request" page (from the front server) can answer a valid request that works moments
+  later; the API's own parameter errors are JSON or text. The pack retries the HTML page up to 3 times; if
+  it persists, run again later rather than rewriting a correct spec.
 - `foods` ids: the API spec documents at most 20 `fdcIds`; live (2026-10-22) it returned up to 50 and
   silently dropped the rest, with no error. The pack refuses more than 20 per request: split a longer
   list into several requests. Ids that are not found are omitted too, so compare the row count with the

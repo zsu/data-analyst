@@ -1,6 +1,6 @@
 """NIH RePORTER API v2 adapter (POST /projects/search, /publications/search).
 
-- Friendly spec keys are moved into the "criteria" object: text -> advanced_text_search, spending_categories
+- Friendly spec keys are moved into the "criteria" object: text / phrase -> advanced_text_search, spending_categories
   names -> RCDC ids (table in endpoints.json "rcdc_categories"), everything else (fiscal_years, agencies,
   org_states, activity_codes, pi_names, ...) as given.
 - exclude_subprojects defaults to true: a multi-project award (P01, U54, ...) is listed once as the parent
@@ -13,6 +13,12 @@
   /publications/search stops earlier: offset above 9,999 answers HTTP 400 ("System doesn't support offset
   value greater than 9,999"), so its endpoint max_rows is 10,000 (pages at offsets 0-9,500; verified
   2026-10-22). check_spec refuses searches with no criteria and max_rows above the endpoint's cap.
+- Paging needs a stable order: without sort_field, RePORTER's order shifts between pages, so a 2,500-row
+  search repeated 3 awards at the offset-2,500 boundary and skipped 3 others (count right, rows wrong;
+  verified 2026-10-28). Project searches that may need more than one page (no max_rows, or above 500)
+  therefore sort by appl_id (unique) unless the spec sorts; a cut at max_rows then keeps the lowest appl_ids
+  and the note says so (truncated_note, added only when the request was sent with that sort). The core
+  drops rows repeated across pages (unique_key) with a note that rows may be missing.
 - include_fields: unknown names are dropped without an error; the organization block is "Organization"
   (sub-field names such as OrgName return nothing).
 - Spending-category ids are easy to get wrong: id 27 is "Adolescent Sexual Activity" and 30 is
@@ -64,9 +70,12 @@ def _projects(ep) -> bool:
 def before_request(req, ep, params):
     p = dict(params)
     crit = dict(p.pop("criteria", None) or {})
-    text = p.pop("text", None)
+    text, phrase = p.pop("text", None), p.pop("phrase", None)
     fields = p.pop("text_fields", None) or "projecttitle,terms,abstracttext"
-    if text:
+    if phrase:      # exact phrase: RePORTER's advanced operator with the phrase quoted (a list: any of them)
+        crit["advanced_text_search"] = {"operator": "advanced", "search_field": fields,
+                                        "search_text": _phrase_query(phrase)}
+    elif text:      # every word, anywhere in the fields, any order
         crit["advanced_text_search"] = {"operator": "and", "search_field": fields, "search_text": text}
     cats = p.pop("spending_categories", None)
     if cats:
@@ -77,6 +86,9 @@ def before_request(req, ep, params):
             crit[k] = p.pop(k)
     if _projects(ep):
         crit.setdefault("exclude_subprojects", True)
+        one_page = req.get("max_rows") and int(req["max_rows"]) <= 500
+        if not p.get("sort_field") and not one_page:   # several pages need a stable order, or pages repeat and skip
+            p["sort_field"], p["sort_order"] = "appl_id", p.get("sort_order") or "asc"
         inc = p.get("include_fields")
         if inc in (None, "", []):
             p["include_fields"] = DEFAULT_FIELDS
@@ -84,6 +96,25 @@ def before_request(req, ep, params):
             p.pop("include_fields")
     p["criteria"] = crit
     return p
+
+
+def _phrase_query(phrase) -> str:
+    items = phrase if isinstance(phrase, list) else [phrase]
+    return " OR ".join('"' + str(x).replace('"', " ").strip() + '"' for x in items if str(x).strip())
+
+
+def request_note(req, ep, params):
+    """Say how a text search was matched: the same words as a phrase or anywhere give different rows (two-word
+    topic, FY2024: 312 projects with every word anywhere, 301 with the exact phrase; verified 2026-10)."""
+    p = req.get("params") or {}
+    where = p.get("text_fields") or "title, terms and abstract"
+    if p.get("phrase"):
+        return (f"{req['name']}: phrase {p['phrase']!r} matched as an exact phrase in {where} (RePORTER operator "
+                "advanced); `text` would match every word anywhere.")
+    if p.get("text") and len(str(p["text"]).split()) > 1:
+        return (f"{req['name']}: text {p['text']!r} matched every word anywhere in {where}, in any order (RePORTER "
+                "operator and), so rows need not hold the phrase; use `phrase` for the exact phrase.")
+    return None
 
 
 def check_spec(spec):
@@ -103,6 +134,8 @@ def check_spec(spec):
                 near = difflib.get_close_matches(b, list(table.values()), n=4, cutoff=0.5)
                 probs.append(f"request {name!r}: RCDC category {b!r} is not known" +
                              (f"; close: {near}" if near else "; use --search to find names or pass the numeric id"))
+        if prm.get("text") and prm.get("phrase"):
+            probs.append(f"request {name!r}: give text (every word, anywhere) or phrase (exact phrase), not both")
         if isinstance(prm.get("fiscal_years"), (int, str)):
             probs.append(f"request {name!r}: fiscal_years must be a list, e.g. [2024]")
         cap = int((_eps().get("endpoints", {}).get(r.get("endpoint") or "", {}) or {}).get("max_rows") or 15000)

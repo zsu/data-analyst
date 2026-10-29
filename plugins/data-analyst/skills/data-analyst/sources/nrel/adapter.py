@@ -98,10 +98,55 @@ def _pvwatts(rows):
             for i in range(12)]
 
 
+def _cities(v) -> set[str]:
+    return {" ".join(str(x).split()).lower() for x in (v if isinstance(v, (list, tuple)) else [v]) if str(x).strip()}
+
+
+def check_spec(spec):
+    probs = []
+    for r in spec.get("requests") or []:
+        p = r.get("params") or {}
+        if p.get("city") not in (None, "") and not (p.get("state") or p.get("zip")):
+            probs.append(f"request {r.get('name')!r}: city is matched by the pack on the rows the API returns (the API "
+                         "has no city filter), so give state (or zip) too, or it pages through the whole country")
+    return probs
+
+
 def normalize(req, ep, rows):
     path = ep.get("path", "")
     if path.startswith("/solar/solar_resource"):
         return _solar(rows)
     if path.startswith("/pvwatts/"):
         return _pvwatts(rows)
+    want = _cities((req.get("params") or {}).get("city") or [])
+    if want and path.startswith("/alt-fuel-stations"):
+        # the station API has no city parameter: sent, it answers 0 rows (verified 2026-10-28), so the pack
+        # fetches the state or ZIP and keeps the rows whose city matches (JSON "city", CSV export "City")
+        rows = [r for r in rows if " ".join(str(r.get("city", r.get("City", ""))).split()).lower() in want]
     return rows
+
+
+def fetch(spec, pack, route):
+    """The core fetch, with the city match judged after paging: a state or ZIP fetch cut at max_rows leaves the
+    city's rows incomplete (said in a "stopped at" note, so the result is partial, never silently short), and an
+    empty city is an error only when every station was read."""
+    from core import generic_rest as gr
+    city = {r["name"] for r in spec["requests"] if _cities((r.get("params") or {}).get("city") or [])}
+    run = {**spec, "requests": [{**r, "allow_empty": True} if r["name"] in city else r for r in spec["requests"]]}
+    tables, notes = gr.fetch(pack, run)
+    cut = {n.split(":", 1)[0] for n in notes if "stopped at" in n}
+    out = []
+    for n in notes:
+        name = n.split(":", 1)[0]
+        if name in city and name in cut and "stopped at" in n:
+            n = (f"{name}: stopped at max_rows before every station of the state or ZIP was read, so the "
+                 f"{len(tables.get(name) or [])} rows kept for the city may be incomplete (the city is matched after "
+                 "paging): raise max_rows or leave it unset.")
+        out.append(n)
+    miss = gr.Misses()
+    for r in spec["requests"]:
+        if r["name"] in city and r["name"] not in cut:
+            miss.check_empty(r, tables.get(r["name"]) or [])
+    miss.raise_if_any(empty_hint="no station of that state or ZIP lists this city: check the spelling against the "
+                      "city column of a state fetch")
+    return tables, out

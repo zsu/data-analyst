@@ -58,7 +58,7 @@
    "paging": {
     "type": "none"
    },
-   "max_rows": 1000,
+   "max_rows": 40000,
    "missing": [
     ""
    ],

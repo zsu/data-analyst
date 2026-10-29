@@ -51,6 +51,19 @@ class TestEpa(PackTest):
         self.assertEqual(cases[0]["DateFiled_iso"], "1991-05-01")
         self.assertTrue(any("ECHO matched 99 rows" in n for n in r["notes"]), r["notes"])
 
+    def test_echo_qcolumns_reach_the_row_pages(self):
+        # r007-r008 recorded live on 2026-10-28: get_qid returns its ~60 default columns unless it is given
+        # qcolumns too, so the column selection must be sent with every page, not only with the search
+        spec = {"requests": [{"name": "vt_air_cols", "endpoint": "echo_facilities",
+                              "params": {"program": "air", "p_st": "VT", "p_maj": "Y", "qcolumns": "1,2,4,5"}}]}
+        code, r, out = self.fetch(spec)
+        self.assertEqual(code, 0, r)
+        rows = self.csv(out, "vt_air_cols")
+        self.assertEqual(len(rows), 17)
+        self.assertIn("RegistryID", rows[0])
+        self.assertNotIn("AIRStreet", rows[0])                       # id 3 was not asked for
+        self.assertLess(len(rows[0]), 20)
+
     def test_cases_reject_p_st(self):
         bad = {"requests": [{"name": "x", "endpoint": "echo_cases", "params": {"p_st": "VT"}}]}
         code, r = self.check(bad)

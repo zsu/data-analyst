@@ -934,6 +934,42 @@ def _table_words(block: str) -> list[dict]:
     return out
 
 
+_WORD_ALT = "|".join(sorted(NUMBER_WORDS, key=len, reverse=True))
+SUBSET_WORDS = re.compile(r"(?i)\b(" + _WORD_ALT + r")\s+of\s+(?:the\s+|these\s+|those\s+)?(" + _WORD_ALT + r"|\d{1,3})\b")
+
+
+def _table_sizes(text: str) -> set[int]:
+    """Data rows of each markdown table in the answer (header and |---| rule not counted)."""
+    sizes = set()
+    for block, _ in _blocks(text):
+        rows = [l for l in block.strip().splitlines() if l.lstrip().startswith("|")]
+        if rows and len(rows) == len(block.strip().splitlines()):
+            body = [l for l in rows[1:] if not re.fullmatch(r"\s*\|[\s:|-]+\|?\s*", l)]
+            sizes.add(len(body))
+    return sizes
+
+
+def _subset_words(block: str, sizes: set[int]) -> list[dict]:
+    """"four of the five" in prose, when the answer holds a table of five rows, summarizes that table: like
+    "4 of the 5" it must be a registered count (computed in analysis.py), so the words cannot contradict the rows.
+    Other spelled-out phrases ("one of the two parties", "two of the four largest banks" with no such table) are
+    ordinary prose and are left alone."""
+    out = []
+    t = AR.exempt(block)
+    for m in SUBSET_WORDS.finditer(t):
+        line = _source_line(block, t, m.start())
+        if line.lstrip().startswith("|"):
+            continue
+        w, total = m.group(1).lower(), m.group(2).lower()
+        total = NUMBER_WORDS[total] if total in NUMBER_WORDS else int(total)
+        if total not in sizes or not 0 < NUMBER_WORDS[w] < total:
+            continue
+        out.append({"tok": m.group(1), "num": float(NUMBER_WORDS[w]), "unit": "", "scale": 1.0, "tol": 0.5, "dec": 0,
+                    "neg": False, "dollar": False, "plus": False, "line": line, "approx": False,
+                    "unit_after": False, "counts": True, "table": False})
+    return out
+
+
 def check_answer(base: str, facts: dict, D: dict) -> tuple[list[tuple], str]:
     """<out>/answer.md, the reply as it will be sent: every number in it is a registered fact as the format of
     that fact shows it (or a published benchmark figure, or in decisions.json audit_allow); it carries every
@@ -982,6 +1018,7 @@ def check_answer(base: str, facts: dict, D: dict) -> tuple[list[tuple], str]:
     misnamed, ents, unbound, cited = [], _entities(facts), [], set()
     scan = text
     lead = "\n".join(b for b, _ in _blocks(text)[:2])   # a label in the opening (title + first paragraph) covers all
+    sizes = _table_sizes(text)                         # a spelled-out "N of the M" over a table of M rows is a count
     for block, ctx in _blocks(scan):
         is_table = all(l.lstrip().startswith("|") for l in block.strip().splitlines())
         if is_table:
@@ -989,7 +1026,7 @@ def check_answer(base: str, facts: dict, D: dict) -> tuple[list[tuple], str]:
             first = _unbound_table(block, shown, facts)
             if first:
                 unbound.append(first)
-        for n in answer_numbers(block) + _table_words(block):
+        for n in answer_numbers(block) + _table_words(block) + _subset_words(block, sizes):
             n["table"] = is_table or n.get("table", False)    # a table under a caption line too
             if _allow_key(n["tok"]) in allowed:
                 continue
@@ -1106,7 +1143,8 @@ def check_answer(base: str, facts: dict, D: dict) -> tuple[list[tuple], str]:
                 "decisions.json \"rounding_ties_ok\": [{\"fact\": \"<name>\", \"reason\": \"...\"}]"))
     out.append(("answer", not bad, "every number in answer.md is a registered fact or allowed" if not bad else
                 f"answer.md: {', '.join(dict.fromkeys(bad))} not found among the facts (as their formats show them): "
-                "register each number with facts.add (a difference in percentage points takes fmt pp or pp100, in basis points bp or bp100; "
+                "register each number with facts.add (a count in words such as \"three of the four\" is a number too: "
+                "count it in analysis.py; a difference in percentage points takes fmt pp or pp100, in basis points bp or bp100; "
                 "a number written \"44,347 thousand\" or \"$1.2 billion\" is read in base units, so a fact stored in "
                 "thousands takes fmt thousands:0, and a published figure counts as benchmark.csv gives it), fix "
                 "the typo, or list it in decisions.json audit_allow {\"value\", \"reason\"} when it is not a "

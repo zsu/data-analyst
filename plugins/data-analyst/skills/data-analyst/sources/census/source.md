@@ -115,6 +115,12 @@ file per table, e.g. https://www2.census.gov/programs-surveys/acs/summary_file/2
 tables (S2801, DP02) without a key: https://data.census.gov/api/access/data/table?id=ACSST1Y2024.S2801&g=010XX00US$0400000
 returns the table JSON (all states); `--ingest` reads it (it is a benchmark: file it under `published/`
 when no census fetch was made).
+Keyless, for state population totals (PEP): the fred pack's `<ST>POP` series (thousands, July 1) come with
+no key at all, through its keyless graph route, with the usual data/fred/ dictionary and provenance. They
+are annual and can lag a new Census vintage by weeks: compare the latest year with the Census release
+before using them, and name the vintage. (A cross-section of every county through fred `regional` needs a
+FRED key.) A Census estimates file (popest tables) that is still needed is a published table: save it under
+`<out>/published/` with `source_url` and `accessed` on every row, never straight into `data/census/`.
 
 ## Citation and terms
 "U.S. Census Bureau, <dataset, e.g. 2020-2024 American Community Survey 5-year estimates, table

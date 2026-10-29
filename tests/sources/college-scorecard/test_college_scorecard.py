@@ -61,6 +61,14 @@ class TestCollegeScorecard(PackTest):
         self.assertTrue(sel and all(0 < v <= 0.08 for v in sel))
         self.assertEqual(sel, sorted(sel))
 
+    def test_sort_takes_the_short_names(self):
+        # the API answers HTTP 400 to sort=name:asc; short names map in sort as they do in filters and fields
+        from testkit import load_pack_module
+        a = load_pack_module("college-scorecard")
+        p = a.before_request({}, {}, {"sort": "name:asc,latest.student.size:desc"})
+        self.assertEqual(p["sort"], "school.name:asc,latest.student.size:desc")
+        self.assertEqual(a.before_request({}, {}, {"sort": "state"})["sort"], "school.state")
+
     def test_paging_params_are_fix_spec(self):
         bad = {"requests": [{"name": "x", "endpoint": "schools", "params": {"state": "DE", "per_page": 500}}]}
         code, r = self.check(bad)

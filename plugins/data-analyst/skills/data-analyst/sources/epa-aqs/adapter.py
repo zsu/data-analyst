@@ -8,6 +8,8 @@
   call per year here, and the rows are concatenated. The API asks for at most 10 requests a minute and
   a 5-second pause between them; policy limits (0.2 requests a second, burst 1) enforce that.
 - States may be given as FIPS, USPS code or name; counties and sites are zero-padded.
+- Keyless route: EPA's AirData yearly files (annualData, dailyData) go through --ingest as downloaded (.zip or
+  its .csv); parse_upload keeps the request's rows and uses the API's column names (see AIRDATA_FILES).
 """
 from __future__ import annotations
 
@@ -148,19 +150,140 @@ def manual_items(spec, pack):
             path, query, _ = gr.split(ep, p)
             url = f"{BASE}{path}?" + urllib.parse.urlencode(query) + "&email={AQS_EMAIL}&key={API_KEY}"
             fn = f"{r['name']}.json" if len(wins) == 1 else f"{r['name']}_{i + 1}.json"
+            alt = airdata_names(params, str(b or "")[:4])
             items.append({"name": f"{r['name']}#{i + 1}", "request": r["name"], "url": url, "filename": fn,
-                          "needs_key": True, "method": "GET", "body": None,
+                          "needs_key": True, "method": "GET", "body": None, "alt_filenames": alt,
                           "note": "replace {AQS_EMAIL} with the email your AQS key is registered to"
-                                  + ("" if len(wins) == 1 else f"; year {str(b)[:4]}")})
+                                  + ("" if len(wins) == 1 else f"; year {str(b)[:4]}")
+                                  + (f"; without a key, the AirData file {AIRDATA_URL}{alt[0]} (as downloaded) "
+                                     "holds the same rows" if alt else "")})
     return items
 
 
+# ---------------------------------------------------------------------- AirData files (the keyless route)
+# EPA's pre-generated yearly files hold the same AQS summaries for every monitor in the country: daily files
+# per parameter (daily_<code>_<year>.zip, 2-10 MB zipped) and one annual file for all parameters
+# (annual_conc_by_monitor_<year>.zip, about 4 MB; hourly files are 70+ MB and not used here; sizes checked
+# 2026-10-28). --ingest reads the zip as downloaded (or its CSV), keeps the rows the request asks for (state,
+# county, site or box, parameter, dates) and names the columns as the API does where the two differ.
+AIRDATA_URL = "https://aqs.epa.gov/aqsweb/airdata/"
+AIRDATA_FILES = {"dailyData": "daily_{param}_{year}", "annualData": "annual_conc_by_monitor_{year}"}
+AIRDATA_COLS = {"site_num": "site_number", "parameter_name": "parameter", "method_name": "method",
+                "address": "site_address", "state_name": "state", "county_name": "county", "city_name": "city",
+                "cbsa_name": "cbsa", "arithmetic_standard_dev": "standard_deviation",
+                "99th_percentile": "ninety_ninth_percentile", "98th_percentile": "ninety_eighth_percentile",
+                "95th_percentile": "ninety_fifth_percentile", "90th_percentile": "ninetieth_percentile",
+                "75th_percentile": "seventy_fifth_percentile", "50th_percentile": "fiftieth_percentile",
+                "10th_percentile": "tenth_percentile"}
+ORDINALS = {"1st": "first", "2nd": "second", "3rd": "third", "4th": "fourth"}
+
+
+def _codes(params) -> list[str]:
+    return [c.strip() for c in str(params.get("param") or "").split(",") if c.strip()]
+
+
+def airdata_names(params, year: str) -> list[str]:
+    """The AirData file names that hold this request's rows for one year ([] when no file does)."""
+    pat = AIRDATA_FILES.get(params.get("service"))
+    codes = _codes(params)
+    if not pat or not year.isdigit() or ("{param}" in pat and len(codes) != 1):
+        return []                                       # daily files hold one parameter each
+    stem = pat.format(param=codes[0] if codes else "", year=year)
+    return [stem + ".zip", stem + ".csv"]
+
+
+def _airdata_col(h: str) -> str:
+    c = re.sub(r"[^0-9a-z]+", "_", h.strip().lower()).strip("_")
+    c = AIRDATA_COLS.get(c, c)
+    first = c.split("_", 1)[0]
+    return ORDINALS[first] + c[len(first):] if first in ORDINALS else c
+
+
+def _airdata_csv(f):
+    """Rows of one AirData CSV (a text stream), with API-style column names."""
+    import csv
+    reader = csv.reader(f)
+    head = [_airdata_col(h) for h in next(reader, [])]
+    for row in reader:
+        yield dict(zip(head, row))
+
+
+def _airdata_rows(path):
+    import io
+    import zipfile
+    if path.lower().endswith(".zip"):
+        with zipfile.ZipFile(path) as z:
+            for n in z.namelist():
+                if n.lower().endswith(".csv"):
+                    with z.open(n) as raw:
+                        yield from _airdata_csv(io.TextIOWrapper(raw, encoding="utf-8-sig", newline=""))
+        return
+    with open(path, encoding="utf-8-sig", newline="") as f:
+        yield from _airdata_csv(f)
+
+
+def airdata_filter(params, name: str):
+    """A test that keeps the AirData rows this request asks for (the file covers every U.S. monitor)."""
+    service, geo = params.get("service"), params.get("geo")
+    if service not in AIRDATA_FILES:
+        raise DataError(f"request {name!r}: AirData files hold annualData and dailyData only (not {service}); "
+                        "the other services need the AQS key", kind="bad_request")
+    if geo == "byCBSA":
+        raise DataError(f"request {name!r}: AirData files carry CBSA names, not codes: ask byCounty (one request per "
+                        "county of the CBSA) or byBox", kind="bad_request")
+    want = {"state_code": _state_fips(params["state"]) if params.get("state") not in (None, "") else None,
+            "county_code": str(params.get("county") or "").zfill(3) if params.get("county") not in (None, "") else None,
+            "site_number": str(params.get("site") or "").zfill(4) if params.get("site") not in (None, "") else None}
+    want = {k: v for k, v in want.items() if v and geo in ("byState", "byCounty", "bySite")}
+    codes = set(_codes(params))
+    b, e = str(params.get("bdate") or ""), str(params.get("edate") or "")
+    lo, hi = f"{b[:4]}-{b[4:6]}-{b[6:8]}", f"{e[:4]}-{e[4:6]}-{e[6:8]}"
+    box = [float(params[k]) for k in ("minlat", "maxlat", "minlon", "maxlon")] if geo == "byBox" else None
+
+    def keep(r):
+        if any(str(r.get(k, "")).zfill(len(v)) != v for k, v in want.items()):
+            return False
+        if codes and r.get("parameter_code") not in codes:
+            return False
+        if service == "dailyData":
+            if not (lo <= str(r.get("date_local", "")) <= hi):
+                return False
+        elif not (b[:4] <= str(r.get("year", "")) <= e[:4]):
+            return False
+        if box:
+            try:
+                lat, lon = float(r["latitude"]), float(r["longitude"])
+            except (KeyError, ValueError):
+                return False
+            return box[0] <= lat <= box[1] and box[2] <= lon <= box[3]
+        return True
+    return keep
+
+
 def parse_upload(pack, req, paths):
-    ep, _, _ = gr.resolve(pack, req)
+    """API pages saved as JSON (the keyed manual route), or AirData files (.zip as downloaded, or its .csv)."""
+    ep, params, _ = gr.resolve(pack, req)
+    params = before_request(req, ep, params)
     rows = []
     for p in sorted(paths):
+        if p.lower().endswith((".zip", ".csv")):
+            keep = airdata_filter(params, req["name"])
+            mark = "date_local" if params["service"] == "dailyData" else "metric_used"
+            for i, r in enumerate(_airdata_rows(p)):
+                if i == 0 and mark not in r:            # an annual file for a daily request, or another CSV
+                    raise DataError(f"request {req['name']!r}: {os.path.basename(p)} is not an AirData "
+                                    f"{params['service']} file ("
+                                    f"{AIRDATA_FILES[params['service']].format(param='<code>', year='<year>')}.zip)",
+                                    kind="bad_request")
+                if keep(r):
+                    rows.append(r)
+            continue
         with open(p, encoding="utf-8-sig") as f:
             rows += _rows(json.load(f))
+    if not rows and not req.get("allow_empty"):
+        raise DataError(f"request {req['name']!r}: no row of {', '.join(os.path.basename(p) for p in paths)} matches "
+                        "the request (state, county, site, parameter, dates): check them, or that the file is the "
+                        "right year and parameter", kind="bad_request")
     return gr._clean(rows, ep)
 
 

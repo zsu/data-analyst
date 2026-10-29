@@ -73,6 +73,27 @@ class TestGsaCalc(PackTest):
         self.assertEqual(parse("SEARCH VALUES\r\nsearch\r\nvendor_name:NOBODY\r\n\r\n"), [])
         self.assertEqual(parse(""), [])
 
+    def test_export_shortfall_is_noted(self):
+        # the export writes rates identical in every exported column once (live 2026-10-28: 1,504 lines for 1,516
+        # matches): one count request says by how many
+        from core import packs
+        pack = packs.load("gsa-calc")
+        asked = []
+
+        class Resp:
+            def json(self):
+                return {"aggregations": {"wage_stats": {"count": 52}}}
+
+        class Client:
+            def get(self, path, query):
+                asked.append(query)
+                return Resp()
+        note = pack.adapter.export_shortfall(Client(), pack, {"export": "y", "keyword": "analyst"}, 50)
+        self.assertIn("the export has 50 rows but the search matches 52", note)
+        self.assertNotIn("export", asked[0])
+        self.assertEqual((asked[0]["page_size"], asked[0]["keyword"]), (0, "analyst"))
+        self.assertIsNone(pack.adapter.export_shortfall(Client(), pack, {"keyword": "analyst"}, 52))
+
     def test_406_is_explained(self):
         # r007 (recorded 2026-10-22): ordering by a field the API cannot sort on answers 406, empty body.
         spec = {"requests": [{"name": "bad_order", "endpoint": "rates", "max_rows": 5,

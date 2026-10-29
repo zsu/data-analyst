@@ -12,7 +12,15 @@
     },
     "phrase": {
      "in": "body",
-     "desc": "exact phrase, e.g. payment stablecoin"
+     "desc": "exact phrase of two or more words, e.g. child tax credit (quoted: only that exact form matches; one word is searched unquoted). GovInfo's quoted search can miss documents: the fetch counts the all-words search too and notes when the phrase result is under half of it (and 20 or more short)"
+    },
+    "all_words": {
+     "in": "body",
+     "desc": "words that must all appear, anywhere, unquoted: the complete candidate list for a phrase (an upper bound: the words may stand apart)"
+    },
+    "any": {
+     "in": "body",
+     "desc": "list of words or phrases, any of which may match (OR), e.g. every form of a term: [\"levy\", \"levies\", \"levied\"]; escaped like text"
     },
     "query": {
      "in": "body",

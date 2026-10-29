@@ -20,7 +20,7 @@ This file names actions ("ask with your question tool", "send the file"), not on
 ## Bundled tools
 | Tool | Job |
 |---|---|
-| `scripts/fetch.py` | `--sources` lists every source pack; `--route "<question>"` suggests packs; `--source <id> ...` checks routes, downloads, builds manual bundles, ingests uploads; `--plan` does all of that for several sources at once |
+| `scripts/fetch.py` | `--sources` lists every source pack; `--route "<question>"` suggests packs; `--source <id> ...` checks routes, downloads, builds manual bundles, ingests uploads; `--plan` does all of that for several sources at once; `--handoff --out <out>` writes the per-source hand-off |
 | `sources/<id>/source.md` | **Read before using a source**: what it covers, endpoints, spec examples, units and traps, access, citation and terms |
 | `scripts/analysis/facts.py`, `factfmt.py` | the `Facts` registry: every number the text cites, read back from an exhibit cell |
 | `scripts/analysis/combine.py` | fiscal years, state codes, `align_check` before joins, `deflate` |
@@ -32,7 +32,10 @@ This file names actions ("ask with your question tool", "send the file"), not on
 
 ## 0. Decide the product
 - **Quick answer + data** (default): "how much…", "chart…", "what was…", "pull the data on…".
-- **Data only**: the user asks just for the data.
+- **Data only**: the user asks just for the data. Get it as §3 says, skip §4-§6, then run
+  `python <skill>/scripts/fetch.py --handoff --out <out>` and reply with its `text` (per source: files with
+  row counts, route, retrieval date, a short preview of each table), each source's caveats, and what could
+  not be fetched with the route to get it; record choices made without the user in `decisions.json` (§1).
 - **Report** (`"mode": "report"`) or **paper** (`"mode": "paper"`): only when asked. If unsure, give the
   quick answer and offer the report in one line.
 
@@ -93,8 +96,9 @@ line the answer carries. Never cite what you have not opened.
 
 ## 3. Get the data by the best route
 `<out>` is the analysis folder: `<short-name>/` inside the folder your environment gives for deliverables
-(where files you hand to the user belong), else `out/<short-name>/` in the working directory, unless the
-user names one. Write the spec(s) as `source.md` shows.
+(where files you hand to the user belong), else `out/<short-name>/` in the directory the session started in
+(never above it, even after a `cd`), unless the user names one.
+Write the spec(s) as `source.md` shows.
 
 **One source:**
 ```bash
@@ -107,13 +111,26 @@ python <skill>/scripts/fetch.py --plan <out>/plan.json --out <out> --check
 ```
 `--check` probes the hosts, the key and `<out>/data/<id>/`, and prints `route`, `message` (what to tell
 the user), `action` (what you do next) and `next_command`. A plan check returns `ready` and `need_user`.
-**Follow the route; never improvise another way of getting data.**
+**Follow the route; never improvise another way of getting data.** Run `--check` before the first fetch of
+every source and after every new or edited spec (a fetch of an unchecked spec says so in `check_reminder`).
+Three paths, each with its own rule:
+- **What a pack's API serves** comes only through fetch.py. Find its columns, datasets, codes or lookup
+  lists (agencies, categories) with `--search`, `--endpoints`, `source.md` or a small probe spec
+  (`max_rows`), never by querying that API yourself. When it returns less than the question needs (a
+  column, filter or record), fix the spec; if the pack cannot, deliver what it returns and name the gap in
+  `data_needs` and the answer.
+- **A file from a pack's documented keyless or manual route** (`keyless_file`, `keyless_alternative`, a
+  bundle download, an upload) is downloaded as that route says and enters through the source's `--ingest`,
+  which writes its dictionary and provenance. An unattended run downloads only a pack's `keyless_file`
+  (see `run_setup` below).
+- **Figures read from an agency page** (`published/`, §2) and the methods, literature and benchmark pages
+  (§2b, §4) keep those sections' routes.
 
 | `route` | Meaning | Do this |
 |---|---|---|
 | `reuse_existing` | the data are already in `<out>/data/<id>/` | continue at §4 (offer `--force` if stale) |
 | `api`, `api_keyless`, `bulk` | the source answers from here | run `next_command`; for `api_keyless`, tell the user once what a key adds |
-| `run_setup` | a key is needed; the user has a terminal | give them `run_command` (`setup.ps1 -Source <id>` / `setup.sh <id>`) to run **themselves**; never ask for a key in chat; offer any keyless alternative; rerun `--check` when they say it is stored. With no user (`no_user`): take the keyless route the pack's `source.md` (Access) names, else say the data could not be fetched |
+| `run_setup` | a key is needed; the user has a terminal | give them `run_command` (`setup.ps1 -Source <id>` / `setup.sh <id>`) to run **themselves**; never ask for a key in chat; offer `keyless_alternative` (or the one `source.md` Access names); rerun `--check` when they say it is stored. With no user (`no_user`): download only a `keyless_file` (a direct, small file the pack's `--ingest` reads and filters) and run it through `ingest_command`; without one (an interactive page, a large bulk file, a file you would have to filter yourself), do not fetch: report the data as not fetched, with `run_command` |
 | `cloud_secret` | key needed in a cloud session | add the variable to the environment's secrets and restart, or use the bundle |
 | `cloud_allowlist` | the cloud network blocks the host | allow the hosts listed, or use the bundle |
 | `manual_download` | this environment cannot get the data (a hosted chat with network off or the host not allowed, a sandbox, a key that cannot be stored here) | send `INSTRUCTIONS.md`, both `download_scripts` (`.sh` for macOS/Linux, `.ps1` for Windows: the request is built in, they ask for any key with hidden input and download everything) and the request (`request_spec` / `request_body`: spec.json, IPUMS extract_spec.json) with your file-sending tool when available, and print the paths; give the user the one command for their system (`user_commands`, e.g. `bash ~/Downloads/download_data.sh`; both when unsure), never a Python command; wait for the upload, then run `next_command` with the uploaded files (or their folder) after `--ingest` |
@@ -213,7 +230,7 @@ word (what the audit could not check); the basis of each key assumption;
 the literature consulted; the benchmark check; **"Data that would sharpen this"**: at most three entries
 from `data_needs`, the ones that would most change a headline, those the user can supply first, offered as
 a next step; links to `data/<id>/`, `analysis.py`, `exhibits/`, `facts.json` and `decisions.json`; the route
-each source came by and its retrieval date; one line offering the full report.
+each source came by and its retrieval date (`fetch.py --handoff` lists them); one line offering the full report.
 Write the reply exactly as you will send it to `<out>/answer.md`, then run the gate and fix every FAIL
 until it prints `AUDIT PASSED`. The gate reads `answer.md`: every number must be a registered fact as its
 format shows it, or a published figure from `benchmark.csv` at its published precision, credited to its
@@ -230,7 +247,7 @@ word; preliminary, projected and past-vintage facts must be called so; direction
 number with a year beside it ("in 2024", "1929 (0.55") must be a fact of that year (so give facts a `label`
 and their period in `where`); otherwise the gate proves each number is some registered fact,
 not that it is the right one for its sentence, and it skips ranges ("40-50"), numbers in words outside tables (write counts as
-facts.json prints them, in digits), years, dates and
+facts.json prints them, in digits; but "three of the four" in words, when the answer's table has four rows, is checked as a count fact), years, dates and
 identifiers (bill, law, executive order, table and statute numbers, codes) and ages ("16 and over"): before sending, read each number and date against
 its fact by name.
 ```bash
@@ -270,6 +287,8 @@ when one is available.
 - Every number in an answer comes from `analysis.py` through `facts.json` or an exhibit CSV.
 - Every choice that could move a headline is in `decisions.json` with its basis. Judgment is the last
   resort and always comes with a sensitivity test.
-- Keys are never printed, logged, written to a file or requested in chat.
+- Keys are never printed, logged, written to a file or requested in chat, and never looked for by listing or
+  searching environment variables or settings files (`env`, `printenv`, `set`, `grep`): `--check` says
+  whether a key is set (`key_source`, `key_ok`) without showing it.
 - Respect each source's terms: its redistribution rule, required notices and citation (in `data/<id>/README.md`).
 - Say how current the data are, and cite every source with its retrieval date.

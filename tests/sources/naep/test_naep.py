@@ -76,6 +76,23 @@ class TestNaep(PackTest):
         code, r, out = self.fetch(SPEC)                                    # valid bodies: no note
         self.assertFalse(any("malformed" in n for n in r["notes"]), r["notes"])
 
+    def test_all_withheld_year_is_noted(self):
+        # live 2026-10-28: a variable NAEP no longer reports returns status ok with every 2024 cell 999 and
+        # error flag 288 (non-qualified independent variable + SE not applicable)
+        from testkit import load_pack_module
+        ad = load_pack_module("naep")
+
+        def row(year, value, flag):
+            return {"year": year, "value": value, "errorFlag": flag}
+        rows = ad.normalize({}, {}, [row(2022, 210.5, 0), row(2022, 230.1, 0), row(2024, 999, 288), row(2024, 999, 288)])
+        note = ad.withheld_note({"name": "g", "params": {"variable": "SLUNCH3"}}, rows)
+        self.assertIn("every estimate for 2024 is withheld", note)
+        self.assertIn("Non-qualified independent variable", note)
+        self.assertIn("use ECONDIS", note)
+        self.assertIsNone(ad.withheld_note({"name": "g", "params": {}}, rows[:2]))
+        some = ad.normalize({}, {}, [row(2024, 999, 1), row(2024, 215.0, 0)])     # one small cell: no note
+        self.assertIsNone(ad.withheld_note({"name": "g", "params": {}}, some))
+
     def test_repair_quotes_unit(self):
         import tempfile
         from testkit import load_pack_module

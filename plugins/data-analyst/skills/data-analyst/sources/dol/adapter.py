@@ -45,7 +45,39 @@ def key_only_needs(spec) -> list[str]:
              "(datasets, dataset_info) is keyless"] if reqs else [])
 
 
-def check_spec(spec) -> list[str]:
+_FIELDS: dict = {}
+
+
+def dataset_fields(pack, dataset_id) -> set[str] | None:
+    """Column names of one dataset from DOL's keyless field dictionary, or None when it cannot be read (then no
+    name is refused: the check is skipped, and a wrong name surfaces as the API's own HTTP 400)."""
+    if dataset_id in _FIELDS:
+        return _FIELDS[dataset_id]
+    from core import generic_rest as gr
+    from core.http import DataError
+    try:
+        doc = gr.client_for(pack, retries=0, timeout=10).get_json(f"/datasets/{int(dataset_id)}", use_key=False)
+        cols = {str(m.get("column_name")) for m in (gr.dig(doc, "dataset.dataset_metadatum") or []) if m.get("column_name")}
+    except (DataError, ValueError, TypeError):
+        cols = set()
+    _FIELDS[dataset_id] = cols or None
+    return _FIELDS[dataset_id]
+
+
+def _named_fields(p: dict) -> list[str]:
+    """Every field a query request names: filters, search, sort_by and fields (state maps to the catalog's own
+    state field)."""
+    names = list((p.get("filters") or {}) if isinstance(p.get("filters"), dict) else [])
+    names += list((p.get("search") or {}) if isinstance(p.get("search"), dict) else [])
+    if p.get("sort_by"):
+        names.append(str(p["sort_by"]))
+    f = p.get("fields")
+    if f:
+        names += [x.strip() for x in (f if isinstance(f, list) else str(f).split(",")) if str(x).strip()]
+    return list(dict.fromkeys(names))
+
+
+def check_spec(spec, pack=None) -> list[str]:
     probs = []
     for r in spec.get("requests") or []:
         if (r.get("endpoint") or "query") != "query":
@@ -67,6 +99,16 @@ def check_spec(spec) -> list[str]:
                 probs.append(f"request {r.get('name')!r}: filter_object is not valid JSON")
         if r.get("max_rows") and int(r["max_rows"]) > 100000:
             probs.append(f"request {r.get('name')!r}: max_rows above 100,000: narrow the filters")
+        # field names: DOL's field dictionary is keyless, so a wrong name is caught here, before a keyless user is
+        # sent a bundle of failing links (a filter on a field the dataset lacks never matches)
+        named = _named_fields(p) if r.get("check_fields", True) else []
+        cols = dataset_fields(pack, e["dataset_id"]) if (pack is not None and named and e and e.get("dataset_id")) else None
+        bad = [f for f in named if cols and f not in cols]
+        if bad:
+            probs.append(f"request {r.get('name')!r}: {', '.join(map(repr, bad))} not a field of {e['id']} (its fields: "
+                         f"{', '.join(sorted(cols))}). Field names are DOL's own (dataset_info lists them with meanings); "
+                         "if the API does have the field and the dictionary lacks it, set \"check_fields\": false "
+                         "on the request")
     return probs
 
 

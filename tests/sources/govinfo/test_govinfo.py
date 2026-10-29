@@ -48,6 +48,8 @@ class TestGovinfo(PackTest):
         self.assertEqual(code, 0, r)
         bills = self.csv(out, "stablecoin_bills")
         self.assertEqual(len(bills), 9)
+        # the all-words count (r010, 2026-10-28) is 10: not well above 9, so no note
+        self.assertFalse(any("quoted search returned" in n for n in r["notes"]), r["notes"])
         self.assertEqual(bills[0]["packageId"], "BILLS-118hr10561ih")
         self.assertTrue(all(b["collectionCode"] == "BILLS" for b in bills))
         pubs = self.csv(out, "cbo_recent")
@@ -63,7 +65,61 @@ class TestGovinfo(PackTest):
         self.assertEqual(q, "collection:BILLS AND congress:118 AND (tax credit child)")
         q = a.build_query({"collection": ["PLAW", "STATUTE"], "phrase": 'say "hi"', "date_from": "2024-01-01"})
         self.assertEqual(q, '(collection:PLAW OR collection:STATUTE) AND publishdate:range(2024-01-01,) AND ("say hi")')
+        q = a.build_query({"all_words": 'say "hi"'})
+        self.assertEqual(q, '(say hi)')
         self.assertEqual(a.bill_package_id({"congress": 117, "billtype": "HR", "number": 5376}), "BILLS-117hr5376enr")
+
+    def test_word_forms_and_one_word_phrases(self):
+        # live 2026-10-28 (CHRG, 2024): quoted "tariff" matched 44 hearings, unquoted tariff 92: quoting one word only
+        # loses documents, so a one-word phrase goes unquoted, and `any` ORs every form of a term
+        a = adapter()
+        self.assertEqual(a.build_query({"collection": "CRPT", "phrase": " levy "}), "collection:CRPT AND (levy)")
+        self.assertEqual(a.build_query({"collection": "CRPT", "any": ["levy", "levies", "flat tax:rate"]}),
+                         'collection:CRPT AND (levy OR levies OR "flat tax rate")')
+        self.assertEqual(a.build_query({"any": "levy; levies"}), "(levy OR levies)")
+        self.assertEqual(a.check_spec({"requests": [{"name": "s", "endpoint": "search",
+                                                      "params": {"collection": "CRPT", "any": ["levy", "levies"]}}]}), [])
+        self.assertTrue(a.check_spec({"requests": [{"name": "s", "endpoint": "search", "params": {"any": ["::"]}}]}))
+
+    def test_quoted_phrase_far_below_all_words_is_noted(self):
+        # live 2026-10-28: a two-word phrase quoted matched 58 bills of one Congress, title:"..." 110: the quoted
+        # search can miss documents, so one all-words count is compared with what the phrase returned
+        from unittest import mock
+        from core import packs
+        a, pack, sent = adapter(), packs.load("govinfo"), []
+
+        class Resp:
+            def __init__(self, n):
+                self.n = n
+            def json(self):
+                return {"count": self.n}
+
+        class Client:
+            def __init__(self, n):
+                self.n = n
+            def request(self, method, path, params=None, json_body=None):
+                sent.append(json_body)
+                return Resp(self.n)
+        req = {"name": "s", "endpoint": "search", "params": {"collection": "BILLS", "phrase": "flat tax"}}
+        with mock.patch.object(a.gr, "client_for", lambda pack: Client(140)):
+            note = a.phrase_count_note(pack, req, 40)
+        self.assertIn("quoted search returned 40 documents, under half of the 140", note)
+        self.assertIn("may be missing documents", note)
+        self.assertIn("all_words", note)
+        self.assertEqual((sent[0]["query"], sent[0]["pageSize"]), ("collection:BILLS AND (flat tax)", 1))
+        with mock.patch.object(a.gr, "client_for", lambda pack: Client(70)):
+            self.assertIsNone(a.phrase_count_note(pack, req, 40))          # a phrase is rarer than its words: no note
+        with mock.patch.object(a.gr, "client_for", lambda pack: Client(14)):
+            self.assertIsNone(a.phrase_count_note(pack, req, 4))           # under half, but only 10 short: no note
+        self.assertIsNone(a.phrase_count_note(pack, {**req, "params": {"phrase": "levy"}}, 3))   # one word: no call
+
+    def test_dateissued_in_query_is_fix_spec(self):
+        # GovInfo answers HTTP 500 to dateIssued: inside the query every time (live 2026-10-28)
+        bad = {"requests": [{"name": "x", "endpoint": "search",
+                             "params": {"collection": "CRPT", "query": "levy AND dateIssued:range(2023-01-01,2023-12-31)"}}]}
+        code, r = self.check(bad)
+        self.assertEqual(r["route"], "fix_spec", r)
+        self.assertIn("date_from", r["message"])
 
     def test_unknown_collection_is_fix_spec(self):
         bad = {"requests": [{"name": "x", "endpoint": "search", "params": {"collection": "NOPE", "text": "tax"}}]}

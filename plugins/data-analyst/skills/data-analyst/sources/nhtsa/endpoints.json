@@ -7,7 +7,8 @@
       "params": {
         "make": {"required": true, "desc": "make, case-insensitive: honda, toyota, ford, tesla"},
         "model": {"required": true, "desc": "model as NHTSA spells it: civic, camry, f-150, model 3 (see products_models)"},
-        "modelYear": {"required": true, "desc": "model year, e.g. 2019"}
+        "modelYear": {"required": true, "desc": "model year, e.g. 2019"},
+        "variants": {"in": "spec", "desc": "pack option, not sent (default false): true also fetches the names products_models lists as this model plus only powertrain/body/cab/drive words (HYBRID, PHEV, EV, SEDAN, (CREW CAB), AWD), one campaign once; other names starting with the model are listed in a note, never merged"}
       },
       "records": "results", "total": "Count", "paging": {"type": "none"}, "max_rows": 5000
     },
@@ -23,7 +24,8 @@
       "params": {
         "make": {"required": true, "desc": "make"},
         "model": {"required": true, "desc": "model"},
-        "modelYear": {"required": true, "desc": "model year"}
+        "modelYear": {"required": true, "desc": "model year"},
+        "variants": {"in": "spec", "desc": "pack option, not sent (default false): true also fetches the names products_models lists as this model plus only powertrain/body/cab/drive words (complaints use those exact names), one complaint once; other names are listed in a note, never merged"}
       },
       "records": "results", "total": "count", "paging": {"type": "none"}, "max_rows": 20000
     },
@@ -113,15 +115,15 @@
     },
     "car_seat_stations_state": {
       "path": "/CSSIStation/state/{state}",
-      "description": "Child car seat inspection stations in a state (two-letter code).",
+      "description": "Child car seat inspection stations in a state (two-letter code); 100 a page, paged with offset.",
       "params": {"state": {"in": "path", "required": true, "desc": "two-letter state code, upper case: CA"}},
-      "records": "Results", "paging": {"type": "none"}
+      "records": "Results", "paging": {"type": "offset", "offset_param": "offset", "size": 100}, "max_rows": 20000
     },
     "car_seat_stations_zip": {
       "path": "/CSSIStation/zip/{zip}",
       "description": "Child car seat inspection stations for a ZIP code.",
       "params": {"zip": {"in": "path", "required": true, "desc": "5-digit ZIP"}},
-      "records": "Results", "paging": {"type": "none"}
+      "records": "Results", "paging": {"type": "offset", "offset_param": "offset", "size": 100}, "max_rows": 20000
     }
   },
   "catalog": {}

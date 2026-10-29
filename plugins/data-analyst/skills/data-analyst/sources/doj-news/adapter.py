@@ -1,7 +1,14 @@
 """DOJ News adapter (justice.gov API v1).
 
 - since/until (pack options, never sent): the API filters only by one day, so a date range pages through
-  the list newest first and stops once dates fall before `since` (at most MAX_PAGES pages).
+  the list newest posted first and stops CREATED_MARGIN_DAYS of postings past `since` (at most MAX_PAGES pages).
+- Paging order: `date` is a day stamp shared by about 100 releases a day, and the API does not keep ties in a
+  stable order, so paging by sort=date repeats some releases at page boundaries and skips as many (verified
+  live 2026-10: 30 pages unfiltered held 379 repeats; sort=created held 1, a release posted meanwhile). So
+  sort=date (the default) pages by `created` (posting time to the second) and the rows are then put in date
+  order; `since` reads CREATED_MARGIN_DAYS past it, since a release can be posted days before its date (no
+  margin without `since`). A max_rows cut keeps the newest posted rows, and its note says so.
+  Repeated uuids are dropped with a note.
 - normalize: the published values stay; date_iso (UTC calendar day of the bare Unix timestamp `date`, which
   is the Eastern release day: releases are stamped at Eastern midnight or later) and created_iso /
   changed_iso are added. `created`/`changed` arrive as HTML (<time datetime="2009-01-05T14:20:07-05:00">
@@ -21,6 +28,7 @@ from datetime import datetime, timezone
 from core import generic_rest as gr
 
 MAX_PAGES = 600          # 30,000 records scanned per request at most
+CREATED_MARGIN_DAYS = 14  # posting time seen up to 11 days before the release date (live sample, 2026-10)
 # The archive holds U.S. Attorney's Office releases only from January 2013 (verified live 2026-10: a title
 # search sorted oldest first shows Main Justice components only through December 2012); before then every
 # count covers Main Justice components alone.
@@ -113,6 +121,30 @@ def _strip(params: dict) -> dict:
     return {k: v for k, v in params.items() if k not in PACK_OPTS}
 
 
+def _page_by_created(query: dict) -> tuple[bool, bool]:
+    """sort=date (shared day stamps, unstable ties) is sent as sort=created, a near-unique posting time, with
+    `created` added to fields when missing. Returns (date order wanted, created was added)."""
+    if str(query.get("sort", "date")) != "date":
+        return False, False
+    query["sort"] = "created"
+    fields = [f.strip() for f in str(query.get("fields") or "").split(",") if f.strip()]
+    if fields and "created" not in fields:
+        query["fields"] = ",".join(fields + ["created"])
+        return True, True
+    return True, False
+
+
+def _ts(v) -> int:
+    """Unix seconds from a bare timestamp or from <time ...>digits</time>; 0 when absent."""
+    m = re.search(r"(-?\d{6,})\s*(?:</time>|$)", str(v or "").strip())
+    return int(m.group(1)) if m else 0
+
+
+def _minus_days(day: str, n: int) -> str:
+    from datetime import timedelta
+    return (datetime.strptime(day, "%Y-%m-%d") - timedelta(days=n)).strftime("%Y-%m-%d")
+
+
 def fetch(spec, pack, route):
     c = gr.client_for(pack)
     tables, notes = {}, []
@@ -128,7 +160,10 @@ def fetch(spec, pack, route):
             rows = normalize(r, ep, rows)
         else:
             path, query, _ = gr.split(ep, _strip(params))
+            by_date, added = _page_by_created(query)
+            cutoff = _minus_days(since, CREATED_MARGIN_DAYS) if (since and by_date) else since
             size, page, rows, total, stopped = int(pg["size"]), int(pg.get("start", 0)), [], None, None
+            seen, repeats = set(), 0
             while True:
                 resp = c.request("GET", path, {**query, pg["page_param"]: page, pg["size_param"]: size})
                 data = resp.json()
@@ -137,26 +172,46 @@ def fetch(spec, pack, route):
                     total = int(gr.dig(data, ep.get("total", "")) or 0)
                 except (TypeError, ValueError):
                     total = None
-                kept = normalize(r, ep, gr._clean(got, ep))
-                rows += kept
-                oldest = min((_iso(g.get("date")) for g in got if _iso(g.get("date"))), default="")
+                for x in normalize(r, ep, gr._clean(got, ep)):
+                    u = x.get("uuid")
+                    if u and u in seen:
+                        repeats += 1
+                        continue
+                    seen.add(u)
+                    rows.append(x)
+                order_col = "created" if by_date else "date"
+                oldest = min((_iso(g.get(order_col)) for g in got if _iso(g.get(order_col))), default="")
                 if len(rows) >= limit:
                     stopped = "max_rows"
                     rows = rows[:limit]
                     break
-                if len(got) < size or (since and oldest and oldest < since):
+                if len(got) < size or (cutoff and oldest and oldest < cutoff):
                     break
                 page += 1
                 if page - int(pg.get("start", 0)) >= MAX_PAGES:
                     stopped = "pages"
                     break
+            if by_date:
+                rows.sort(key=lambda x: (_ts(x.get("date")), _ts(x.get("created"))),
+                          reverse=str(query.get("direction", "DESC")).upper() != "ASC")
+                for x in rows if added else []:
+                    x.pop("created", None)
+                    x.pop("created_iso", None)
+            if repeats:
+                notes.append(f"{r['name']}: {repeats:,} release(s) came back twice while paging (a release posted "
+                             "or removed during the fetch shifts the pages); the repeats were dropped, and about as "
+                             "many may be missing. Fetch again (--force) if the count matters.")
             if stopped == "max_rows":
                 notes.append(f"{r['name']}: stopped at {len(rows):,} rows (max_rows); the source has more"
                              + (f" (the API reports {total:,} records for the title/day filter)" if total else "")
+                             + (". The cut follows posting time (the newest posted rows, then put in date order), "
+                                "so releases near the cut can differ from a cut by date" if by_date else "")
                              + ". Narrow the filter or raise max_rows.")
             elif stopped == "pages":
-                notes.append(f"{r['name']}: stopped after scanning {MAX_PAGES * size:,} records newest first; "
-                             "older matches were not reached. Narrow the title filter or the date range.")
+                notes.append(f"{r['name']}: stopped after scanning {MAX_PAGES * size:,} records newest first"
+                             + (f" (by posting time, reading {CREATED_MARGIN_DAYS} days of postings past `since`)"
+                                if by_date and since else "")
+                             + "; older matches were not reached. Narrow the title filter or the date range.")
         if not rows and not r.get("allow_empty"):
             raise gr.DataError(f"request {r['name']!r} returned no rows: check the title words and dates "
                                "(see source.md)", kind="bad_request")
@@ -187,6 +242,8 @@ def manual_items(spec, pack):
         if any(k in p for k in PACK_OPTS):
             ranged.add(r.get("name"))
         r["params"] = _strip(p)
+        if str(p.get("sort", "date")) == "date":   # date ties shift between pages: list by posting time
+            r["params"]["sort"] = "created"
     items = gr.manual_items(pack, s)
     for it in items:
         if it["request"] in ranged:

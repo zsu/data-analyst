@@ -28,7 +28,8 @@ from core.http import Client, DataError
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 BILL_TYPES = ("hr", "s", "hjres", "sjres", "hconres", "sconres", "hres", "sres")
-SEARCH_KEYS = ("text", "phrase", "query", "collection", "congress", "billtype", "publisher", "date_from", "date_to", "sort")
+SEARCH_KEYS = ("text", "phrase", "all_words", "any", "query", "collection", "congress", "billtype", "publisher",
+               "date_from", "date_to", "sort")
 SORTS = {"relevance": [{"field": "score", "sortOrder": "DESC"}],
          "newest": [{"field": "publishdate", "sortOrder": "DESC"}],
          "oldest": [{"field": "publishdate", "sortOrder": "ASC"}]}
@@ -93,6 +94,11 @@ def _list(v) -> list[str]:
     return [x.strip() for x in str(v).split(",") if x.strip()]
 
 
+def _alternatives(v) -> list[str]:
+    """`any`: a list of words or phrases (or one string separated by ;), any of which may match."""
+    return [str(x) for x in v] if isinstance(v, (list, tuple)) else [x for x in str(v).split(";")]
+
+
 def build_query(p: dict) -> str:
     """The GovInfo query string for search parameters (filters first, then the escaped text)."""
     terms = []
@@ -111,10 +117,46 @@ def build_query(p: dict) -> str:
     if p.get("text"):
         terms.append("(" + " ".join(_words(p["text"])) + ")")
     if p.get("phrase"):
-        terms.append('("' + " ".join(_words(p["phrase"])) + '")')
+        w = _words(p["phrase"])
+        # quotes make GovInfo match only that exact form, and fewer documents even for one word (CHRG 2024:
+        # one word quoted 44, unquoted 92, verified 2026-10-28): one word is searched unquoted
+        terms.append('("' + " ".join(w) + '")' if len(w) > 1 else "(" + " ".join(w) + ")")
+    if p.get("all_words"):                     # every word anywhere: the complete candidate list, an upper bound
+        terms.append("(" + " ".join(_words(p["all_words"])) + ")")
+    if p.get("any"):
+        alts = [w for w in (_words(x) for x in _alternatives(p["any"])) if w]
+        terms.append("(" + " OR ".join(('"' + " ".join(w) + '"') if len(w) > 1 else w[0] for w in alts) + ")")
     if p.get("query"):
         terms.append("(" + str(p["query"]) + ")")
     return " AND ".join(terms)
+
+
+PHRASE_GAP_MIN = 20       # documents: a smaller gap is within what word order and adjacency alone explain
+
+
+def phrase_count_note(pack, req: dict, got: int) -> str | None:
+    """A quoted phrase search can return far fewer documents than hold the phrase (GovInfo's exact-phrase search
+    missed most of the bills holding a two-word phrase, even in their titles; verified 2026-10-28). One count
+    request for the same search with all the words (pageSize 1) says when the quoted result is well below it.
+    A phrase is rarer than its words apart, so a modest gap is normal: the note needs the quoted result under half
+    the all-words count AND at least PHRASE_GAP_MIN documents short, so it flags a real shortfall, not every phrase."""
+    p = req.get("params") or {}
+    if len(_words(p.get("phrase") or "")) < 2:
+        return None
+    alt = {**{k: v for k, v in p.items() if k != "phrase"}, "all_words": p["phrase"]}
+    try:
+        ep, params, _ = gr.resolve(pack, {**req, "params": alt})
+        path, query, body = gr.split(ep, before_request(req, ep, params))
+        body = {**(body or {}), "pageSize": 1}
+        total = int(gr.client_for(pack).request("POST", path, query or None, json_body=body).json().get("count") or 0)
+    except (DataError, ValueError, TypeError, AttributeError):
+        return None
+    if got * 2 > total or total - got < PHRASE_GAP_MIN:
+        return None
+    return (f"{req['name']}: the quoted search returned {got:,} documents, under half of the {total:,} containing all "
+            f"the words of '{' '.join(_words(p['phrase']))}', so it may be missing documents that hold the phrase "
+            "(GovInfo's quoted search can skip them): use all_words for the complete candidate list (an upper bound: "
+            "the words may stand apart) and confirm the phrase in the text where the count matters.")
 
 
 def bill_package_id(p: dict) -> str:
@@ -134,11 +176,16 @@ def check_spec(spec):
         p, ep = r.get("params") or {}, r.get("endpoint")
         n = r.get("name")
         if ep == "search":
-            if not any(p.get(k) for k in ("text", "phrase", "query", "collection", "publisher")):
-                probs.append(f"request {n!r}: search needs text, phrase, query, collection or publisher")
+            if not any(p.get(k) for k in ("text", "phrase", "all_words", "any", "query", "collection", "publisher")):
+                probs.append(f"request {n!r}: search needs text, phrase, all_words, any, query, collection or publisher")
+            if p.get("any") is not None and not any(_words(x) for x in _alternatives(p["any"])):
+                probs.append(f"request {n!r}: any needs a list of words or phrases")
+            if re.search(r"(?i)\bdateissued\s*:", str(p.get("query") or "")):
+                probs.append(f"request {n!r}: GovInfo answers HTTP 500 to dateIssued: inside query (verified "
+                             "2026-10-28): use date_from / date_to, which the pack sends as publishdate:range(...)")
             if (p.get("text") and not _words(p["text"])) or (p.get("phrase") and not _words(p["phrase"])):
                 probs.append(f"request {n!r}: text/phrase has no searchable words")
-            if "*" in " ".join(str(p.get(k) or "") for k in ("text", "phrase", "query")):
+            if "*" in " ".join(str(p.get(k) or "") for k in ("text", "phrase", "all_words", "any", "query")):
                 probs.append(f"request {n!r}: GovInfo search answers a wildcard (*) with HTTP 500: list the word "
                              "forms instead (title:tariff OR title:tariffs)")
             bad = [c for c in _list(p.get("collection") or []) if c.upper() not in known]
@@ -411,6 +458,10 @@ def fetch(spec, pack, route):
             t, n = gr.fetch(pack, {"requests": [r]})
             tables.update(t)
             notes += n
+            capped = any(x.startswith(f"{r['name']}: stopped at") for x in n)
+            if r.get("endpoint") == "search" and not capped:
+                note = phrase_count_note(pack, r, len(t.get(r["name"]) or []))
+                notes += [note] if note else []
     return tables, notes
 
 
@@ -423,6 +474,8 @@ def _calls(spec) -> int:
         text = r.get("endpoint") == "text"
         n += (2 if (r.get("params") or {}).get("granuleId") else 4) if text else 1 if r.get("endpoint") == "sections" \
             else max(1, math.ceil(int(r.get("max_rows") or size) / size))
+        if r.get("endpoint") == "search" and len(_words((r.get("params") or {}).get("phrase") or "")) > 1:
+            n += 1                                  # the all-words count beside a quoted phrase
     return n
 
 

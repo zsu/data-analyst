@@ -150,7 +150,7 @@
      "desc": "penalty range"
     },
     "qcolumns": {
-     "desc": "comma-separated column ids to return"
+     "desc": "comma-separated column ids to return (ids: <program>_rest_services.metadata?output=JSON, ResultColumns); sent to the search and to every get_qid page"
     }
    },
    "records": "Facilities",

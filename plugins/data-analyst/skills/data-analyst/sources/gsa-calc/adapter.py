@@ -13,7 +13,7 @@
   so raw `filter` entries must name a field in FILTERS and `search` one of SEARCH_FIELDS.
 - normalize: JSON hits lose the `_source.` prefix and the search-engine metadata (_index, _score, sort);
   rate_stats and rate_facets become small tables from the aggregations.
-- manual_items / parse_upload: the manual route is one export CSV link per request (all rows, no paging).
+- manual_items / parse_upload: the manual route is one export CSV link per request (all rows, no paging; identical rows once).
 """
 from __future__ import annotations
 
@@ -154,6 +154,9 @@ def fetch(spec, pack, route):
                             "rate_stats for more rows).", kind="bad_request", status=406) from None
         if _endpoint(r) == "rates_export":
             limit = int(r.get("max_rows") or ep.get("max_rows") or 200000)
+            short = export_shortfall(client, pack, params, len(rows))
+            if short:
+                notes.append(f"{r['name']}: {short}")
             if len(rows) > limit:
                 notes.append(f"{r['name']}: stopped at {limit:,} of {len(rows):,} rows (max_rows).")
                 rows = rows[:limit]
@@ -161,7 +164,7 @@ def fetch(spec, pack, route):
             capped = (meta["total"] or 0) >= 10000
             notes.append(f"{r['name']}: stopped at {len(rows):,} rows" +
                          (f" of {'10,000 or more' if capped else format(meta['total'], ',')}" if meta["total"] else "") +
-                         " (max_rows; the JSON search returns at most 10,000). Use rates_export for every row, "
+                         " (max_rows; the JSON search returns at most 10,000). Use rates_export for every distinct row, "
                          "or rate_stats for summary statistics over every match.")
         rows = normalize(r, ep, rows)
         if not rows and not r.get("allow_empty"):
@@ -169,6 +172,27 @@ def fetch(spec, pack, route):
                             "(search is exact and case-sensitive; see source.md)", kind="bad_request")
         tables[r["name"]] = rows
     return tables, notes
+
+
+def export_shortfall(client, pack, params, n: int) -> str | None:
+    """The export writes one line per distinct row of its 17 columns: rates identical in all of them (same
+    contract, category and prices, different JSON `id`) collapse, so it can hold fewer rows than the search
+    matches ("data scientist": 1,504 lines for 1,516 matches, verified 2026-10-28). One count request
+    (rate_stats) says by how many."""
+    if not n:
+        return None
+    ep, _, _ = gr.resolve(pack, {"name": "count", "endpoint": "rate_stats"})
+    q = {**(ep.get("defaults") or {}), **{k: v for k, v in params.items() if k != "export"}}
+    try:
+        path, query, _ = gr.split(ep, q)
+        total = ((client.get(path, query).json().get("aggregations") or {}).get("wage_stats") or {}).get("count")
+    except (DataError, ValueError, AttributeError):
+        return None
+    if not total or int(total) <= n:
+        return None
+    return (f"the export has {n:,} rows but the search matches {int(total):,} rates: the export writes rates that "
+            f"are identical in every exported column once ({int(total) - n:,} fewer). Count rates with rate_stats, or "
+            "use rates (JSON, one row per rate with its id, at most 10,000) when every rate must be a row.")
 
 
 # ---------------------------------------------------------------------- aggregations and hits
@@ -229,7 +253,7 @@ def manual_items(spec, pack):
                 params.pop(k, None)
             params["export"] = "y"
             path, query, _ = gr.split(ep, params)
-            fn, note = f"{r['name']}.csv", "CSV export of every matching rate (the browser saves it as ceilingrates_results.csv: rename it)"
+            fn, note = f"{r['name']}.csv", "CSV export of every matching rate, identical rates once (the browser saves it as ceilingrates_results.csv: rename it)"
         url = f"{base}/{path.lstrip('/')}?" + urllib.parse.urlencode(query, doseq=True)
         items.append({"name": f"{r['name']}#1", "request": r["name"], "url": url, "filename": fn,
                       "needs_key": False, "method": "GET", "body": None, "note": note})

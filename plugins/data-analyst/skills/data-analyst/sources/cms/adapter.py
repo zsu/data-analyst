@@ -13,7 +13,9 @@ medicare  data-api: /data-api/v1/dataset/{uuid}/data with size/offset and filter
 
 Friendly spec parameters (expanded by before_request; manual links get the same expansion):
   where      {"state": "VT"}            provider: conditions[i][property|value]; a list value -> IN
-                                        medicare: filter[STATE]=VT
+                                        medicare: filter[STATE]=VT; a list value -> one IN condition group
+                                        (filter[g][condition][path|operator|value][n]), since repeated
+                                        filter[STATE]= parameters keep only the last value
   conditions [{"property", "value", "operator"}]   provider only (=, <>, <, <=, >, >=, LIKE, IN, NOT IN, BETWEEN)
   sort       "col" | "-col" | [..]      provider: sorts[i][property|order]; medicare: sort=col / -col
   columns    ["a", "b"]                 provider: properties[i]; medicare: column=a,b
@@ -76,8 +78,17 @@ def before_request(req, ep, params):
         for i, c in enumerate(cols):
             p[f"properties[{i}]"] = c
     else:
-        for k, v in where.items():
-            p[f"filter[{k}]"] = v
+        for i, (k, v) in enumerate(where.items()):
+            if isinstance(v, (list, tuple)):
+                # repeated filter[k]=a&filter[k]=b keeps only the LAST value (verified 2026-10-28): send a list as
+                # one IN condition group, which the data-api honours alongside the plain equality filters
+                g = f"in{i}"
+                p[f"filter[{g}][condition][path]"] = k
+                p[f"filter[{g}][condition][operator]"] = "IN"
+                for j, x in enumerate(v, start=1):
+                    p[f"filter[{g}][condition][value][{j}]"] = x
+            else:
+                p[f"filter[{k}]"] = v
         if sort:
             p["sort"] = sort[0]
         if cols:
@@ -92,6 +103,8 @@ def check_spec(spec):
         name = r.get("name")
         if "where" in prm and not isinstance(prm["where"], dict):
             probs.append(f"request {name!r}: where must be an object {{column: value}}")
+        elif any(isinstance(v, (list, tuple)) and not v for v in (prm.get("where") or {}).values()):
+            probs.append(f"request {name!r}: a where list must hold at least one value")
         conds = prm.get("conditions")
         if conds is not None:
             if not isinstance(conds, list) or not all(isinstance(c, dict) and "property" in c for c in conds):
@@ -128,6 +141,13 @@ def normalize(req, ep, rows):
                             "data-api ignores unknown filter and column names (filters are dropped, so rows come back "
                             "unfiltered). Column names are "
                             f"case-sensitive; the returned rows have: {', '.join(list(rows[0])[:25])}", kind="bad_request")
+        for k, v in where.items():          # a filter the API dropped would bring back other values: never keep them
+            # (the data-api matches case-insensitively: vt finds VT, verified 2026-10-28)
+            allowed = {str(x).strip().lower() for x in (v if isinstance(v, (list, tuple)) else [v])}
+            stray = sorted({str(r.get(k)) for r in rows if str(r.get(k)).strip().lower() not in allowed})
+            if stray:
+                raise DataError(f"request {req.get('name')!r}: the data-api did not apply the filter on {k!r} (rows "
+                                f"with {stray[:5]} came back); fetch one request per value instead", kind="api")
         _flag_suppressed(rows)
     return rows
 
@@ -147,9 +167,44 @@ def _flag_suppressed(rows: list[dict]) -> None:
             r.setdefault(k, "")
 
 
+def named_columns(prm: dict) -> list[str]:
+    """Every column a request names: where, conditions, sort and columns."""
+    cols = prm.get("columns") or []
+    cols = [c.strip() for c in cols.split(",")] if isinstance(cols, str) else list(cols)
+    return list(dict.fromkeys(list(prm.get("where") or {}) + [c.get("property") for c in prm.get("conditions") or []
+                                                               if isinstance(c, dict)] +
+                              [s.lstrip("-") for s in _sorts(prm.get("sort"))] + cols))
+
+
+def unknown_columns(client, pack, req) -> tuple[list[str], list[str]]:
+    """(named columns the Provider Data dataset does not have, its columns), from a one-row schema query."""
+    ep, params, _ = gr.resolve(pack, req)
+    path = ep["path"].replace("{dataset}", str(params.get("dataset"))).replace("{index}", str(params.get("index", 0)))
+    d = client.get_json(path, {"limit": 1, "schema": "true"})
+    fields = [f for s in (d.get("schema") or {}).values() for f in (s.get("fields") or {})]
+    return [c for c in named_columns(req.get("params") or {}) if c not in fields], fields
+
+
 def fetch(spec, pack, route):
     client = gr.client_for(pack, timeout=TIMEOUT)
-    return gr.fetch(pack, spec, client)
+    try:
+        return gr.fetch(pack, spec, client)
+    except DataError as e:
+        # Provider Data answers HTTP 400 {"message": "Column not found."} without naming the column (a sort,
+        # condition or property the dataset lacks, e.g. facility_id in a dataset keyed by another id)
+        m = re.match(r"request '([^']+)'", str(e))
+        req = next((r for r in spec["requests"] if m and r.get("name") == m.group(1)), None)
+        if e.status != 400 or "column not found" not in str(e).lower() or not req:
+            raise
+        try:
+            bad, fields = unknown_columns(client, pack, req)
+        except DataError:
+            raise e from None
+        if not bad:
+            raise
+        raise DataError(f"request {req['name']!r}: column(s) {bad} are not in this dataset (used in where, conditions, "
+                        f"sort or columns); its columns are: {', '.join(fields[:40])}", kind="bad_request",
+                        status=400) from None
 
 
 def manual_items(spec, pack):

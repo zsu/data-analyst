@@ -26,6 +26,7 @@ from core.http import DataError  # noqa: E402
 DMAP = "https://data.epa.gov/dmapservice"
 PAGE = 5000
 ECHO_PAGE = 1000
+PAGE_PARAMS = ("qcolumns",)          # ECHO parameters that shape the rows: sent to get_qid as well as the search
 OPS = ("equals", "notEquals", "lessThan", "lessThanEqual", "greaterThan", "greaterThanEqual", "beginsWith",
        "endsWith", "contains")
 ROW_KEYS = ("Facilities", "WaterSystems", "Cases")
@@ -136,7 +137,7 @@ def _echo(c, ep, params, max_rows, name, notes):
     res = c.get_json(first, {"output": "JSON", **q, "responseset": ECHO_PAGE}).get("Results") or {}
     understood = {p.get("QP") for p in res.get("QueryParameters") or [] if isinstance(p, dict)}
     if understood:
-        ignored = [k for k in q if k not in understood]
+        ignored = [k for k in q if k not in understood and k not in PAGE_PARAMS]
         if ignored:
             raise DataError(f"ECHO did not understand {', '.join(ignored)} (it understood: {', '.join(sorted(understood))}); "
                             "see source.md for the parameter names", kind="bad_request")
@@ -147,8 +148,11 @@ def _echo(c, ep, params, max_rows, name, notes):
         return [], False
     rows, page = [], 1
     want = min(total, limit)
+    # the rows come from get_qid, which returns its default columns unless it is given the column selection too
+    # (qcolumns on get_facilities alone changes nothing in the rows; verified 2026-10-28)
+    keep = {k: q[k] for k in PAGE_PARAMS if q.get(k) not in (None, "")}
     while len(rows) < want:
-        data = c.get_json(qid_path, {"output": "JSON", "qid": res["QueryID"], "pageno": page}).get("Results") or {}
+        data = c.get_json(qid_path, {"output": "JSON", "qid": res["QueryID"], "pageno": page, **keep}).get("Results") or {}
         got = next((data[k] for k in ROW_KEYS if isinstance(data.get(k), list)), [])
         if not got:
             break
@@ -189,7 +193,7 @@ def normalize(req, ep, rows):
 
 def fetch(spec, pack, route):
     c = gr.client_for(pack)
-    tables, notes = {}, []
+    tables, notes, miss = {}, [], gr.Misses()
     for r in spec["requests"]:
         ep, params, probs = gr.resolve(pack, r)
         if probs:
@@ -205,10 +209,9 @@ def fetch(spec, pack, route):
             more = meta["truncated"]
         if more:
             notes.append(f"{r['name']}: stopped at {len(rows):,} rows (max_rows); the source has more.")
-        if not rows and not r.get("allow_empty"):
-            raise DataError(f"request {r['name']!r} returned no rows: check table, column names and values "
-                            "(see source.md)", kind="bad_request")
+        miss.check_empty(r, rows)
         tables[r["name"]] = rows
+    miss.raise_if_any(empty_hint="check table, column names and values (see source.md)")
     return tables, notes
 
 
@@ -234,9 +237,10 @@ def manual_items(spec, pack):
             first, qid = _echo_paths(ep, params)
             q = {k: v for k, v in params.items() if k not in ("program", "output", "responseset")}
             url = first + "?" + urllib.parse.urlencode({"output": "JSON", **q, "responseset": ECHO_PAGE})
+            keep = "".join(f"&{k}={urllib.parse.quote(str(q[k]), safe=',')}" for k in PAGE_PARAMS if q.get(k))
             items.append({"name": f"{r['name']}#1", "request": r["name"], "url": url, "filename": f"{r['name']}.json",
                           "needs_key": False, "method": "GET", "body": None,
-                          "note": (f"Two steps: this link returns a QueryID; then open {qid}?output=JSON&qid=<QueryID>&pageno=1 "
+                          "note": (f"Two steps: this link returns a QueryID; then open {qid}?output=JSON&qid=<QueryID>&pageno=1{keep} "
                                    f"(pageno=2, 3 ... for more) and save those pages as {r['name']}.json, {r['name']}_2.json. "
                                    "Or use https://echo.epa.gov/facilities/facility-search (Download Data).")})
         else:

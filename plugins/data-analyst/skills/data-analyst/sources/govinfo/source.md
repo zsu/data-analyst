@@ -14,7 +14,7 @@ agency publications catalogued by GPO.
 ## Endpoints and datasets
 | Endpoint | Returns (one row per) | Key parameters |
 |---|---|---|
-| `search` (POST) | matching package or granule: title, packageId, dateIssued, collectionCode, governmentAuthor, links | `text` (plain words, escaped), `phrase` (exact, escaped), `query` (raw syntax, unescaped), `collection`, `congress`, `billtype`, `publisher`, `date_from`, `date_to`, `sort` (relevance, newest, oldest) |
+| `search` (POST) | matching package or granule: title, packageId, dateIssued, collectionCode, governmentAuthor, links | `text` (plain words, escaped), `phrase` (exact, escaped), `all_words` (every word, anywhere: an upper bound), `any` (list of words or phrases, OR), `query` (raw syntax, unescaped), `collection`, `congress`, `billtype`, `publisher`, `date_from`, `date_to`, `sort` (relevance, newest, oldest) |
 | `published` | package issued in a date range (complete list) | `start_date`, `end_date`, `collection` (required), `congress`, `docClass`, `billVersion` |
 | `package` | one package's metadata | `packageId` |
 | `related_collection` | related package of one collection (an enrolled bill's public law) | `accessId`, `collection` |
@@ -63,7 +63,20 @@ chamber), enr enrolled (passed both).
 - Escaping: `text` and `phrase` lose `: ( ) [ ] { } " \ * ? ~ ^ !` and the words AND/OR/NOT, so user text
   cannot change the query (a stray backslash once drew HTTP 500; it did not on 2026-10-22, but the
   escaping stays). Use `query` only for deliberate
-  GovInfo syntax (`title:"tax"`, `OR`), and quote phrases there yourself.
+  GovInfo syntax (`title:"tax"`, `OR`), and quote phrases there yourself. Never put `dateIssued:` in
+  `query` (HTTP 500 every time, verified 2026-10-28; check_spec refuses it): use `date_from`/`date_to`.
+  An HTTP 500 that repeats for one query while simpler searches answer is caused by the query, not an outage.
+- **Completeness of "documents that mention X"**: GovInfo's quoted (exact-phrase) search can miss documents
+  that hold the phrase, even in their titles (BILLS of one Congress: a two-word phrase quoted 58, as
+  `title:"..."` 110; one word quoted 44 vs 92 unquoted; checked 2026-10-28). `phrase` stays the quoted search
+  (a one-word phrase is sent unquoted); for a multi-word phrase the fetch also counts the same search with
+  all the words and notes when the phrase result is under half that count and at least 20 documents short
+  (a phrase is always rarer than its words apart, so a smaller gap is expected). `all_words` returns that complete
+  candidate list: an upper bound, since the words may stand apart; confirm the phrase in the text of the
+  documents that matter (`text`, `for_each` on `packageId`), or call the count "documents containing all
+  the words". Unquoted words are stemmed only for dictionary words (a new coinage's plural is not): search
+  every form with `any` (`["levy", "levies", "levied"]`), deduplicate by `packageId`, and say in the method
+  note which forms and which search (`text`, `phrase`, `all_words`, `any`) were used.
 - BILLS has one package per printed version, so a search counts versions, not bills: strip the version
   suffix from `packageId` (`BILLS-118hr4763eh` -> 118 hr 4763) and deduplicate before counting bills. A
   version code can end in a digit (`BILLS-118hr7643rh2`, a second reported print): parse `[a-z]+\d*`.

@@ -70,6 +70,10 @@ unclassified; degree_of_inj 1 fatality, 2 hospitalized, 3 not hospitalized.
   check the first rows). Dates come as text, some with a time (`2005-12-20T00:00:00`).
 - Sorting defaults to the dataset's date field, newest first; `"sort_by": ""` keeps the API's own order.
   Paging is limit/offset, 1,000 rows per call (the API allows up to 10,000 rows or 5 MB).
+- Field names are checked by `--check` against the keyless field dictionary (`dataset_info`), so a wrong
+  name is `fix_spec` even without a key (when the dictionary cannot be read, the check is skipped; a field
+  the API has but the dictionary lacks: `"check_fields": false` on that request). `osha_inspection` has no county field: filter on
+  `site_city` or `site_zip` (or fetch the state and select in analysis.py).
 - An unmatched filter returns no rows (the fetch then fails with a hint); an unknown field or operator
   is an HTTP 400 with the API's message.
 - Counts of inspections, violations or cases measure enforcement activity, which depends on staffing and
