@@ -22,6 +22,10 @@
      "in": "body",
      "desc": "list of words or phrases, any of which may match (OR), e.g. every form of a term: [\"levy\", \"levies\", \"levied\"]; escaped like text"
     },
+    "title": {
+     "in": "body",
+     "desc": "words or a phrase that must be in the document's title field (for bills: official, short and display titles), sent as title:\"...\" and escaped like text. This is the title search: phrase and text search the full text instead"
+    },
     "query": {
      "in": "body",
      "desc": "raw GovInfo query syntax for experts, passed unchanged (field:value, AND/OR/NOT, quotes)"
@@ -194,7 +198,7 @@
   "text": {
    "path": "/packages/{packageId}/htm",
    "method": "GET",
-   "description": "Plain text of a bill version, law, report or other package (one row: package_id, title, date_issued, characters, text). Give packageId, or congress + billtype + number (+ version, default enr) for a bill; add granuleId for one granule.",
+   "description": "Plain text of a bill version, law, report or other package (one row: package_id, title, date_issued, characters, text_status (full, pdf_only, partial_pdf, near_empty: GPO serves a 'TEXT NOT AVAILABLE, REFER TO PDF' placeholder as text for some documents), pdf_url, text). Give packageId, or congress + billtype + number (+ version, default enr) for a bill; add granuleId for one granule.",
    "params": {
     "packageId": {
      "desc": "e.g. PLAW-118publ201 or BILLS-117hr5376enr"

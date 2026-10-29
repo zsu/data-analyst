@@ -131,6 +131,30 @@ def phrase_order_hint(req) -> str | None:
             "them), or filter on one distinctive word and check the titles in the CSV.")
 
 
+TITLE_ROUTE = {"bills": "BILLS", "bills_congress": "BILLS", "laws": "PLAW", "laws_congress": "PLAW"}
+
+
+def display_title_note(req) -> str | None:
+    """title_contains on a bill or law list reads Congress.gov's display title only; a bill whose official (or
+    short) title alone holds the phrase is not in the table. Say so on every such fetch, with the title search
+    that finds them (GovInfo's title field) and the check that confirms each one (bill_titles)."""
+    p = req.get("params") or {}
+    v = p.get("title_contains")
+    phrases = [str(x).strip() for x in (v if isinstance(v, (list, tuple)) else [v]) if str(x or "").strip()]
+    coll = TITLE_ROUTE.get(req.get("endpoint") or "")
+    if not phrases or not coll:
+        return None
+    c = p.get("congress")
+    cong = f'"congress": {c}' if str(c or "").isdigit() else '"congress": <the Congress number>'
+    search = "; ".join(f'{{"collection": "{coll}", {cong}, "title": "{x}"}}' for x in phrases[:3])
+    return (f"{req.get('_group') or req['name']}: title_contains matched the list's display title only, not official or short titles, so "
+            "bills whose official title alone holds the phrase are missing here. For 'in the title' answers, search "
+            f"titles at GovInfo: source govinfo, endpoint search, params {search}; strip the version suffix from "
+            "packageId (BILLS-<congress><type><number><version>) to get each bill, deduplicate, then confirm each "
+            "with this pack's bill_titles (for_each on congress, billType, billNumber) and say which title the "
+            "count uses.")
+
+
 def normalize(req, ep, rows):
     match = title_matcher((req.get("params") or {}).get("title_contains"))
     if match:
@@ -387,6 +411,8 @@ def fetch(spec, pack, route):
                 raise
             tables.update(t)
             notes += n + ([f"{r['name']}: no titles matched. {hint}"] if hint and not t.get(r["name"]) else [])
+            title_note = display_title_note(r)
+            notes += [title_note] if title_note and title_note not in notes else []     # for_each: once
             continue
         p = r.get("params") or {}
         if ep_name == "roll_call":

@@ -39,6 +39,7 @@
       "path": "/products/vehicle/modelYears",
       "description": "Model years that have recalls (issueType r) or complaints (c).",
       "params": {"issueType": {"required": true, "enum": ["r", "c"], "desc": "r = recalls, c = complaints"}},
+      "defaults": {"max": 10000},
       "records": "results", "paging": {"type": "none"}
     },
     "products_makes": {
@@ -50,9 +51,10 @@
     },
     "products_models": {
       "path": "/products/vehicle/models",
-      "description": "Models of a make and year that have recalls (r) or complaints (c): the exact names to use.",
+      "description": "Models of a make and year that have recalls (r) or complaints (c): the exact names to use (the full list: the pack sends a large max).",
       "params": {"modelYear": {"required": true, "desc": "model year"}, "make": {"required": true, "desc": "make"},
                  "issueType": {"required": true, "enum": ["r", "c"], "desc": "r or c"}},
+      "defaults": {"max": 10000},
       "records": "results", "paging": {"type": "none"}
     },
     "ratings_model_years": {

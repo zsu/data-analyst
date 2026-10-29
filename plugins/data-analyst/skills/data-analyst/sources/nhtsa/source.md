@@ -25,7 +25,9 @@ Investigation (ODI), NCAP 5-Star crash ratings, VIN decoding (vPIC), and child c
 | `car_seat_stations_state` / `_zip` | car seat inspection stations | `state` or `zip` (the API's lat/long radius search ignores the point and returns the first 100 stations nationwide, verified 2026-10, so the pack does not offer it) |
 
 Car seat stations come 100 a page and the pack follows the `offset` pages; every other endpoint
-answers in one page. Recalls cover model years 1949 to the coming year, and
+answers in one page. `products_models` and `products_model_years` send only their first ~20 rows unless
+asked for more (live 2026-10-28: 13 model rows by default, 57 with `max`), so the pack always sends
+`max=10000` there and in the variant lookup; a list you open by hand without `max` is cut. Recalls cover model years 1949 to the coming year, and
 `products_model_years` also lists `9999` for records with no model year (recalls and complaints; drop it from
 year ranges, verified 2026-10);
 NCAP ratings start with model year 1990 (`ratings_model_years` lists them). `--endpoints` lists all.

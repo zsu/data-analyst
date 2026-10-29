@@ -90,6 +90,16 @@ def source_summary(out: str, d: str) -> dict:
     sid = os.path.basename(d)
     rec, rec_file = _record(d)
     tables = [t for t in rec.get("tables") or [] if isinstance(t, dict) and t.get("file")]
+    # an earlier fetch into the same folder whose tables are still there: they are part of what was delivered
+    earlier = [e for e in rec.get("earlier_fetches") or [] if isinstance(e, dict)]
+    listed = {t["file"] for t in tables}
+    for e in earlier:
+        for t in e.get("tables") or []:
+            if isinstance(t, dict) and t.get("file") and t["file"] not in listed \
+                    and os.path.exists(os.path.join(d, t["file"])):
+                tables.append(dict(t, earlier=f"route {e.get('route') or e.get('acquired') or 'unknown'}, retrieved "
+                                              + (pol.local_day(e["retrieved"]) if e.get("retrieved") else "unknown")))
+                listed.add(t["file"])
     if not tables:                                  # no list in the record: every CSV in the folder
         tables = [{"file": os.path.basename(p)} for p in sorted(glob.glob(os.path.join(d, "*.csv")))
                   if os.path.basename(p) != "data_dictionary.csv"]
@@ -97,17 +107,19 @@ def source_summary(out: str, d: str) -> dict:
     files = []
     for t in tables:
         p = os.path.join(d, t["file"])
+        tag = {"earlier": t["earlier"]} if t.get("earlier") else {}
         if not os.path.exists(p) or not p.lower().endswith(".csv"):
-            files.append({"file": os.path.relpath(p, out).replace(os.sep, "/"), "rows": t.get("rows")})
+            files.append({"file": os.path.relpath(p, out).replace(os.sep, "/"), "rows": t.get("rows")} | tag)
             continue
         pv = preview(p)
         files.append({"file": os.path.relpath(p, out).replace(os.sep, "/"), "rows": pv["total"],
-                      "columns": pv["columns"], "preview": None if micro else pv})
+                      "columns": pv["columns"], "preview": None if micro else pv} | tag)
     retrieved = rec.get("retrieved") or rec.get("downloaded") or ""
     notes = [str(n) for n in (rec.get("notes") or []) if n]
     problems = [str(p) for p in (rec.get("problems") or []) if p]
-    problems += [f"(earlier fetch, table still in the folder) {p}" for e in rec.get("earlier_fetches") or []
-                 if isinstance(e, dict) for p in e.get("problems") or [] if p]
+    notes += [f"(earlier fetch, table still in the folder) {n}" for e in earlier for n in e.get("notes") or [] if n]
+    problems += [f"(earlier fetch, table still in the folder) {p}" for e in earlier
+                 for p in e.get("problems") or [] if p]
     return {"source": sid, "route": rec.get("route") or rec.get("acquired") or "unknown",
             "retrieved": pol.local_day(retrieved) if retrieved else "unknown",
             "files": files, "notes": notes, "problems": problems,
@@ -158,7 +170,8 @@ def summarize(out: str) -> dict:
         md += [f"### {s['source']}", f"- Route: {s['route']}; retrieved {s['retrieved']}"
                + ("" if s["provenance"] else " (no request.json: not packaged by fetch.py; re-fetch or --ingest it)")]
         for f in s["files"]:
-            md.append(f"- `{f['file']}`: {f['rows']:,} rows" if isinstance(f.get("rows"), int) else f"- `{f['file']}`")
+            md.append((f"- `{f['file']}`: {f['rows']:,} rows" if isinstance(f.get("rows"), int) else f"- `{f['file']}`")
+                      + (f" (earlier fetch: {f['earlier']})" if f.get("earlier") else ""))
         md += _notes_md(s) + [f"- **Problem**: {p}" for p in s["problems"]]
         pv = [f for f in s["files"] if f.get("preview")]
         for f in pv[:MAX_TABLES]:

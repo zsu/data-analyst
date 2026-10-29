@@ -9,7 +9,7 @@
    "params": {
     "query": {
      "required": true,
-     "desc": "search words, e.g. cheddar cheese; supports +word, -word and \"phrases\""
+     "desc": "search words, e.g. cheddar cheese; supports +word, -word, \"phrases\" and field queries such as foodCategory:\"Cheese\" or +foodCategory:\"Cheese\" +ingredients:\"annatto\" (quote a value of several words; spell category names exactly as FDC does)"
     },
     "dataType": {
      "desc": "Foundation, SR Legacy, Survey (FNDDS), Branded, Experimental (list or comma text)"

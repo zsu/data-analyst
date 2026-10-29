@@ -7,7 +7,8 @@ Same method rules as a report (method_audit.py) on <out>/decisions.json, plus th
 that apply without a page. FAIL-level checks (exit code 1 if any fails):
   facts        facts.json exists; every fact traced to a CSV cell matches that cell; others state a derivation
   answer       <out>/answer.md (the reply as it will be sent): every number in it is a registered fact as rounded
-               in the text, or listed in decisions.json "audit_allow" with a reason
+               in the text, or listed in decisions.json "audit_allow" with a reason; dollar amounts of different
+               years compared only with their basis stated (nominal or real), or "dollar_basis_ok" with a reason
   questions    one "Don't know" option per question, no "Skip"; skipped or unanswered = "Don't know", resolved;
                not asked only with reason_code no_user or settled_by_request (quoting the request)
   literature   the searches run (query, date, what was found), or reason_code no_search_tool / network_blocked
@@ -907,6 +908,80 @@ PERIOD_COUNT = re.compile(r"(?i)\b\d{1,2}\s+of\s+(?:the\s+)?\d{1,2}\s+(?:days|we
                           r"|\(\d\)")              # "3 of 4 quarters"; list markers "(2)"
 BENCH_WORDS = re.compile(r"(?i)benchmark|published|\bmatch(?:es|ed)?\b|\bagrees?\b|compared? with|same as the")
 
+# ---------------------------------------------------------------------- dollar basis
+# dollars of two different years are compared only on a stated basis: nominal (current dollars) or real (which
+# index, which year's dollars). SKILL.md makes the basis a framing choice; "$X in 2025, up from $Y in 2019"
+# without it reads as real growth when it may be mostly inflation.
+CURRENCY = re.compile(r"(?i)(?:US)?\$\s?\d|\bUSD\s?\d|\d(?:[\d,.]*\d)?\s*(?:thousand|million|billion|trillion)?\s+dollars\b")
+YEAR = re.compile(r"(?<![\d$.,])(?:FY\s?)?((?:19|20)\d{2})(?!\d|,\d{3}|\.\d)")
+CHANGE = re.compile(r"(?i)\b(?:up|down)\s+(?:\S+\s+){0,3}?from\b|\b(?:rose|risen|rising|rises?|grew|grown|grows?|growth|"
+                    r"increas\w*|decreas\w*|fell|fallen|falls?|declin\w*|jump\w*|doubl\w*|tripl\w*|halv\w*|climb\w*|"
+                    r"dropp?\w*|compared\s+(?:with|to)|versus|vs\.?|(?:higher|lower|more|less)\s+than)\b"
+                    r"|\bfrom\s+\$[\d.,]+[^.;]{0,40}?\bto\s+\$")
+BASIS = re.compile(r"(?i)\bnominal\b|\bcurrent[- ](?:dollars?|prices|\$)|\b(?:not|un|without|before)[- ]?"
+                   r"(?:being\s+)?(?:adjust\w*|correct\w*)\s+for\s+inflation|\b(?:inflation|price|cpi|pce)[- ]adjusted\b|"
+                   r"\badjust\w*\s+(?:\w+\s+)?for\s+(?:inflation|prices)|\breal\s+(?:terms|dollars?|values?|spending|"
+                   r"income|incomes|wages?|earnings|growth|prices?|gdp|basis|change|increase|decline|rise|fall)\b|"
+                   r"\bin\s+real\b|\bconstant[- ](?:(?:19|20)\d{2}\s+)?(?:dollars?|prices|\$)|\bchained\b|"
+                   r"\b(?:19|20)\d{2}\s+dollars\b|\(\s*(?:19|20)\d{2}\s*\$\s*\)|\btoday'?s\s+dollars\b|\bdeflat\w*")
+
+
+def _years(s: str) -> set[str]:
+    return {m.group(1) for m in YEAR.finditer(s)}
+
+
+def _dollar_comparisons(text: str) -> list[str]:
+    """Sentences (and tables) that put dollar amounts of two or more different years side by side: two amounts
+    and two years in one sentence, or one amount, two years and a change word ("rose to $5 million in 2025 from
+    2019"), or two amounts and two years over two sentences, the second with a change word; a table whose header row or first column holds two or more years and whose cells or header hold
+    dollars."""
+    found = []
+    for block, _ in _blocks(text):
+        lines = block.strip().splitlines()
+        if all(l.lstrip().startswith("|") for l in lines):
+            rows = [[c.strip() for c in l.strip().strip("|").split("|")] for l in lines
+                    if not re.fullmatch(r"\|?[\s:|-]+\|?", l.strip())]
+            if len(rows) < 2:
+                continue
+            in_head = {y for c in rows[0] for y in _years(c)}
+            years = in_head if len(in_head) > 1 else {y for r in rows[1:] if r for y in _years(r[0])}
+            money = re.search(r"(?i)\$|dollar|\bUSD\b", " ".join(rows[0])) or \
+                sum(bool(CURRENCY.search(c)) for r in rows[1:] for c in r) > 1
+            if len(years) > 1 and money:
+                found.append(lines[0].strip()[:80])
+            continue
+        sents = _sentences(block)
+        for i, s in enumerate(sents):
+            amounts = len(CURRENCY.findall(s))
+            if amounts and len(_years(s)) > 1 and (amounts > 1 or CHANGE.search(s)):
+                found.append(" ".join(s.split())[:80])
+                continue
+            two = " ".join(sents[i:i + 2])             # "$X in 2019. By 2024 it reached $Y, an increase ..."
+            if (i + 1 < len(sents) and amounts and len(CURRENCY.findall(two)) > 1 and len(_years(two)) > 1
+                    and CHANGE.search(sents[i + 1])):
+                found.append(" ".join(two.split())[:80])
+    return found
+
+
+def check_dollar_basis(text: str, D: dict) -> tuple:
+    """FAIL when answer.md compares dollar amounts across years and nowhere says nominal or real (unless
+    decisions.json "dollar_basis_ok" gives a reason)."""
+    entry = D.get("dollar_basis_ok")
+    reason = entry.get("reason") if isinstance(entry, dict) else entry
+    found = _dollar_comparisons(text)
+    if not found:
+        return ("answer", True, "no dollar amounts compared across years")
+    if BASIS.search(text):
+        return ("answer", True, "dollar amounts compared across years carry their basis (nominal or real)")
+    if isinstance(reason, str) and reason.strip():
+        return ("answer", True, f"dollar amounts compared across years without a basis: {reason.strip()[:80]}")
+    return ("answer", False,
+            f"answer.md compares dollar amounts of different years ({'; '.join(repr(x) for x in found[:2])}) and "
+            "never says their basis: say whether they are nominal (current dollars, not adjusted for inflation) or "
+            "real (which index, in which year's dollars) next to the first comparison, and record the choice in "
+            "decisions.json. When the basis truly does not matter, give decisions.json \"dollar_basis_ok\": "
+            "{\"reason\": \"...\"}")
+
 
 def _blocks(text: str) -> list[tuple[str, str]]:
     """(text to scan, text a label may sit in): each paragraph alone; a table with the paragraph before it (its
@@ -1209,6 +1284,7 @@ def check_answer(base: str, facts: dict, D: dict) -> tuple[list[tuple], str]:
                         f"benchmark {r.get('measure', '')} ({r.get('period', '')}): computed {r.get('computed')} "
                         f"differs from the published {r.get('published')}; answer.md must give the published figure "
                         f"and why ({str(r.get('note') or '').strip()[:80]})"))
+    out.append(check_dollar_basis(text, D))
     if any("not checked" not in str(r.get("published", "")).lower() for r in bench_rows):
         ok = bool(BENCH_WORDS.search(text))
         out.append(("answer", ok, "answer.md reports the benchmark check" if ok else

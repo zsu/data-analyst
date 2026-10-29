@@ -68,5 +68,21 @@ class TestUsdaFooddata(PackTest):
         self.assertTrue(all(u.count("api_key=DEMO_KEY") == 1 for u in urls), urls)
 
 
+    def test_field_query_is_sent_as_written_and_documented(self):
+        # FDC search takes Lucene-style field queries (live 2026-10-28: foodCategory:"Cheese", Branded, 23,601
+        # hits; unquoted, only the first word of a value is bound to the field): the pack must not alter them
+        from testkit import pack_dir
+        q = '+foodCategory:"Cheese" +ingredients:"annatto"'
+        sp, out = self.write_spec({"requests": [{"name": "cat", "endpoint": "search",
+                                                 "params": {"query": q, "dataType": ["Branded"]}}]})
+        code, r = self.cli(sp, "--out", out, "--dry-run")
+        self.assertIn("query=%2BfoodCategory%3A%22Cheese%22+%2Bingredients%3A%22annatto%22",
+                      r["manual_items"][0]["url"])
+        with open(os.path.join(pack_dir("usda-fooddata"), "source.md"), encoding="utf-8") as f:
+            doc = f.read()
+        self.assertIn('foodCategory:"Cheese"', doc)
+        self.assertIn("branded_food_category", doc)                   # where the category names are listed
+
+
 if __name__ == "__main__":
     unittest.main()
