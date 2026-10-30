@@ -52,6 +52,17 @@ class TestHex32Scope(unittest.TestCase):
         self.assertEqual(self.scan(), [])
         self.assertTrue(scan_secrets.scan_tree([self.out], [HEX.encode()], hex32=True)[0])
 
+    def test_saved_reference_pages_are_not_keys(self):
+        # a page fetch.py --cite saved holds cache hashes and script ids; a key-shaped URL or a real key still counts
+        page = os.path.join(self.out, "references", "nber2008.html")
+        write(page, f'<script src="https://cdn-cookieyes.com/client_data/{HEX}/script.js"></script>\n')
+        self.assertEqual(self.scan(), [])
+        self.assertTrue(scan_secrets.scan_tree([self.out], [HEX.encode()], hex32=True)[0])
+        write(page, f'<a href="https://api.eia.gov/v2/x?api_key={HEX}">x</a>\n')
+        self.assertTrue(self.scan())
+        write(os.path.join(self.out, "notes", "references", "x.txt"), f"token {HEX}\n")   # only the top folder
+        self.assertTrue(any("notes" in h for h in self.scan()))
+
     def test_zip_members_follow_the_same_rule(self):
         z = os.path.join(self.out, "replication_package.zip")
         with zipfile.ZipFile(z, "w") as f:
