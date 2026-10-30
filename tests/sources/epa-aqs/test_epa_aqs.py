@@ -111,6 +111,12 @@ class TestEpaAqs(PackTest):
                          [("003", "2021-03-01", "9.5"), ("003", "2021-03-02", "11.25")])
         self.assertIn("site_number", got[0])
         self.assertEqual(got[0]["first_max_value"], "20.0")
+        # the AirData file is the pack's keyless_file: recorded and cited as such, not as the API
+        self.assertEqual(r["route"], "keyless_file")
+        with open(os.path.join(out, "data", "epa-aqs", "README.md"), encoding="utf-8") as f:
+            readme = f.read()
+        self.assertIn("aqs.epa.gov/aqsweb/airdata", readme)
+        self.assertNotIn("aqs.epa.gov/data/api", readme)
         # an annual file for a daily request is refused, naming the file wanted
         os.remove(os.path.join(up, "daily_42602_2021.zip"))
         with zipfile.ZipFile(os.path.join(up, "daily_42602_2021.zip"), "w") as z:

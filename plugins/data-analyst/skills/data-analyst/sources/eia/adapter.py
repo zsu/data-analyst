@@ -13,6 +13,9 @@
 - check_error: {"error": ...} bodies (bad facet, bad route, missing key) become errors.
 - Without EIA_API_KEY the client sends api.data.gov's DEMO_KEY (EIA's API runs on api.data.gov; any
   api.data.gov key works as EIA_API_KEY).
+- keyless_files / parse_upload: a petroleum request for one series (facets {"series": [id]}) is also in EIA's
+  keyless history file www.eia.gov/dnav/pet/hist_xls/<series><d|w|m|a>.xls, which --ingest reads (needs xlrd)
+  and cuts to the request's dates; the route when the shared DEMO_KEY is rate-limited.
 """
 from __future__ import annotations
 
@@ -227,20 +230,131 @@ def manual_items(spec, pack):
                 qq[pg["limit_param"]], qq[pg["offset_param"]] = size, i * size
             qq["api_key"] = "DEMO_KEY"
             url = f"{base}{ep2['path']}?" + urllib.parse.urlencode(qq, doseq=True)
+            kf = dnav_file(r, params)
             items.append({"name": f"{r['name']}#{i + 1}", "request": r["name"], "url": url,
                           "filename": f"{r['name']}.json" if pages == 1 else f"{r['name']}_{i + 1}.json",
                           "needs_key": False, "method": "GET", "body": None,
+                          "alt_filenames": [kf["filename"]] if kf else [],
                           "note": ("DEMO_KEY allows only a few requests an hour: put your own key in its place "
                                    "if the link answers OVER_RATE_LIMIT") +
-                                  ("" if pages == 1 else f"; page {i + 1} of up to {pages}, stop when data is empty")})
+                                  ("" if pages == 1 else f"; page {i + 1} of up to {pages}, stop when data is empty") +
+                                  (f"; without a key, EIA's file {kf['url']} (as downloaded) holds the same series"
+                                   if kf else "")})
     return items
 
 
-def parse_upload(pack, req, paths):
+# ---------------------------------------------------------------------- dnav history files (the keyless route)
+# EIA publishes every petroleum series of the dnav tables as a keyless Excel 97 workbook, one series per file:
+# www.eia.gov/dnav/pet/hist_xls/<series><d|w|m|a>.xls (e.g. EMM_EPMR_PTE_NUS_DPGm.xls, 50 KB; RWTCd.xls, 470 KB;
+# checked 2026-10-30). Sheet "Data 1": row 0 a title, row 1 "Sourcekey" and the series id, row 2 "Date" and the
+# series description with its units in parentheses, then one row per period: an Excel date (monthly rows dated
+# the 15th, annual rows July 1, weekly rows the API's day) and the value; a period with no value is an empty cell.
+# A series lacks a file at a frequency EIA does not publish for it (MGFUPUS2w.xls is HTTP 404).
+DNAV_URL = "https://www.eia.gov/dnav/pet/hist_xls/"
+DNAV_FREQ = {"daily": "d", "weekly": "w", "monthly": "m", "annual": "a"}
+
+
+def dnav_file(req, params) -> dict | None:
+    """The keyless file that holds this request's rows ({"request", "url", "filename"}), None when there is none:
+    a data request of a petroleum route for exactly one series, the value column and no other facet."""
+    if (req.get("endpoint") or "data") != "data":
+        return None
+    p = params
+    route = norm_route(p.get("route"))
+    facets = p.get("facets") or {}
+    series = facets.get("series")
+    series = series if isinstance(series, list) else [series]
+    data = p.get("data") or ["value"]
+    freq = p.get("frequency") or (_entry(route) or {}).get("default_frequency")
+    if (not route.startswith("petroleum/") or set(facets) != {"series"} or len(series) != 1
+            or not re.fullmatch(r"[A-Za-z0-9_]+", str(series[0] or "")) or freq not in DNAV_FREQ
+            or ([data] if isinstance(data, str) else list(data)) != ["value"]
+            or any(p.get(k) is not None for k in ("state", "msn"))):
+        return None
+    fn = f"{series[0]}{DNAV_FREQ[freq]}.xls"
+    return {"request": req["name"], "url": DNAV_URL + fn, "filename": fn, "frequency": freq}
+
+
+def keyless_files(spec, pack) -> list[dict]:
+    """The keyless files that hold every request of the spec; [] when one request has none or xlrd (which reads
+    them) is not installed, so --check never offers a file --ingest could not read."""
     from core import generic_rest as gr
-    ep, _, _ = gr.resolve(pack, req)
+    try:
+        import xlrd  # noqa: F401
+    except ImportError:
+        return []
+    files = []
+    for r in spec.get("requests") or []:
+        _, params, probs = gr.resolve(pack, r)
+        f = None if probs else dnav_file(r, params)
+        if not f:
+            return []
+        files.append(f)
+    return files
+
+
+def _dnav_rows(path, req, params) -> list[dict]:
+    from core.http import DataError
+    name, fn = req["name"], os.path.basename(path)
+    want = dnav_file(req, params)
+    if not want:
+        raise DataError(f"request {name!r}: {fn} is an EIA history file, which holds one petroleum series at one "
+                        "frequency: the request must give a petroleum route, facets {\"series\": [one id]} and no "
+                        "other facet", kind="bad_request")
+    if not fn.lower().startswith(want["filename"][:-4].lower()):
+        raise DataError(f"request {name!r}: {fn} is not {want['filename']} (the series and frequency letter "
+                        "d/w/m/a must match the request)", kind="bad_request")
+    try:
+        import xlrd
+    except ImportError:
+        raise DataError(f"request {name!r}: reading {fn} needs the Python package xlrd, which is not installed. "
+                        "Install it if the network allows (pip install xlrd), or upload the API's JSON instead "
+                        "(manual_download/INSTRUCTIONS.md)", kind="install_deps")
+    try:
+        book = xlrd.open_workbook(path)
+        sh = book.sheet_by_name("Data 1")
+        keys = [str(c.value).strip() for c in sh.row(1)]
+    except Exception as e:  # not an Excel 97 workbook, no "Data 1" sheet, a truncated download
+        raise DataError(f"request {name!r}: cannot read {fn} as an EIA history file ({type(e).__name__}: {e})",
+                        kind="bad_request")
+    series = params["facets"]["series"]
+    series = str(series[0] if isinstance(series, list) else series)
+    if keys[:1] != ["Sourcekey"] or series not in keys:
+        raise DataError(f"request {name!r}: {fn} has no Sourcekey {series} in sheet Data 1", kind="bad_request")
+    col = keys.index(series)
+    desc = str(sh.cell_value(2, col)).strip()
+    units = re.search(r"\(([^()]*)\)\s*$", desc)
+    freq = want["frequency"]
+    lo, hi = (whole_year(params.get(k), freq, k) for k in ("start", "end"))
     rows = []
-    for p in sorted(paths):
+    for i in range(3, sh.nrows):
+        d, v = sh.cell(i, 0), sh.cell(i, col)
+        if d.ctype != xlrd.XL_CELL_DATE or v.ctype in (xlrd.XL_CELL_EMPTY, xlrd.XL_CELL_BLANK):
+            continue
+        y, m, day = xlrd.xldate_as_tuple(d.value, book.datemode)[:3]
+        period = {"annual": f"{y:04d}", "monthly": f"{y:04d}-{m:02d}"}.get(freq, f"{y:04d}-{m:02d}-{day:02d}")
+        if (lo and period < str(lo)[:len(period)]) or (hi and period > str(hi)[:len(period)]):
+            continue
+        value = format(v.value, ".15g") if v.ctype == xlrd.XL_CELL_NUMBER else str(v.value).strip()
+        rows.append({"period": period, "series": series, "series-description": desc, "value": value,
+                     "units": units.group(1) if units else ""})
+    if not rows and not req.get("allow_empty"):
+        raise DataError(f"request {name!r}: {fn} has no value between {lo or 'the start'} and {hi or 'the end'}",
+                        kind="bad_request")
+    sort = params.get("sort") or "period:desc"
+    asc = "asc" in str(sort if isinstance(sort, str) else sort[0].get("direction", "desc")).lower()
+    return sorted(rows, key=lambda r: r["period"], reverse=not asc)
+
+
+def parse_upload(pack, req, paths):
+    """API pages saved as JSON (the manual route), or the series' dnav history file (.xls as downloaded)."""
+    from core import generic_rest as gr
+    ep, params, _ = gr.resolve(pack, req)
+    rows = []
+    for p in sorted(set(paths)):          # pages of one request may all match the same history file
+        if p.lower().endswith(".xls"):
+            rows += _dnav_rows(p, req, params)
+            continue
         with open(p, "rb") as f:
             doc = json.loads(f.read().decode("utf-8-sig"))
         rows += gr.dig(doc, ep.get("records", "response.data")) or []

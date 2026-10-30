@@ -7,5 +7,9 @@
  "GET https://api.eia.gov/v2/electricity/retail-sales/data/?data%5B0%5D=price&facets%5Bbogus%5D%5B%5D=X&sort%5B0%5D%5Bcolumn%5D=period&sort%5B0%5D%5Bdirection%5D=desc&frequency=annual&start=2024&length=5000&offset=0": {
   "file": "r006.json",
   "status": 400
+ },
+ "GET https://api.eia.gov/v2/petroleum/pri/gnd/data/?data%5B0%5D=value&facets%5Bseries%5D%5B%5D=EMM_EPMR_PTE_NUS_DPG&sort%5B0%5D%5Bcolumn%5D=period&sort%5B0%5D%5Bdirection%5D=desc&frequency=monthly&start=2024-01&end=2024-12&length=5000&offset=0": {
+  "file": "doc_429.json",
+  "status": 429
  }
 }

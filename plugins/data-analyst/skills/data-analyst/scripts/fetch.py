@@ -55,7 +55,7 @@ from core import manual, package, packfiles, packs, routes  # noqa: E402
 from core import policy as pol  # noqa: E402
 from core.env import detect_environment  # noqa: E402
 from core.http import SOURCES, DataError  # noqa: E402
-from core.keys import redact  # noqa: E402
+from core.keys import find_auth_key, redact  # noqa: E402
 
 HERE = os.path.abspath(__file__)
 PARALLEL = 4                                    # sources checked or fetched at once in a plan
@@ -205,7 +205,9 @@ def std_check(pack, spec, spec_path, out, env, force, failed=None, bundle=True) 
     return routes.route_check(pack, spec, spec_path, out, env, force=force, key_only_needs=key_only(pack, spec),
                               ping=std_ping(pack), spec_problems=spec_problems(pack, spec),
                               manual_items=(lambda: items_for(pack, spec)) if bundle else None,
-                              failed=failed if failed is not None else refused(pack, spec))
+                              failed=failed if failed is not None else refused(pack, spec),
+                              keyless_files=(lambda: pack.adapter.keyless_files(spec, pack))
+                              if pack.has("keyless_files") else None)
 
 
 def std_fetch(pack, spec, spec_path, out, env, force, route_name="api") -> dict:
@@ -219,7 +221,9 @@ def std_fetch(pack, spec, spec_path, out, env, force, route_name="api") -> dict:
         else:
             tables, notes = gr.fetch(pack, spec)
     except DataError as e:
-        if e.kind in ("network", "key_missing", "auth", "blocked"):
+        a = pack.policy["auth"]
+        demo_spent = e.kind == "rate" and a.get("demo_key") and not find_auth_key(a)[0]
+        if e.kind in ("network", "key_missing", "auth", "blocked") or demo_spent:
             r = std_check(pack, spec, spec_path, out, env, force,
                           failed={"route": route_name, "kind": e.kind, "error": str(e)})
             r.update(status="blocked", error=str(e), kind=e.kind)
@@ -253,6 +257,9 @@ def std_ingest(pack, spec, out, paths) -> dict:
     if missing:
         emit({"status": "incomplete", "source": pack.id, "missing": missing,
               "message": "Some expected files were not found in the upload; ask the user for them."}, routes.EXIT_BLOCKED)
+    # every file is an item's alt_filenames (the agency's keyless file under its published name): the keyless_file route
+    alt = {a.lower() for it in items for a in it.get("alt_filenames") or ()}
+    route = "keyless_file" if found and all(os.path.basename(p).lower() in alt for p in found.values())         else "manual_download"
     local = manual.copy_in(found, os.path.join(package.data_dir(out, pack.id), "raw"))
     tables = {}
     for r in spec["requests"]:
@@ -263,13 +270,18 @@ def std_ingest(pack, spec, out, paths) -> dict:
             else:
                 tables[r["name"]] = gr.parse_upload(pack, r, files)
         except DataError as e:
+            if e.kind == "install_deps":
+                emit({"status": "blocked", "source": pack.id, "route": "install_deps", "message": str(e)},
+                     routes.EXIT_UNEXPECTED)
             emit({"status": "error", "source": pack.id, "kind": e.kind, "message": str(e)}, routes.EXIT_SPEC)
     tables, spec = gr.merge_for_each(spec, tables), gr.collapse_for_each(spec)
-    res = package.write(out, pack, tables, spec, route="manual_download", acquired="manual_download",
-                        notes=["Files downloaded outside the API route (by the user, or saved from the agency's own "
-                               "site) and ingested: say where they came from in the methods; an API-only notice "
-                               "applies only if they came from the API."])
-    return {"status": "ok", "source": pack.id, "route": "manual_download", "data_dir": res["data_dir"],
+    names = sorted({os.path.basename(p) for p in found.values()})
+    note = (f"The agency's keyless files ({', '.join(names)}) were downloaded and ingested, not the API: say so in "
+            "the methods; an API-only notice does not apply." if route == "keyless_file" else
+            "Files downloaded outside the API route (by the user, or saved from the agency's own site) and ingested: "
+            "say where they came from in the methods; an API-only notice applies only if they came from the API.")
+    res = package.write(out, pack, tables, spec, route=route, acquired=route, notes=[note])
+    return {"status": "ok", "source": pack.id, "route": route, "data_dir": res["data_dir"],
             "tables": [{k: t[k] for k in ("file", "rows")} for t in res["tables"]]}
 
 
@@ -428,7 +440,7 @@ def run_plan(a):
         summary = {"status": "plan_check", "environment": env, "sources": results, "ready": ready,
                    "need_user": [{"source": r.get("source"), "route": r.get("route"), "message": r.get("message"),
                                   "next_command": r.get("next_command"),
-                                  **{k: r[k] for k in ("keyless_alternative", "keyless_file", "ingest_command")
+                                  **{k: r[k] for k in ("keyless_alternative", "keyless_file", "keyless_files", "ingest_command")
                                      if r.get(k)}}
                                  for r in blocked]}
         if manual_groups:

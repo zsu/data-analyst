@@ -353,6 +353,15 @@ class TestHardEvidence(MethodBase):
             write(os.path.join(self.out, "exhibits", "sensitivity.csv"), cols + "top_code,exclude,include," + row + "\n")
             got = [m for c, ok, m in self.check(GOOD) if c == "sensitivity" and not ok]
             self.assertEqual(bool(got), bad, row)
+        # a sign flip is a change even when both headlines are on one side of the threshold (a gain that becomes a
+        # loss, both under a 1.0 cut-off)
+        for row, bad in (("0.5,-0.1,no,1.0", True), ("0.5,-0.1,yes,1.0", False)):
+            write(os.path.join(self.out, "exhibits", "sensitivity.csv"), cols + "top_code,exclude,include," + row + "\n")
+            r, _ = quiet(MA.check_method, GOOD, self.out, F)
+            got = [m for c, ok, m in r if c == "sensitivity" and not ok]
+            self.assertEqual(bool(got), bad, (row, got))
+            if bad:
+                self.assertIn("differ in sign", got[0])
 
     def test_reference_needs_a_saved_snapshot(self):
         os.remove(os.path.join(self.out, "references", "opened.json"))

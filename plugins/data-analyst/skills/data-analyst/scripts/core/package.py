@@ -179,7 +179,7 @@ def write(out: str, pack, tables: dict, spec: dict, route: str, acquired: str = 
     # the citation names the user's own calendar day (an evening in the U.S. is already tomorrow in UTC);
     # request.json and the README keep the exact UTC timestamp
     local_day = datetime.now().astimezone().date().isoformat()
-    cite = pol.citation(P, retrieved=local_day, vintage=vintage, dataset=spec.get("description", ""))
+    cite = pol.citation(P, route=route, retrieved=local_day, vintage=vintage, dataset=spec.get("description", ""))
     if earlier:
         listed = [f"- {pol.local_stamp(e['retrieved'])} ({e['route']}): " + ", ".join(f"`{t['file']}`" for t in e["tables"])
                   + "; spec and requests in request.json `earlier_fetches`"
