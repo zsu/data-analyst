@@ -444,6 +444,16 @@ class TestAnswerGate(MethodBase):
         self.assertEqual(code, 0, printed)
         self.assertIn("AUDIT PASSED", printed)
 
+    def test_every_failing_check_is_printed(self):
+        # a FAIL counted but not printed sent an eval run into the gate's source to find it
+        write(os.path.join(self.out, "exhibits", "sensitivity.csv"),
+              "parameter,base,alternative,headline_base,headline_alt,conclusion_changes\n"
+              "top_code,exclude,include,0.5,0.9,no\n")
+        code, printed = quiet(audit_answer.main, [self.out])
+        self.assertEqual(code, 1)
+        self.assertIn("[FAIL] sensitivity", printed)
+        self.assertIn("not a registered fact", printed)
+
     def test_fails_without_decisions(self):
         os.remove(os.path.join(self.out, "decisions.json"))
         code, printed = quiet(audit_answer.main, [self.out])

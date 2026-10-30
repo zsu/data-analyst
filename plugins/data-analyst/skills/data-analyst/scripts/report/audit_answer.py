@@ -50,7 +50,7 @@ import policyset as PS  # noqa: E402
 import scan_secrets  # noqa: E402
 
 CHECKS = ("facts", "answer", "policy", "questions", "literature", "disclosures", "references", "assumptions",
-          "data_needs", "benchmark", "vintage", "links", "secrets", "replication")
+          "sensitivity", "data_needs", "benchmark", "vintage", "links", "secrets", "replication")
 
 
 # ---------------------------------------------------------------------- the answer text
@@ -1392,7 +1392,7 @@ def main(argv=None) -> int:
     a = ap.parse_args(argv)
     results = audit(a.out, a.online, a.rerun)
     fails = [r for r in results if not r[1]]
-    for check_name in CHECKS:
+    for check_name in dict.fromkeys(CHECKS + tuple(r[0] for r in results)):   # a check missing from CHECKS still prints
         rs = [r for r in results if r[0] == check_name]
         if not rs:
             continue
