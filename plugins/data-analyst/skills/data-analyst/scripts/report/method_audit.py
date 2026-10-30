@@ -17,7 +17,7 @@ parameter).
                                                    #      | "network_blocked", "reason": "(detail)"}]
   "disclosures": {"<question id>": "...", "literature": "..."},   # one line the answer carries per escape
   "references": [{"id": "cpi_hb", "citation": "...", "url": "https://...", "accessed": "2026-10-20",
-                  "opened": true, "used_for": "deflator"}],
+                  "opened": true, "used_for": "deflator", "quote": "(a sentence of the page)"}],
   "assumptions": [{"parameter": "dollar_basis", "value": "...", "basis": "precedent", "evidence": "... [@cpi_hb]",
                    "why_not_empirical": "(judgment only)", "sensitivity": "(judgment only: a parameter in "
                    "exhibits/sensitivity.csv)"}],
@@ -37,17 +37,27 @@ Rules (all FAIL-level):
                or network_blocked
   disclosures  no_user questions and unavailable searches are claims no script can check: each needs a line in
                "disclosures" ({question id or "literature": text}) that the answer or report carries
-  references   citation, URL or DOI, accessed date and opened: true; every [@id] resolves
+  references   citation, URL or DOI, accessed date and opened: true, backed by a snapshot that
+               `fetch.py --cite <url> --id <id> --out <out>` saved (references/opened.json: same URL, file
+               unchanged since); a "quote" must be in that snapshot; every [@id] resolves
   assumptions  basis is one of empirical > literature > precedent > user > judgment (strongest first);
-               empirical, literature and precedent need evidence: empirical names an existing CSV or a
-               registered {{fact}}, literature and precedent cite an opened [@ref]; user points to a question
+               empirical, literature and precedent need evidence: empirical names a registered {{fact}} or an
+               existing CSV whose file name, a column or a row names the parameter; literature and precedent
+               cite an opened [@ref] whose quote was found in its snapshot, and a numeric value from them
+               (an elasticity, a factor, a threshold) states why_not_empirical: the data should estimate it
+               with the literature's model when they can; user points to a question
                the user answered or quotes the request ("request"); judgment states why_not_empirical and
                names its row in exhibits/sensitivity.csv
+  sensitivity  each exhibits/sensitivity.csv row was run, not typed: headline_base and headline_alt are
+               registered facts (or fact_base / fact_alt name them), so --rerun reproduces them; conclusion_changes
+               starts with yes or no and agrees with them (a sign flip, or opposite sides of an optional
+               threshold column, is a change)
   data_needs   every judgment assumption and every benchmark row "not checked" is named in some data_needs
                entry's "improves" (the data that would settle it, with its effect and how to get it); an empty
                list needs a data_needs_note
   benchmark    exhibits/benchmark.csv exists with rows for the headline measures ("not checked" is a valid value;
-               the gate checks the rows given, not that every headline has one);
+               every fact registered with headline=True has a row, by name, label or value, and at least one
+               fact is a headline);
                numeric computed and published agree within the published rounding, or a note column explains
                the difference; no row says it matches when it does not (computed values that are not in
                facts.json are counted as cross-checks, not failed)
@@ -56,6 +66,7 @@ from __future__ import annotations
 
 import csv
 import hashlib
+import html
 import json
 import math
 import os
@@ -63,6 +74,7 @@ import re
 import shutil
 import subprocess
 import sys
+import unicodedata
 
 sys.dont_write_bytecode = True
 
@@ -159,6 +171,147 @@ def _read_csv(path: str) -> tuple[list[str], list[dict]]:
         return list(rd.fieldnames or []), list(rd)
 
 
+# ---- references opened: the snapshot fetch.py --cite saved (scripts/core/cite.py)
+def _opened_log(base: str) -> dict:
+    p = os.path.join(base, "references", "opened.json")
+    try:
+        with open(p, encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return {}
+
+
+def _url_key(u) -> str:
+    u = str(u or "").strip().split("#")[0]
+    return re.sub(r"(?i)^https?://", "", u).rstrip("/").lower()
+
+
+def _words(s: str) -> str:
+    """Text reduced to lowercase words, so a quote from a page's Markdown rendering matches its HTML."""
+    return " ".join(re.sub(r"[\W_]+", " ", unicodedata.normalize("NFKC", html.unescape(s)).lower()).split())
+
+
+def _snapshot_text(path: str) -> str | None:
+    """The words of a saved page; None for a PDF when pypdf is not installed (the quote is then not checked)."""
+    ext = os.path.splitext(path)[1].lower()
+    if ext == ".pdf":
+        try:
+            from pypdf import PdfReader
+        except ImportError:
+            return None
+        try:
+            return " ".join(p.extract_text() or "" for p in PdfReader(path).pages)
+        except Exception:                        # a damaged or encrypted PDF: no text to search
+            return None
+    text = open(path, "rb").read().decode("utf-8", "replace")
+    if ext in (".html", ".xml"):
+        text = re.sub(r"(?is)<(script|style)\b.*?</\1>", " ", text)
+        text = re.sub(r"<[^>]+>", " ", text)
+    return text
+
+
+def _check_opened(rid: str, r: dict, opened: dict, base: str) -> tuple[bool, str, str | None]:
+    """(ok, message, quote): quote is "found", "uncheckable" (a PDF without pypdf) or None (no quote given)."""
+    url = r.get("url") or r.get("doi") or "<url>"
+    e = opened.get(rid)
+    if not e:
+        return False, (f"reference {rid}: \"opened\": true, but references/opened.json has no snapshot of it: open "
+                       f"it with `fetch.py --cite {url} --id {rid} --out <out>` (or add --from-file <path> with the "
+                       "text your own fetch tool returned); never cite what you have not opened"), None
+    if r.get("url") and _url_key(e.get("url")) != _url_key(r["url"]):
+        return False, f"reference {rid}: the snapshot is of {e.get('url')}, not {r['url']}: cite the page you opened", None
+    path = os.path.join(base, str(e.get("file") or ""))
+    if not os.path.isfile(path) or _h(path) != e.get("sha256"):
+        return False, (f"reference {rid}: {e.get('file')} is missing or changed since it was opened: run "
+                       "fetch.py --cite again"), None
+    msg = f"reference {rid}: opened {str(e.get('opened', ''))[:10]} ({e.get('via')})"
+    q = str(r.get("quote") or "").strip()
+    if not q:
+        return True, msg, None
+    if len(_words(q)) < 20:
+        return False, f"reference {rid}: quote {q!r} is too short to identify a passage: give a full sentence", None
+    text = _snapshot_text(path)
+    if text is None:
+        print(f"note: reference {rid}: the quote was not checked ({e.get('file')} is a PDF and pypdf is not installed)")
+        return True, msg + "; quote not checkable", "uncheckable"
+    if _words(q) not in _words(text):
+        return False, (f"reference {rid}: the quote is not in {e.get('file')}: quote the page's own words "
+                       "(an exact sentence, not a paraphrase)"), None
+    return True, msg + "; quote found", "found"
+
+
+def _key(s) -> str:
+    return re.sub(r"[\W_]+", "_", str(s or "").lower()).strip("_")
+
+
+def _csv_names(path: str, param: str, max_rows: int = 5000) -> bool:
+    """The CSV's file name, a column or a cell names the parameter (an empirical estimate's own table)."""
+    k = _key(param)
+    if not k:
+        return False
+    if k in _key(os.path.splitext(os.path.basename(path))[0]):
+        return True
+    with open(path, encoding="utf-8-sig", newline="") as fh:
+        for n, row in enumerate(csv.reader(fh)):
+            if n > max_rows:
+                break
+            if any(_key(c) == k or (n == 0 and k in _key(c)) for c in row):
+                return True
+    return False
+
+
+def _sens_number(s) -> tuple[float, float] | None:
+    """A sensitivity cell as (value, half a unit of its last digit as written): "1.10" -> (1.1, 0.005)."""
+    m = _NUM.match(str(s or "").strip())
+    if not m:
+        return None
+    txt = m.group(1).replace(",", "")
+    return float(txt), 0.5 * 10 ** -len(txt.split(".")[1]) if "." in txt else 0.5
+
+
+def _check_sensitivity(i: int, row: dict, facts: dict) -> tuple[bool, str]:
+    """A sensitivity row is an experiment that was run: both headlines are registered facts (so --rerun
+    reproduces them), and conclusion_changes agrees with them."""
+    label = f"sensitivity.csv line {i} ({row.get('parameter', '')})"
+    values, nums = _fact_values(facts), {}
+    for side in ("base", "alt"):
+        name, cell = str(row.get(f"fact_{side}") or "").strip(), row.get(f"headline_{side}")
+        x = _sens_number(cell)
+        if name:
+            f = facts.get(name)
+            try:
+                v = float((f or {}).get("value"))
+            except (TypeError, ValueError):
+                return False, f"{label}: fact_{side} {name!r} is not a numeric fact in facts.json"
+            if x and not _is_fact(x[0], x[1] + abs(x[0]) * 1e-9, [v]):
+                return False, f"{label}: headline_{side} {cell} is not fact {name} ({v:g})"
+            nums[side] = x[0] if x else v
+            continue
+        if x is None:
+            return False, (f"{label}: headline_{side} {cell!r} is not one number: register the headline under each "
+                           f"alternative as a fact in analysis.py and write it here (or name it in fact_{side})")
+        if not _is_fact(x[0], x[1] + abs(x[0]) * 1e-9, values):
+            return False, (f"{label}: headline_{side} {cell} is not a registered fact: run the "
+                           f"{'alternative' if side == 'alt' else 'base case'} in analysis.py and register its "
+                           f"headline (fact_{side} names it), so the rerun reproduces it")
+        nums[side] = x[0]
+    cc = str(row.get("conclusion_changes") or "").strip().lower()
+    says = "yes" if re.match(r"(yes|true)\b", cc) else "no" if re.match(r"(no|false)\b", cc) else None
+    if says is None:
+        return False, f"{label}: conclusion_changes {cc!r}: start it with yes or no"
+    b, a = nums["base"], nums["alt"]
+    thr = _sens_number(row.get("threshold"))
+    if thr:
+        changes = (b - thr[0]) * (a - thr[0]) < 0
+        if (says == "yes") != changes:
+            return False, (f"{label}: base {b:g} and alternative {a:g} are {'on opposite sides' if changes else 'on the same side'} "
+                           f"of the threshold {thr[0]:g}, so conclusion_changes must be {'yes' if changes else 'no'}")
+    elif says == "no" and b * a < 0:
+        return False, (f"{label}: the headline changes sign ({b:g} to {a:g}), so the conclusion changes: write yes, "
+                       "or give the threshold the conclusion turns on in a threshold column")
+    return True, f"{label}: {b:g} vs {a:g}, conclusion changes: {says}"
+
+
 def check_method(R: dict, base: str, facts: dict) -> list[tuple]:
     """(check, ok, message) for the method record in R (already merged with decisions.json)."""
     out: list[tuple] = []
@@ -234,11 +387,17 @@ def check_method(R: dict, base: str, facts: dict) -> list[tuple]:
             "decisions.json and carry that line in the answer or report")
 
     # ---- references
+    opened, verified = _opened_log(base), {}             # verified: reference id -> quote status
     for rid, r in refs.items():
         miss = [k for k, v in (("citation", r.get("citation")), ("url or doi", r.get("url") or r.get("doi")),
                                ("accessed", r.get("accessed")), ("opened: true", r.get("opened") is True)) if not v]
-        res("references", not miss, f"reference {rid}: ok" if not miss else
-            f"reference {rid}: needs {', '.join(miss)} (never cite what you have not opened)")
+        if miss:
+            res("references", False, f"reference {rid}: needs {', '.join(miss)} (never cite what you have not opened)")
+            continue
+        ok, msg, quote = _check_opened(rid, r, opened, base)
+        res("references", ok, msg)
+        if ok:
+            verified[rid] = quote
     for rid in sorted(cited_refs(json.dumps(R, ensure_ascii=False)) - set(refs)):
         res("references", False, f"[@{rid}] is cited but not in references")
     if not refs:
@@ -248,12 +407,13 @@ def check_method(R: dict, base: str, facts: dict) -> list[tuple]:
     # ---- assumptions
     sens_path = os.path.join(base, "exhibits", "sensitivity.csv")
     sens_rows: dict[str, dict] | None = None
+    sens_list: list[dict] = []
     if os.path.exists(sens_path):
-        cols, rows = _read_csv(sens_path)
+        cols, sens_list = _read_csv(sens_path)
         miss = [c for c in SENS_COLS if c not in cols]
         res("assumptions", not miss, "exhibits/sensitivity.csv: columns ok" if not miss else
             f"exhibits/sensitivity.csv lacks columns {miss}")
-        sens_rows = {r.get("parameter"): r for r in rows}
+        sens_rows = {r.get("parameter"): r for r in sens_list}
     bases: dict[str, int] = {}
     for p, a in asm.items():
         b = (a.get("basis") or "").lower()
@@ -269,11 +429,19 @@ def check_method(R: dict, base: str, facts: dict) -> list[tuple]:
             paths = [x for x in re.findall(r"(?:exhibits|data|published)/[\w./-]+\.csv", ev)
                      if os.path.exists(os.path.join(base, x))]
             fs = [x for x in re.findall(r"\{\{\s*([A-Za-z_]\w*)", ev) if x in facts]
-            ok, why = bool(paths or fs), "name the exhibit, data or published CSV (exhibits/x.csv) or the {{fact}} it was estimated in"
+            ok = bool(fs) or any(_csv_names(os.path.join(base, x), p) for x in paths)
+            why = ("name the {{fact}} that holds the estimate, or a data, exhibit or published CSV whose file name, "
+                   f"a column or a row names the parameter {p!r}: an estimate the evidence cannot point to was not made")
         elif b in ("literature", "precedent"):
             ids = cited_refs(ev)
-            ok = any(i in refs and refs[i].get("opened") is True for i in ids)
-            why = "cite the opened reference it comes from as [@id]"
+            ok = any(i in verified and verified[i] in ("found", "uncheckable") for i in ids)
+            why = ("cite the opened reference it comes from as [@id], with a \"quote\" in that reference: the "
+                   "sentence of the page that supports it (the audit finds it in the saved snapshot)")
+            if ok and _NUM.match(str(a.get("value") or "").strip()) and not str(a.get("why_not_empirical") or "").strip():
+                ok, why = False, ("a number taken from the literature or an agency is a parameter the data may be able "
+                                  "to estimate: fit the model the literature uses in analysis.py (basis empirical, the "
+                                  "published value as a sensitivity row), or state why_not_empirical (the data cannot "
+                                  "identify it, or it is an official definition such as a threshold)")
         elif b == "user":
             q = next((q for q in questions if q.get("assumption") == p or q.get("id") == a.get("question")), None)
             quoted = bool(str(a.get("request") or "").strip())
@@ -287,6 +455,8 @@ def check_method(R: dict, base: str, facts: dict) -> list[tuple]:
             why = ("judgment is the last resort: estimate it from the data or adopt a published estimate; otherwise "
                    "state why_not_empirical and add its row to exhibits/sensitivity.csv (" + ", ".join(SENS_COLS) + ")")
         res("assumptions", ok, f"assumption {p!r}: {b} ok" if ok else f"assumption {p!r} ({b}): {why}")
+    for i, row in enumerate(sens_list, start=2):
+        res("sensitivity", *_check_sensitivity(i, row, facts))
     if not asm:
         res("assumptions", False, "no assumptions: list each key definition and parameter with its basis and evidence")
     # ---- data that would improve the estimates
@@ -384,6 +554,35 @@ def rounding_gap(c: tuple, pb: tuple, pub, note) -> bool:
         abs(c[0] - pb[0]) <= max(10 * pb[1], 0.5 * 10 ** zeros if zeros else 0)
 
 
+def _check_headlines(facts: dict | None, rows: list[dict]) -> list[tuple]:
+    """Every fact registered with headline=True has a benchmark.csv row: its name or label as the measure, or
+    its value as the computed number. A row that says "not checked" counts (data_needs then names it)."""
+    if not facts:
+        return []
+    heads = {n: f for n, f in facts.items() if (f or {}).get("headline")}
+    if not heads:
+        return [("benchmark", False, "no headline facts: register the numbers the answer leads with using "
+                                     "facts.add(..., headline=True); each needs a benchmark.csv row")]
+    out = []
+    for n, f in heads.items():
+        keys = {_key(n), _key(f.get("label"))} - {""}
+        try:
+            v = [float(f.get("value"))]
+        except (TypeError, ValueError):
+            v = []
+        hit = False
+        for r in rows:
+            c = bench_number(r.get("computed"))
+            if _key(r.get("measure")) in keys or (c and v and _is_fact(c[0], max(c[1], abs(c[0]) * 1e-9), v)):
+                hit = True
+                break
+        out.append(("benchmark", hit, f"headline {n}: benchmarked" if hit else
+                    f"headline {n}: no benchmark.csv row: compare it with the agency's published figure (measure = "
+                    f"{n} or its label, computed = its value), or add a row with published \"not checked\" and a "
+                    "data_needs entry for it"))
+    return out
+
+
 def check_benchmark(base: str, facts: dict | None = None) -> list[tuple]:
     """benchmark.csv exists with rows; each numeric computed/published pair agrees within the published
     figure's rounding (or 0.0001 percent, for levels summed from rounded parts) unless a note explains the
@@ -454,6 +653,7 @@ def check_benchmark(base: str, facts: dict | None = None) -> list[tuple]:
                                             f"than rounding (±{pb[1]:g}); find the cause and fix it, or add a note "
                                             "column explaining the difference (definition, vintage, universe) and say "
                                             "so in the answer"))
+    out += _check_headlines(facts, rows)
     if uncited and not any(not ok for _, ok, _ in out):
         print(f"note: benchmark.csv has {uncited} computed value(s) not in facts.json: fine for cross-checks; the "
               "headline numbers the answer cites should be registered facts")

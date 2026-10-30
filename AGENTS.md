@@ -27,6 +27,14 @@ One Agent Skills skill (`plugins/data-analyst/skills/data-analyst/`, shipped as 
 - Hard limits in tests/test_structure.py: SKILL.md description <= 1024 chars (claude.ai rejects longer) and
   body <= 500 lines (Anthropic guidance); fixtures < 200 KB. source.md length is guidance only.
 - Never write inside the skill folder at run time; never print or store keys; never invent data.
+- Prefer a gate to a sentence: when a script can check the substance of a SKILL.md rule (not just that a field
+  is filled), enforce it in `scripts/report/` with a FAIL that says what to do, and add a test that the gate
+  fails on the real mistake. Evidence a tool writes (`specs/checked.json`, `references/opened.json`, facts
+  reproduced by `--rerun`) beats evidence the agent types. Rules only judgment can check stay prose and get an
+  eval criterion.
+- A behavioral change to SKILL.md or a source.md ships with an eval result: the changed skill vs `main` on the
+  affected cases in `evals/data-analyst/evals.json`, at least 3 runs each (rsi-data-analyst `--test`), with a
+  deterministic-check pass rate no worse. Each bug fixed adds a case.
 - Maintainer skill `rsi-data-analyst` lives in its own project, `C:\zsu\Projects\rsi-data-analyst` (not in this repo or the plugin).
   Load it with `claude --plugin-dir C:\zsu\Projects\rsi-data-analyst` and run `/rsi-data-analyst:rsi-data-analyst [ids] [--repo <this repo>] [--test]`
   (it finds this checkout from `--repo`, env `DATA_ANALYST_REPO` or the working directory, else asks). It checks packs live and against

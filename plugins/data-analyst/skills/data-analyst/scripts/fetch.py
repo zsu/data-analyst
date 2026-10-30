@@ -27,6 +27,9 @@ exit code 0 or no exit) is recorded in <out>/specs/checked.json; a fetch of a sp
 Hand-off (data-only replies; the route and date lines of any product)
   python fetch.py --handoff --out <out>    # per source: files, rows, route, retrieval date, preview, as Markdown
 
+References (decisions.json "opened": true is accepted only for a page saved this way)
+  python fetch.py --cite <url> --id <ref id> --out <out> [--from-file <text your fetch tool returned>]
+
 Common options: --env local|ssh|cloud|sandbox (override the guess), --force (download again), --no-cache.
 Exit codes: 0 ok; 2 source or spec error; 3 unexpected error or missing dependency; 4 blocked (follow the
 printed route). Never invent data when a source cannot be reached: follow the route.
@@ -47,7 +50,7 @@ sys.dont_write_bytecode = True  # never write __pycache__ into the skill folder 
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from core import generic_rest as gr  # noqa: E402
-from core import handoff  # noqa: E402
+from core import cite, handoff  # noqa: E402
 from core import manual, package, packfiles, packs, routes  # noqa: E402
 from core import policy as pol  # noqa: E402
 from core.env import detect_environment  # noqa: E402
@@ -501,7 +504,15 @@ def main():
     ap.add_argument("--ingest", nargs="*")
     ap.add_argument("--env")
     ap.add_argument("--handoff", action="store_true")
+    ap.add_argument("--cite")
+    ap.add_argument("--id")
+    ap.add_argument("--from-file")
     a = ap.parse_args(argv)
+    if a.cite:
+        if not (a.out and a.id):
+            ap.error("--cite needs --id (the reference id) and --out")
+        r = cite.cite(a.cite, a.id, a.out, a.from_file)
+        emit(r, 0 if r["status"] == "ok" else routes.EXIT_BLOCKED)
     if a.handoff:
         if not a.out:
             ap.error("--handoff needs --out")

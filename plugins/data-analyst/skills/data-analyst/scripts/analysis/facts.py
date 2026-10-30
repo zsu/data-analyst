@@ -5,7 +5,7 @@ builder fills {{name}} / {{name|fmt}} placeholders from it and the audit traces 
     F = Facts(OUT)                                      # OUT = the analysis folder (holds data/<id>/)
     save_exhibit(ex1, OUT, "exhibits/exhibit_1.csv", packs=["bls"])   # CSV + its data lineage
     F.add("unemp_latest", ex1, where={"period": "Sep 2026"}, column="rate", source="exhibits/exhibit_1.csv",
-          fmt="pct100:1", label="Unemployment rate, September 2026", preliminary=True)
+          fmt="pct100:1", label="Unemployment rate, September 2026", preliminary=True, headline=True)
     F.add("gap_ratio", value=a / b, derivation="unemp_latest / payroll_growth", fmt="ratio:2", pack=["bls", "bea"])
     F.save()
 
@@ -14,7 +14,8 @@ table value that differs from the cell beyond its printed precision raises (save
 first). A derived fact needs value= and derivation=. NaN values (gaps in the data) are refused.
 
 Each record holds label, fmt, value, source = the CSV path, where, column, derivation, se, and
-the flags preliminary / vintage / projection, which the audit requires the prose to state) plus:
+the flags preliminary / vintage / projection, which the audit requires the prose to state, and headline
+(each headline fact needs a benchmark.csv row) plus:
   pack   the source pack(s) the number comes from (the data/<id>/ folder): the pack= argument; else the
          Facts(out, pack=) default; else the folder when the CSV lies under data/<id>/; else the exhibit's
          lineage (save_exhibit / lineage(), or table.attrs["packs"]); else the only data/<id>/ folder in <out>.
@@ -191,10 +192,11 @@ class Facts:
     def add(self, name: str, table: pd.DataFrame | None = None, *, where: dict | None = None,
             column: str | None = None, source: str | None = None, value=None, fmt: str = "raw",
             label: str = "", derivation: str = "", se: float | None = None, preliminary: bool = False,
-            vintage: str | None = None, projection: bool = False, pack=None):
+            vintage: str | None = None, projection: bool = False, pack=None, headline: bool = False):
         """preliminary: an early estimate its agency will revise; vintage: the vintage the value comes from
         when not the latest; projection: a projection, not data. The audit requires the text to say so where
-        such a fact is cited. pack: the source pack id (or ids) the number comes from."""
+        such a fact is cited. pack: the source pack id (or ids) the number comes from. headline: a number the
+        answer leads with; the audit requires a benchmark.csv row for it (published figure or "not checked")."""
         if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name):
             raise ValueError(f"fact name {name!r}: letters, digits and _ only")
         format_value(1.0, fmt)                       # an unknown format fails here, not in the report build
@@ -273,6 +275,8 @@ class Facts:
             rec["vintage"] = str(vintage)
         if projection:
             rec["projection"] = True
+        if headline:
+            rec["headline"] = True
         packs = self._infer_pack(name, pack, table, rec.get("source"))
         if packs:
             rec["pack"] = packs[0] if len(packs) == 1 else packs

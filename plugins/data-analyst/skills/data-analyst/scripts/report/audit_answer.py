@@ -13,11 +13,13 @@ that apply without a page. FAIL-level checks (exit code 1 if any fails):
                not asked only with reason_code no_user or settled_by_request (quoting the request)
   literature   the searches run (query, date, what was found), or reason_code no_search_tool / network_blocked
   disclosures  each no_user question and unavailable search has a line in "disclosures" for the answer to carry
-  references   citation, URL or DOI, accessed date, opened; every [@id] resolves
-  assumptions  basis empirical > literature > precedent > user > judgment with its evidence; judgment states
-               why_not_empirical and has its row in exhibits/sensitivity.csv
+  references   citation, URL or DOI, accessed date, opened (a page fetch.py --cite saved, unchanged; its quote
+               is on it); every [@id] resolves
+  assumptions  basis empirical > literature > precedent > user > judgment with its evidence; a borrowed number
+               and a judgment state why_not_empirical; judgment has its row in exhibits/sensitivity.csv
+  sensitivity  each sensitivity.csv row's headlines are registered facts and conclusion_changes agrees with them
   benchmark    exhibits/benchmark.csv compares the headline numbers with published figures: numeric pairs agree
-               within the published rounding or a note explains the difference
+               within the published rounding or a note explains the difference; every headline=True fact has a row
   vintage      every source in data/<id>/ has its provenance file (route and retrieval date); every table read
                by hand from an agency page, in published/<name>.csv, gives source_url and accessed on each row
   links        with --online every external link in decisions.json answers HTTP < 400

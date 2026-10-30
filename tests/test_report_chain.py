@@ -28,6 +28,7 @@ for _p in (os.path.join(SCRIPTS, "analysis"), os.path.join(SCRIPTS, "report"), S
 
 import pandas as pd  # noqa: E402
 
+from core import cite  # noqa: E402
 from core import policy as pol  # noqa: E402
 import audit_report  # noqa: E402
 import build_report  # noqa: E402
@@ -97,7 +98,7 @@ F = Facts(OUT)
 F.add("alpha_first", ex1, where={"year": "2022"}, column="value", source="exhibits/exhibit_1.csv", fmt="pct100:1",
       label="Alpha rate, 2022")
 F.add("alpha_last", ex1, where={"year": "2024"}, column="value", source="exhibits/exhibit_1.csv", fmt="pct100:1",
-      label="Alpha rate, 2024", preliminary=True)
+      label="Alpha rate, 2024", preliminary=True, headline=True)
 F.add("alpha_change", value=alphastats.change(ex1["value"]), derivation="alpha_last - alpha_first", fmt="pp100:1",
       pack="alpha", label="Change in the alpha rate")
 F.add("beta_rate_x", ex2, where={"group": "X"}, column="rate", source="exhibits/exhibit_2.csv", fmt="pct:0",
@@ -152,7 +153,8 @@ REPORT = {
     "assumptions": [{"parameter": "Year basis", "value": "Calendar years", "basis": "precedent",
                      "evidence": "The test documentation reports calendar years [@alpha_doc]."}],
     "references": [{"id": "alpha_doc", "label": "Alpha 2026", "citation": "Alpha Test Agency, *Test Documentation* (2026)",
-                    "url": "https://example.org/alpha/doc", "accessed": "2026-10-20", "opened": True}],
+                    "url": "https://example.org/alpha/doc", "accessed": "2026-10-20", "opened": True,
+                    "quote": "The alpha rate is reported for calendar years."}],
     "about": "This document was prepared to test the report chain of the data-analyst skill.",
     "data_files": [{"label": "Alpha observations (CSV)", "path": "data/alpha/obs.csv"},
                    {"label": "Beta codebook (CSV)", "path": "data/beta/codebook.csv"}],
@@ -234,6 +236,9 @@ def make_out(out):
     write(os.path.join(out, "report.json"), REPORT)
     write(os.path.join(out, "decisions.json"), DECISIONS)
     write(os.path.join(out, "exhibits", "benchmark.csv"), BENCHMARK)
+    page = os.path.join(out, "alpha_doc.md")
+    write(page, "# Test Documentation\n\nThe alpha rate is reported for calendar years.\n")
+    assert cite.cite("https://example.org/alpha/doc", "alpha_doc", out, from_file=page)["status"] == "ok"
 
 
 def run_analysis(out):
