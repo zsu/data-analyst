@@ -16,6 +16,7 @@ endpoints.json:
       "description": "...",
       "params": {"dataset": {"in": "path", "required": true, "desc": "...", "catalog": true},
                  # "in": "query" (default for GET) | "path" | "body" (default for POST) | "spec" (never sent)
+                 # "flag": true: a query flag with no value (?hasKev), sent only when the spec gives true
                  "$where": {"desc": "SoQL filter"}, "state": {"desc": "...", "enum": [...]}},
       "defaults": {"$order": ":id"},        # sent unless the spec overrides them
       "body": {...},                         # POST body template (spec params with in=body merge into it)
@@ -153,9 +154,14 @@ def split(ep: dict, params: dict) -> tuple[str, dict, dict | None]:
     pdefs = ep.get("params") or {}
     path = ep["path"]
     query, body = {}, (json.loads(json.dumps(ep["body"])) if ep.get("body") is not None else None)
+    flags = []
     for k, v in params.items():
         where = (pdefs.get(k) or {}).get("in", "body" if ep.get("method") == "POST" else "query")
         if where == "spec":                          # read by the adapter, never sent
+            continue
+        if (pdefs.get(k) or {}).get("flag"):         # a bare query flag (?hasKev): sent when true, never with a value
+            if v is True or str(v).strip().lower() in ("true", "1", "yes"):
+                flags.append(urllib.parse.quote(k))
             continue
         if where == "path" or "{" + k + "}" in path:
             raw = (pdefs.get(k) or {}).get("raw")          # "raw": true keeps slashes (Census dataset paths)
@@ -165,6 +171,8 @@ def split(ep: dict, params: dict) -> tuple[str, dict, dict | None]:
             body[k] = v
         else:
             query[k] = v
+    if flags:
+        path += ("&" if "?" in path else "?") + "&".join(flags)
     return path, query, body
 
 
