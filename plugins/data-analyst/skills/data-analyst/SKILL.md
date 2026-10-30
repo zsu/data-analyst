@@ -87,9 +87,12 @@ answer that the figure was read from that page.
 Before choosing definitions and parameters, search for the agency's methodology (handbook, technical notes,
 release notes) and for agency or peer-reviewed research behind any parameter the answer needs (thresholds,
 elasticities, equivalence scales, multipliers, adjustment factors). Use a web search or fetch tool when one
-is available. Open what you cite. Record each query, its date and what it found in `decisions.json` →
+is available. Open what you cite with `python <skill>/scripts/fetch.py --cite <url> --id <ref id> --out <out>`,
+which saves the page (when Python cannot reach it but your fetch tool can, save the text the tool returned and
+add `--from-file <path>`). Record each query, its date and what it found in `decisions.json` →
 `literature_search`, with an empty `found` and a note when nothing relevant turned up. Record each opened
-source in `references` (`citation`, `url`, `accessed`, `opened: true`, `used_for`). A search or fetch tool
+source in `references` (`citation`, `url`, `accessed`, `opened: true`, `used_for`, `quote`: the page's own
+sentence that supports the use). The audit accepts `opened: true` only with the saved page, and finds the quote in it. A search or fetch tool
 you can load (a deferred tool) counts as available. Only with none, or a network that blocks them all, record
 `{"unavailable": true, "reason_code": "no_search_tool" | "network_blocked" | "tool_unavailable"}` plus `disclosures.literature`, the
 line the answer carries. Never cite what you have not opened.
@@ -176,7 +179,7 @@ number the text will cite:
 ```python
 facts = Facts(OUT)
 facts.add("debt_gdp_fy2025", t, where={"fiscal_year": 2025}, column="pct", source="exhibits/exhibit_1.csv",
-          fmt="pct100:1", label="Debt held by the public, percent of GDP, FY2025", pack="treasury")
+          fmt="pct100:1", label="Debt held by the public, percent of GDP, FY2025", pack="treasury", headline=True)
 facts.save()
 ```
 Accuracy checklist (each item prevents a silent error):
@@ -194,11 +197,20 @@ Accuracy checklist (each item prevents a silent error):
 - **Benchmark**: compare each headline with the agency's published figure and say whether it matches.
 - **Evidence before judgment**: give each key definition and parameter a basis in `decisions.json` →
   `assumptions`, from strongest to weakest: **empirical** (estimate it from the data in `analysis.py`; the
-  evidence names the exhibit CSV or `{{fact}}`), **literature** or **precedent** (a published estimate or the
-  agency's practice, cited as an opened `[@ref]`; a pack's `source.md` is a guide, so cite the agency or IPUMS
-  page it names), **user** (the user's answer). Use **judgment** only when none
-  of these can settle it. Then state `why_not_empirical`, run the alternative, and record the row in
-  `exhibits/sensitivity.csv` (parameter, base, alternative, headline_base, headline_alt, conclusion_changes).
+  evidence names the `{{fact}}` holding the estimate, or a CSV whose name, a column or a row names the
+  parameter), **literature** or **precedent** (a published estimate or the agency's practice, cited as an
+  opened `[@ref]` with its `quote`; a pack's `source.md` is a guide, so cite the agency or IPUMS page it
+  names), **user** (the user's answer). Use **judgment** only when none of these can settle it.
+- **Estimate, don't borrow**: when a parameter is a quantity the data can estimate (an elasticity, a
+  pass-through or take-up rate, a trend, a seasonal or adjustment factor), fit the model the literature uses
+  (its specification, cited) in `analysis.py`, register the estimate with its `se=`, and use the published
+  value as the sensitivity alternative. A number taken from the literature or an agency needs `why_not_empirical`
+  (the data cannot identify it, or it is an official definition such as a threshold).
+- **Sensitivity is an experiment**: for each judgment call, and each alternative that could change the
+  conclusion, run the alternative in `analysis.py`, register its headline as a fact, and record the row in
+  `exhibits/sensitivity.csv` (parameter, base, alternative, headline_base, headline_alt, conclusion_changes:
+  yes or no; optional fact_base, fact_alt, threshold). The audit requires both headlines to be registered facts
+  and `conclusion_changes` to agree with them (a sign flip, or the two sides of `threshold`, is a change).
 - **Data that would improve it**: in `decisions.json` → `data_needs`, list the data that would replace each
   judgment call or unchecked benchmark (`data`, `improves`: the parameters or measures, `effect`, `how_to_get`,
   `from_user`: true when only the user has it). Use `[]` plus a `data_needs_note` when nothing would help.
@@ -206,7 +218,7 @@ Accuracy checklist (each item prevents a silent error):
   accessed, match, note), one number per cell in the published figure's units (a bound as `over 45`). The audit compares computed
   with published within the published rounding: a larger gap needs a `note` with its cause (definition,
   vintage, universe), stated in the answer; otherwise find the error. Write "not checked" in `published` when
-  no published figure exists.
+  no published figure exists. Register the numbers the answer leads with as `headline=True`: each needs a row.
 - Each source's own traps are in its `source.md`. Read them.
 
 ## 5. Combining sources

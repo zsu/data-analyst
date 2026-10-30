@@ -14,6 +14,7 @@ import io
 import json
 import os
 import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -27,6 +28,7 @@ for _p in (os.path.join(SCRIPTS, "analysis"), os.path.join(SCRIPTS, "report"), S
 
 import audit_answer  # noqa: E402
 import method_audit as MA  # noqa: E402
+from core import cite  # noqa: E402
 
 DK = "Don't know — decide for me"
 GOOD = {
@@ -42,7 +44,8 @@ GOOD = {
                           {"query": "regional wage deflators", "date": "2026-10-20", "found": [],
                            "note": "nothing beyond the handbook"}],
     "references": [{"id": "cpi_hb", "citation": "Test Agency, *Handbook of Methods*", "url": "https://example.org/hb",
-                    "accessed": "2026-10-20", "opened": True, "used_for": "deflator"}],
+                    "accessed": "2026-10-20", "opened": True, "used_for": "deflator",
+                    "quote": "Wages are deflated with the CPI-U."}],
     "assumptions": [
         {"parameter": "deflator", "value": "CPI-U", "basis": "precedent", "evidence": "The agency deflates wages "
          "with the CPI-U [@cpi_hb]."},
@@ -57,10 +60,12 @@ GOOD = {
                     "effect": "an empirical top-code adjustment", "how_to_get": "your payroll file", "from_user": True}],
 }
 SENS = ("parameter,base,alternative,headline_base,headline_alt,conclusion_changes\n"
-        "top_code,exclude,include,1.0,1.1,no\n")
+        "top_code,exclude,include,0.5,0.42,no\n")
 BENCH = "measure,period,computed,published,source\nslope,2024,0.5,0.5,Test Agency\n"
 FACTS = {"slope": {"value": 0.5, "source": "exhibits/trend.csv", "where": {"year": "2024"}, "column": "slope",
-                   "pack": "bls"}}
+                   "pack": "bls", "headline": True},
+         "slope_incl": {"value": 0.42, "derivation": "trend refit with top-coded rows included", "pack": "bls"}}
+HANDBOOK = "<html><body><h1>Handbook</h1><p>Wages are deflated with the CPI-U.</p></body></html>"
 
 ANALYSIS = r'''import json, os
 OUT = os.path.dirname(os.path.abspath(__file__))
@@ -69,7 +74,9 @@ with open(os.path.join(OUT, "exhibits", "trend.csv"), "w", newline="\n") as f:
     f.write("year,slope\n2024,0.5\n")
 with open(os.path.join(OUT, "facts.json"), "w") as f:
     json.dump({"slope": {"value": 0.5, "source": "exhibits/trend.csv", "where": {"year": "2024"},
-               "column": "slope", "pack": "bls"}}, f)
+               "column": "slope", "pack": "bls", "headline": True},
+               "slope_incl": {"value": 0.42, "derivation": "trend refit with top-coded rows included",
+                              "pack": "bls"}}, f)
 '''
 
 
@@ -95,6 +102,9 @@ class MethodBase(unittest.TestCase):
         write(os.path.join(self.out, "exhibits", "trend.csv"), "year,slope\n2024,0.5\n")
         write(os.path.join(self.out, "exhibits", "sensitivity.csv"), SENS)
         write(os.path.join(self.out, "exhibits", "benchmark.csv"), BENCH)
+        page = os.path.join(self.out, "hb.html")
+        write(page, HANDBOOK)
+        self.assertEqual(cite.cite("https://example.org/hb", "cpi_hb", self.out, from_file=page)["status"], "ok")
 
     def tearDown(self):
         shutil.rmtree(self.out, ignore_errors=True)
@@ -310,6 +320,107 @@ class TestMethodRules(MethodBase):
         self.assertEqual(len(R["assumptions"]), 4)
         self.assertEqual(R["references"][0]["id"], "cpi_hb")
         self.assertEqual(len(R["questions"]), 2)
+
+
+class TestHardEvidence(MethodBase):
+    """Gates that check the substance of a claim: a sensitivity that was run, a page that was saved, a quote
+    that is on it, an estimate the evidence points to, a benchmark for every headline."""
+
+    def sens(self, *rows, cols="parameter,base,alternative,headline_base,headline_alt,conclusion_changes"):
+        write(os.path.join(self.out, "exhibits", "sensitivity.csv"), cols + "\n" + "".join(r + "\n" for r in rows))
+        return [m for c, ok, m in self.check(GOOD) if c == "sensitivity" and not ok]
+
+    def test_sensitivity_must_be_registered_facts(self):
+        self.assertEqual(self.sens("top_code,exclude,include,0.5,0.42,no"), [])
+        self.assertTrue(any("not a registered fact" in m for m in self.sens("top_code,exclude,include,0.5,0.9,no")))
+        self.assertTrue(any("not one number" in m for m in self.sens("top_code,exclude,include,0.5,higher,no")))
+        cols = "parameter,base,alternative,headline_base,headline_alt,conclusion_changes,fact_base,fact_alt"
+        self.assertEqual(self.sens("top_code,exclude,include,,,no,slope,slope_incl", cols=cols), [])
+        self.assertTrue(any("fact_alt" in m for m in self.sens("top_code,exclude,include,,,no,slope,nope", cols=cols)))
+        self.assertTrue(any("is not fact" in m for m in self.sens("top_code,exclude,include,0.5,0.6,no,slope,slope_incl",
+                                                                  cols=cols)))
+
+    def test_conclusion_changes_must_agree_with_the_numbers(self):
+        F = {**FACTS, "neg": {"value": -0.1, "derivation": "x", "pack": "bls"}}
+        write(os.path.join(self.out, "exhibits", "sensitivity.csv"),
+              "parameter,base,alternative,headline_base,headline_alt,conclusion_changes\n"
+              "top_code,exclude,include,0.5,-0.1,no\n")
+        r, _ = quiet(MA.check_method, GOOD, self.out, F)
+        self.assertTrue(any("changes sign" in m for c, ok, m in r if c == "sensitivity" and not ok))
+        cols = "parameter,base,alternative,headline_base,headline_alt,conclusion_changes,threshold\n"
+        for row, bad in (("0.5,0.42,no,0.45", True), ("0.5,0.42,yes,0.45", False), ("0.5,0.42,no,0.4", False),
+                         ("0.5,0.42,maybe,", True)):
+            write(os.path.join(self.out, "exhibits", "sensitivity.csv"), cols + "top_code,exclude,include," + row + "\n")
+            got = [m for c, ok, m in self.check(GOOD) if c == "sensitivity" and not ok]
+            self.assertEqual(bool(got), bad, row)
+
+    def test_reference_needs_a_saved_snapshot(self):
+        os.remove(os.path.join(self.out, "references", "opened.json"))
+        bad = fails(self.check(GOOD))
+        self.assertTrue(any(c == "references" and "fetch.py --cite" in m for c, _, m in bad))
+        self.assertTrue(any(c == "assumptions" and "deflator" in m for c, _, m in bad))
+
+    def test_snapshot_must_be_unchanged_and_of_the_cited_url(self):
+        with open(os.path.join(self.out, "references", "cpi_hb.html"), "a", encoding="utf-8") as f:
+            f.write("<p>edited</p>")
+        self.assertTrue(any("changed" in m for _, _, m in fails(self.check(GOOD), "references")))
+        cite.cite("https://example.org/other", "cpi_hb", self.out, from_file=os.path.join(self.out, "hb.html"))
+        self.assertTrue(any("not https://example.org/hb" in m for _, _, m in fails(self.check(GOOD), "references")))
+
+    def test_quote_must_be_on_the_page(self):
+        D = copy.deepcopy(GOOD)
+        D["references"][0]["quote"] = "Wages are deflated with the PCE price index."
+        self.assertTrue(any("not in references/cpi_hb.html" in m for _, _, m in fails(self.check(D), "references")))
+        D["references"][0]["quote"] = "CPI-U"
+        self.assertTrue(any("too short" in m for _, _, m in fails(self.check(D), "references")))
+        D["references"][0]["quote"] = "wages are DEFLATED with the cpi u"         # case and punctuation do not matter
+        self.assertEqual(fails(self.check(D)), [])
+        D["references"][0].pop("quote")                                           # opened, but supports nothing
+        self.assertEqual(fails(self.check(D), "references"), [])
+        self.assertTrue(any("quote" in m for _, _, m in fails(self.check(D), "assumptions")))
+
+    def test_numeric_parameter_from_literature_needs_why_not_empirical(self):
+        D = copy.deepcopy(GOOD)
+        D["assumptions"][0]["value"] = "0.35"
+        self.assertTrue(any("estimate" in m for _, _, m in fails(self.check(D), "assumptions")))
+        D["assumptions"][0]["why_not_empirical"] = "The extract has one year: no variation identifies it."
+        self.assertEqual(fails(self.check(D), "assumptions"), [])
+
+    def test_empirical_csv_must_name_the_parameter(self):
+        D = copy.deepcopy(GOOD)
+        write(os.path.join(self.out, "exhibits", "exhibit_1.csv"), "year,value\n2024,1\n")
+        D["assumptions"][2]["evidence"] = "Fitted in exhibits/exhibit_1.csv."
+        self.assertTrue(fails(self.check(D), "assumptions"))
+        write(os.path.join(self.out, "exhibits", "exhibit_1.csv"), "year,trend_slope\n2024,1\n")
+        self.assertEqual(fails(self.check(D), "assumptions"), [])
+
+    def test_every_headline_has_a_benchmark_row(self):
+        self.assertEqual(fails(MA.check_benchmark(self.out, FACTS)), [])
+        F = copy.deepcopy(FACTS)
+        F["slope_incl"]["headline"] = True
+        self.assertTrue(any("headline slope_incl" in m for _, _, m in fails(MA.check_benchmark(self.out, F))))
+        write(os.path.join(self.out, "exhibits", "benchmark.csv"),
+              BENCH + "Refit slope,2024,0.42,not checked,Test Agency\n")            # matched by value
+        self.assertEqual(fails(MA.check_benchmark(self.out, F)), [])
+        F = copy.deepcopy(FACTS)
+        F["slope"].pop("headline")
+        self.assertTrue(any("no headline facts" in m for _, _, m in fails(MA.check_benchmark(self.out, F))))
+
+    def test_cite_command_line(self):
+        page = os.path.join(self.out, "page.md")
+        write(page, "The agency deflates wages with the CPI-U.\n")
+        cmd = [sys.executable, "-I", os.path.join(SCRIPTS, "fetch.py"), "--cite", "https://example.org/x",
+               "--id", "x_doc", "--out", self.out]
+        p = subprocess.run(cmd + ["--from-file", page], capture_output=True, text=True)
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertEqual(json.loads(p.stdout)["file"], "references/x_doc.md")
+        log = json.load(open(os.path.join(self.out, "references", "opened.json"), encoding="utf-8"))
+        self.assertEqual(log["x_doc"]["via"], "file")
+        p = subprocess.run(cmd[:4] + ["http://127.0.0.1:9/nothing"] + cmd[5:], capture_output=True, text=True)
+        self.assertEqual(p.returncode, 4, p.stdout)
+        self.assertIn("--from-file", json.loads(p.stdout)["message"])
+        p = subprocess.run(cmd[:6] + ["bad id"] + cmd[7:], capture_output=True, text=True)
+        self.assertEqual(json.loads(p.stdout)["status"], "error")
 
 
 class TestAnswerGate(MethodBase):

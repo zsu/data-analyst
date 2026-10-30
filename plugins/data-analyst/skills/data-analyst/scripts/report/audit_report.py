@@ -33,10 +33,12 @@ FAIL-level checks (exit code 1 if any fails):
                text for every exhibit, About This Document)
   questions    the method record (decisions.json merged with report.json; rules in method_audit.py): one
   literature   "Don't know" option per question and no "Skip"; every unanswered question resolved; the
-  references   literature searched; references opened, with URL and accessed date; each assumption's basis
+  references   literature searched; references opened (a page fetch.py --cite saved, its quote on it), with URL
+               and accessed date; each assumption's basis
   assumptions  (empirical > literature > precedent > user > judgment) backed by its evidence, judgment only
-               with why_not_empirical and a row in exhibits/sensitivity.csv
-  benchmark    exhibits/benchmark.csv compares the headline numbers with published figures
+               with why_not_empirical and a row in exhibits/sensitivity.csv whose headlines are registered facts
+  benchmark    exhibits/benchmark.csv compares the headline numbers with published figures (a row per
+               headline=True fact)
   replication  replication_package.zip exists and holds REPLICATION.md, analysis.py, facts.json, the exhibit
                data and lib/; per source: allowed data with its provenance file, definition_only sources a
                reproduce/<id>/REPRODUCE.md, a .sh and a .ps1 download script, and no microdata, no file a
