@@ -989,6 +989,19 @@ class TestCatalogParamList(unittest.TestCase):
         self.assertEqual(p["series"], "POP.TOTAL")
 
 
+class TestFlagParams(unittest.TestCase):
+    def test_flag_is_sent_bare_and_only_when_true(self):
+        # an empty value never reaches the URL (the client drops it), so a valueless flag needs its own type
+        from core import generic_rest as gr
+        ep = {"path": "/items", "params": {"only_open": {"flag": True}, "q": {}}}
+        path, query, _ = gr.split(ep, {"only_open": True, "q": "x"})
+        self.assertEqual((path, query), ("/items?only_open", {"q": "x"}))
+        path, query, _ = gr.split(ep, {"only_open": "false", "q": "x"})
+        self.assertEqual(path, "/items")
+        path, _, _ = gr.split({"path": "/a?b=1", "params": {"f": {"flag": True}}}, {"f": "true"})
+        self.assertEqual(path, "/a?b=1&f")
+
+
 class TestUnstablePaging(unittest.TestCase):
     """Offset paging over an order the API does not keep: page 2 repeats rows of page 1 and skips others. With the
     endpoint's `unique` column the repeats are dropped and a note says rows may be missing."""
