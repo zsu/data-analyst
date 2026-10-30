@@ -83,8 +83,8 @@ MONTHS = (r"(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|June?|July?|
 UA = "data-analyst-audit/1.0"
 BROWSER_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) data-analyst-audit"
 CHECKS = ("facts", "numbers", "exhibits", "links", "html", "vintage", "policy", "secrets", "style", "structure",
-          "questions", "literature", "disclosures", "references", "assumptions", "data_needs", "benchmark",
-          "replication")
+          "questions", "literature", "disclosures", "references", "assumptions", "sensitivity", "data_needs",
+          "benchmark", "replication")
 
 
 def prose_strings(R):
@@ -639,7 +639,7 @@ def main(argv=None) -> int:
     a = ap.parse_args(argv)
     results = audit(a.report, a.html, a.online, a.rerun)
     fails = [r for r in results if not r[1]]
-    for check_name in CHECKS:
+    for check_name in dict.fromkeys(CHECKS + tuple(r[0] for r in results)):   # a check missing from CHECKS still prints
         rs = [r for r in results if r[0] == check_name]
         if not rs:
             continue

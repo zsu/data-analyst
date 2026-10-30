@@ -645,6 +645,593 @@
         },
         "added_at": "2026-10-29T11:48:07+00:00"
       }
+    },
+    {
+      "id": "gas-tax-elasticity-choice",
+      "prompt": "For a tax-policy memo: if the federal excise tax on gasoline rose by 10 cents a gallon, by how much would U.S. gasoline consumption fall in the first year? Give the change in percent and in barrels per day, using EIA data on retail gasoline prices and motor gasoline consumption (product supplied). This is a scheduled, unattended run: nobody can answer questions, so decide every open choice yourself and record it. Save the work in out/gas-tax-10c.",
+      "expected_output": "A first-year fall of a fraction of a percent to about one percent, depending on the short-run elasticity (published estimates span about -0.03 to -0.37). The answer compares several published elasticities, says why it uses the one it does (or estimates one from EIA monthly data with a cited specification), runs the others as sensitivity alternatives, and states the pass-through and base price. Decisions recorded, audit passed.",
+      "files": [],
+      "expectations": [
+        "The headline (the first-year fall in U.S. gasoline consumption, in percent and in barrels or gallons per day, with the base period named) comes from a price elasticity estimated from EIA data with a cited specification, or from a published estimate with a stated reason the data cannot identify it",
+        "Compares at least two published short-run price elasticities of gasoline demand (for example Hughes, Knittel and Sperling 2008; Havranek, Irsova and Janda 2012; Levin, Lewis and Wolak 2017; Coglianese, Davis, Kilian and Stock 2017) on period, data and method, and says why the one it uses (or its own estimate) fits a 10-cent U.S. tax rise best",
+        "Runs the other published elasticities as sensitivity alternatives and reports the range of the headline across them, and whether the conclusion changes",
+        "States and cites how much of the tax reaches the pump price (pass-through, for example Marion and Muehlegger 2011), and turns 10 cents into a percent price change using a stated recent average retail price from EIA",
+        "Notes that a plain regression of quantity on price mixes supply and demand (price is endogenous) and what that does to its own estimate, or says the issue is not addressed; mentioning that tax changes may draw a larger response than equal price changes (Li, Linn and Muehlegger 2014) is a plus",
+        "Gets data only through fetch.py's eia pack, finishes without asking, and records the elasticity, pass-through and base-price choices in decisions.json"
+      ],
+      "rsi": {
+        "title": "EIA: first-year fall in U.S. gasoline consumption from a 10-cent federal gas tax rise; choosing among competing published price elasticities",
+        "invoke": "explicit",
+        "interaction": "none",
+        "criteria": [
+          {
+            "id": "c1",
+            "text": "The headline (the first-year fall in U.S. gasoline consumption, in percent and in barrels or gallons per day, with the base period named) comes from a price elasticity estimated from EIA data with a cited specification, or from a published estimate with a stated reason the data cannot identify it",
+            "severity": "critical"
+          },
+          {
+            "id": "c2",
+            "text": "Compares at least two published short-run price elasticities of gasoline demand (for example Hughes, Knittel and Sperling 2008; Havranek, Irsova and Janda 2012; Levin, Lewis and Wolak 2017; Coglianese, Davis, Kilian and Stock 2017) on period, data and method, and says why the one it uses (or its own estimate) fits a 10-cent U.S. tax rise best",
+            "severity": "major"
+          },
+          {
+            "id": "c3",
+            "text": "Runs the other published elasticities as sensitivity alternatives and reports the range of the headline across them, and whether the conclusion changes",
+            "severity": "major"
+          },
+          {
+            "id": "c4",
+            "text": "States and cites how much of the tax reaches the pump price (pass-through, for example Marion and Muehlegger 2011), and turns 10 cents into a percent price change using a stated recent average retail price from EIA",
+            "severity": "major"
+          },
+          {
+            "id": "c5",
+            "text": "Notes that a plain regression of quantity on price mixes supply and demand (price is endogenous) and what that does to its own estimate, or says the issue is not addressed; mentioning that tax changes may draw a larger response than equal price changes (Li, Linn and Muehlegger 2014) is a plus",
+            "severity": "minor"
+          },
+          {
+            "id": "c6",
+            "text": "Gets data only through fetch.py's eia pack, finishes without asking, and records the elasticity, pass-through and base-price choices in decisions.json",
+            "severity": "major"
+          }
+        ],
+        "deterministic_checks": [
+          {
+            "id": "answer-exists",
+            "type": "file_exists",
+            "path": "out/gas-tax-10c/answer.md",
+            "severity": "critical"
+          },
+          {
+            "id": "analysis-exists",
+            "type": "file_exists",
+            "path": "out/gas-tax-10c/analysis.py",
+            "severity": "major"
+          },
+          {
+            "id": "facts-exists",
+            "type": "file_exists",
+            "path": "out/gas-tax-10c/facts.json",
+            "severity": "major"
+          },
+          {
+            "id": "decisions-exists",
+            "type": "file_exists",
+            "path": "out/gas-tax-10c/decisions.json",
+            "severity": "major"
+          },
+          {
+            "id": "sensitivity-exists",
+            "type": "file_exists",
+            "path": "out/gas-tax-10c/exhibits/sensitivity.csv",
+            "severity": "major"
+          },
+          {
+            "id": "benchmark-exists",
+            "type": "file_exists",
+            "path": "out/gas-tax-10c/exhibits/benchmark.csv",
+            "severity": "minor"
+          },
+          {
+            "id": "specs-checked",
+            "type": "file_exists",
+            "path": "out/gas-tax-10c/specs/checked.json",
+            "severity": "minor"
+          },
+          {
+            "id": "audit-answer",
+            "type": "command",
+            "cmd": "{python} {skill}/scripts/report/audit_answer.py {sandbox}/out/gas-tax-10c --rerun",
+            "expect_exit": 0,
+            "timeout": 600,
+            "severity": "major"
+          },
+          {
+            "id": "handoff",
+            "type": "command",
+            "cmd": "{python} {skill}/scripts/fetch.py --handoff --out {sandbox}/out/gas-tax-10c",
+            "expect_exit": 0,
+            "severity": "minor"
+          },
+          {
+            "id": "no-secrets",
+            "type": "command",
+            "cmd": "{python} {skill}/scripts/report/scan_secrets.py {sandbox}/out/gas-tax-10c",
+            "expect_exit": 0,
+            "severity": "critical"
+          },
+          {
+            "id": "no-pycache-in-skill",
+            "type": "file_absent",
+            "path": "{skill}/**/__pycache__",
+            "severity": "minor"
+          },
+          {
+            "id": "eia-data",
+            "type": "file_exists",
+            "path": "out/gas-tax-10c/data/eia/*.csv",
+            "severity": "critical"
+          },
+          {
+            "id": "elasticity-estimated",
+            "type": "command",
+            "cmd": "{python} -I {case}/verify.py {sandbox}/out/gas-tax-10c --group estimated",
+            "expect_exit": 0,
+            "severity": "major",
+            "desc": "an elasticity in [-1, 0) is a registered fact with its se, and analysis.py fits a model"
+          },
+          {
+            "id": "papers-compared",
+            "type": "command",
+            "cmd": "{python} -I {case}/verify.py {sandbox}/out/gas-tax-10c --group compared",
+            "expect_exit": 0,
+            "severity": "major",
+            "desc": "at least two opened references are used for the elasticity (used_for, an elasticity assumption or a sensitivity row)"
+          },
+          {
+            "id": "alternatives-run",
+            "type": "command",
+            "cmd": "{python} -I {case}/verify.py {sandbox}/out/gas-tax-10c --group alternatives",
+            "expect_exit": 0,
+            "severity": "major",
+            "desc": "sensitivity.csv runs at least two different elasticity values"
+          }
+        ],
+        "ground_truth": {
+          "elasticity_literature": {
+            "hughes_knittel_sperling_2008": "about -0.034 to -0.077 (2001-2006, U.S. monthly)",
+            "havranek_irsova_janda_2012": "meta-analysis: short-run mean about -0.09 after correcting for publication bias",
+            "levin_lewis_wolak_2017": "about -0.27 to -0.35 (city-level daily prices and expenditures)",
+            "coglianese_davis_kilian_stock_2017": "about -0.37 (accounting for purchases timed around tax changes)",
+            "li_linn_muehlegger_2014": "tax changes draw a larger response than equal price changes",
+            "marion_muehlegger_2011": "state and federal diesel and gasoline taxes pass through about fully to retail prices"
+          },
+          "note": "No single right number: graders check the comparison, the stated reason for the choice, the alternatives run and the range reported. The literature values are from the maintainer's reading and should be confirmed against the papers on the first graded run.",
+          "headline_range": "about 0.1 to 1.2 percent of consumption for a 10-cent rise on a price near $3 a gallon"
+        },
+        "case_files": [
+          "case/gas-tax-elasticity-choice/verify.py"
+        ],
+        "coverage_tags": [
+          "single keyed-optional pack (eia)",
+          "literature: competing published estimates",
+          "estimate, don't borrow",
+          "sensitivity across papers",
+          "unattended no_user",
+          "live API"
+        ],
+        "why": "Guards the choice among competing published parameters: does the run compare the papers, give a reason for the one it uses, estimate it from the data where it can, and run the others as alternatives",
+        "origin": {
+          "manual": "literature comparison gap found reading SKILL.md section 4, 2026-10-30"
+        },
+        "added_at": "2026-10-30T00:00:00+00:00"
+      }
+    },
+    {
+      "id": "usgs-gutenberg-richter-b",
+      "prompt": "For a seismic-hazard note: using the USGS earthquake catalog, estimate the Gutenberg-Richter b-value for earthquakes of magnitude 5.0 and larger worldwide from 2015 through 2024 (UTC). Use the estimation method the seismology literature recommends and give its uncertainty, and say how the result compares with the value usually reported for global seismicity. Then use the fitted relation to say how many magnitude 7.0+ earthquakes per year it implies, and compare that with the number actually recorded per year in those years. This is a scheduled, unattended run: nobody can answer questions, so decide every open choice yourself by precedent and record it. Save the work in out/gr-bvalue.",
+      "expected_output": "Aki-Utsu likelihood b of about 1.13 (SE about 0.009) at M5.0, falling to about 1.04 at M5.5 and 1.00 at M6.0; the M5.0 fit implies about 9 M7+ per year against 13.7 observed, while the M6.0 fit implies about 13; the answer names the cutoff and mixed-magnitude issue, compares with b of about 1, sensitivity recorded, audit passed.",
+      "files": [],
+      "expectations": [
+        "Estimates b from the event magnitudes with the maximum-likelihood estimator (Aki 1965 / Utsu, with the half-bin correction for magnitudes reported to 0.1), registered as a fact with its standard error, rather than quoting b of about 1 from the literature or fitting least squares to cumulative counts without comparing it with the likelihood estimate",
+        "Chooses the completeness magnitude by a documented method or tests b at more than one cutoff (for example M5.0 against M5.5 or M6.0) as a sensitivity row, and reports that b falls from about 1.13 at M5.0 to about 1.00 at M6.0",
+        "Says the catalog mixes magnitude types (mostly mww and mb) and that this can bias b near M5, or restricts to moment magnitudes and shows the effect",
+        "Compares the M7+ rate the fitted relation implies with the observed 13.7 per year, and does not present a fit that underpredicts it (about 9 per year from the M5.0 fit) without saying so",
+        "Cites opened literature for the estimator and for the global b of about 1, gets all data through fetch.py's usgs pack, and finishes without asking the user anything"
+      ],
+      "rsi": {
+        "title": "USGS ComCat: Gutenberg-Richter b-value for M5+ worldwide 2015-2024 (estimator choice, completeness cutoff, mixed magnitude types) and the M7+ rate it implies",
+        "invoke": "explicit",
+        "interaction": "none",
+        "criteria": [
+          {
+            "id": "c1",
+            "severity": "critical",
+            "text": "Estimates b from the event magnitudes with the maximum-likelihood estimator (Aki 1965 / Utsu, with the half-bin correction for magnitudes reported to 0.1), registered as a fact with its standard error, rather than quoting b of about 1 from the literature or fitting least squares to cumulative counts without comparing it with the likelihood estimate"
+          },
+          {
+            "id": "c2",
+            "severity": "major",
+            "text": "Chooses the completeness magnitude by a documented method or tests b at more than one cutoff (for example M5.0 against M5.5 or M6.0) as a sensitivity row, and reports that b falls from about 1.13 at M5.0 to about 1.00 at M6.0"
+          },
+          {
+            "id": "c3",
+            "severity": "major",
+            "text": "Says the catalog mixes magnitude types (mostly mww and mb) and that this can bias b near M5, or restricts to moment magnitudes and shows the effect"
+          },
+          {
+            "id": "c4",
+            "severity": "major",
+            "text": "Compares the M7+ rate the fitted relation implies with the observed 13.7 per year, and does not present a fit that underpredicts it (about 9 per year from the M5.0 fit) without saying so"
+          },
+          {
+            "id": "c5",
+            "severity": "minor",
+            "text": "Cites opened literature for the estimator and for the global b of about 1, gets all data through fetch.py's usgs pack, and finishes without asking the user anything"
+          }
+        ],
+        "deterministic_checks": [
+          {
+            "id": "data",
+            "type": "file_exists",
+            "path": "out/gr-bvalue/data/usgs/*.csv",
+            "severity": "critical"
+          },
+          {
+            "id": "answer-exists",
+            "type": "file_exists",
+            "path": "out/gr-bvalue/answer.md",
+            "severity": "critical"
+          },
+          {
+            "id": "analysis-exists",
+            "type": "file_exists",
+            "path": "out/gr-bvalue/analysis.py",
+            "severity": "major"
+          },
+          {
+            "id": "facts-exists",
+            "type": "file_exists",
+            "path": "out/gr-bvalue/facts.json",
+            "severity": "major"
+          },
+          {
+            "id": "decisions-exists",
+            "type": "file_exists",
+            "path": "out/gr-bvalue/decisions.json",
+            "severity": "major"
+          },
+          {
+            "id": "specs-checked",
+            "type": "file_exists",
+            "path": "out/gr-bvalue/specs/checked.json",
+            "severity": "minor"
+          },
+          {
+            "id": "audit-answer",
+            "type": "command",
+            "cmd": "{python} {skill}/scripts/report/audit_answer.py {sandbox}/out/gr-bvalue --rerun",
+            "expect_exit": 0,
+            "timeout": 600,
+            "severity": "major"
+          },
+          {
+            "id": "no-secrets",
+            "type": "command",
+            "cmd": "{python} {skill}/scripts/report/scan_secrets.py {sandbox}/out/gr-bvalue",
+            "expect_exit": 0,
+            "severity": "critical"
+          },
+          {
+            "id": "no-pycache-in-skill",
+            "type": "file_absent",
+            "path": "{skill}/**/__pycache__",
+            "severity": "minor"
+          },
+          {
+            "id": "estimated-not-borrowed",
+            "type": "command",
+            "cmd": "{python} -I {case}/verify.py basis {sandbox}/out/gr-bvalue empirical",
+            "expect_exit": 0,
+            "severity": "major",
+            "desc": "at least one assumption rests on an estimate from the data (basis empirical)"
+          },
+          {
+            "id": "sensitivity-run",
+            "type": "command",
+            "cmd": "{python} -I {case}/verify.py sens {sandbox}/out/gr-bvalue 1",
+            "expect_exit": 0,
+            "severity": "major",
+            "desc": "exhibits/sensitivity.csv has at least one row (the audit checks its headlines are registered facts)"
+          },
+          {
+            "id": "references-opened",
+            "type": "file_exists",
+            "path": "out/gr-bvalue/references/opened.json",
+            "severity": "minor",
+            "desc": "the literature cited was opened with fetch.py --cite"
+          },
+          {
+            "id": "b-value",
+            "type": "command",
+            "cmd": "{python} -I {case}/verify.py facts {sandbox}/out/gr-bvalue 1.065 0.085",
+            "expect_exit": 0,
+            "severity": "major",
+            "desc": "a b-value fact between 0.98 and 1.15 (likelihood estimates at cutoffs M5.0-M6.0 run 1.00-1.13)"
+          },
+          {
+            "id": "observed-m7",
+            "type": "command",
+            "cmd": "{python} -I {case}/verify.py facts {sandbox}/out/gr-bvalue 13.7 0.2",
+            "expect_exit": 0,
+            "severity": "major",
+            "desc": "observed M7+ per year 2015-2024 = 13.7"
+          },
+          {
+            "id": "n-m5",
+            "type": "command",
+            "cmd": "{python} -I {case}/verify.py facts {sandbox}/out/gr-bvalue 16945 100",
+            "expect_exit": 0,
+            "severity": "minor",
+            "desc": "M5+ earthquakes 2015-2024 = 16,945 (eventtype=earthquake, +/-100 for revisions)"
+          },
+          {
+            "id": "b-se",
+            "type": "command",
+            "cmd": "{python} -I {case}/verify.py se {sandbox}/out/gr-bvalue 0.005 0.04",
+            "expect_exit": 0,
+            "severity": "minor",
+            "desc": "a standard error between 0.005 and 0.04 is registered (the b-value's: about 0.009 at M5.0, 0.027 at M6.0)"
+          }
+        ],
+        "ground_truth": {
+          "n_m5_2015_2024": 16945,
+          "mag_types": {
+            "mww": 9091,
+            "mb": 7110,
+            "other": 744
+          },
+          "b_mle_by_cutoff": {
+            "5.0": 1.1317,
+            "5.2": 1.0653,
+            "5.5": 1.0382,
+            "6.0": 1.0039
+          },
+          "se_shi_bolt_by_cutoff": {
+            "5.0": 0.0092,
+            "5.5": 0.0155,
+            "6.0": 0.0267
+          },
+          "b_least_squares_cumulative_5.0_to_7.5": 1.0206,
+          "implied_m7_per_year": {
+            "fit_5.0": 9.24,
+            "fit_6.0": 13.2
+          },
+          "observed_m7_per_year": 13.7,
+          "tolerance": "b +/-0.085 around the cutoff range; counts +/-100 for catalog revisions",
+          "source": "USGS FDSN event query, format=csv, minmagnitude=5, eventtype=earthquake, one request per year 2015-2024, retrieved 2026-10-30; b = log10(e) / (mean(M) - (Mc - 0.05)), SE by Shi and Bolt (1982)",
+          "source_url": "https://earthquake.usgs.gov/fdsnws/event/1/query?format=csv&starttime=2015-01-01&endtime=2016-01-01&minmagnitude=5&eventtype=earthquake"
+        },
+        "case_files": [
+          "case/usgs-gutenberg-richter-b/verify.py"
+        ],
+        "coverage_tags": [
+          "single keyless pack (usgs ComCat)",
+          "model estimation",
+          "estimator choice (MLE vs least squares)",
+          "completeness cutoff sensitivity",
+          "mixed magnitude types",
+          "literature comparison",
+          "unattended no_user",
+          "live API"
+        ],
+        "why": "An estimated parameter with a literature benchmark (b about 1) and a textbook estimator; the cutoff and the mb/Mw mix move it, so the case shows whether the skill estimates, compares and tests rather than borrows",
+        "origin": {
+          "run": null,
+          "iteration": null,
+          "case": "hand-written: model-estimate cases"
+        },
+        "added_at": "2026-10-30T00:00:00+00:00"
+      }
+    },
+    {
+      "id": "okun-law-1990-2024",
+      "prompt": "For a macro briefing: estimate Okun's law for the United States from official data. Use annual data for 1990 through 2024 and the difference version of the law: the change in the annual average unemployment rate (BLS) regressed on the percent change in annual real GDP (BEA). Give the coefficient with its standard error, the real growth rate that keeps the unemployment rate unchanged, and how your coefficient compares with published estimates. Check whether the result holds without the pandemic years 2020 and 2021. FRED's copies of the BEA and BLS series are fine if the agencies' own APIs need a key you do not have. This is a scheduled, unattended run: nobody can answer questions, so decide every open choice yourself by precedent and record it. Save the work in out/okun-law.",
+      "expected_output": "Coefficient about -0.59 (SE about 0.075, R-squared about 0.65), break-even growth about 2.4 percent; without 2020-2021 about -0.44 (SE about 0.083); compared with published estimates of about -0.4 to -0.5; sensitivity recorded, audit passed.",
+      "files": [],
+      "expectations": [
+        "Estimates the coefficient by regressing the change in the annual average unemployment rate on the percent change in annual real GDP for 1990-2024 in analysis.py (about -0.59, standard error about 0.075), registered as facts, rather than quoting a published Okun coefficient",
+        "Runs the regression without 2020 and 2021 as a sensitivity row (about -0.44) and says the pandemic years make the coefficient larger in size",
+        "Reports the growth rate that keeps unemployment unchanged as minus the intercept over the slope (about 2.4 percent), with the sample it comes from",
+        "Compares the estimate with published estimates it opened and cites (for example Ball, Leigh and Loungani 2017, or a Federal Reserve note), saying how the specifications differ",
+        "Uses BEA real GDP and the BLS unemployment rate (directly or FRED's copies, named as such), annual averages, says the GDP figures are the current vintage and revisable, and finishes without asking the user anything"
+      ],
+      "rsi": {
+        "title": "Okun's law, difference version, annual 1990-2024 from BEA real GDP and BLS unemployment: coefficient, SE, break-even growth, pandemic-years sensitivity, literature comparison",
+        "invoke": "explicit",
+        "interaction": "none",
+        "criteria": [
+          {
+            "id": "c1",
+            "severity": "critical",
+            "text": "Estimates the coefficient by regressing the change in the annual average unemployment rate on the percent change in annual real GDP for 1990-2024 in analysis.py (about -0.59, standard error about 0.075), registered as facts, rather than quoting a published Okun coefficient"
+          },
+          {
+            "id": "c2",
+            "severity": "major",
+            "text": "Runs the regression without 2020 and 2021 as a sensitivity row (about -0.44) and says the pandemic years make the coefficient larger in size"
+          },
+          {
+            "id": "c3",
+            "severity": "major",
+            "text": "Reports the growth rate that keeps unemployment unchanged as minus the intercept over the slope (about 2.4 percent), with the sample it comes from"
+          },
+          {
+            "id": "c4",
+            "severity": "major",
+            "text": "Compares the estimate with published estimates it opened and cites (for example Ball, Leigh and Loungani 2017, or a Federal Reserve note), saying how the specifications differ"
+          },
+          {
+            "id": "c5",
+            "severity": "minor",
+            "text": "Uses BEA real GDP and the BLS unemployment rate (directly or FRED's copies, named as such), annual averages, says the GDP figures are the current vintage and revisable, and finishes without asking the user anything"
+          }
+        ],
+        "deterministic_checks": [
+          {
+            "id": "data",
+            "type": "file_exists",
+            "path": "out/okun-law/data/*/*.csv",
+            "severity": "critical"
+          },
+          {
+            "id": "answer-exists",
+            "type": "file_exists",
+            "path": "out/okun-law/answer.md",
+            "severity": "critical"
+          },
+          {
+            "id": "analysis-exists",
+            "type": "file_exists",
+            "path": "out/okun-law/analysis.py",
+            "severity": "major"
+          },
+          {
+            "id": "facts-exists",
+            "type": "file_exists",
+            "path": "out/okun-law/facts.json",
+            "severity": "major"
+          },
+          {
+            "id": "decisions-exists",
+            "type": "file_exists",
+            "path": "out/okun-law/decisions.json",
+            "severity": "major"
+          },
+          {
+            "id": "specs-checked",
+            "type": "file_exists",
+            "path": "out/okun-law/specs/checked.json",
+            "severity": "minor"
+          },
+          {
+            "id": "audit-answer",
+            "type": "command",
+            "cmd": "{python} {skill}/scripts/report/audit_answer.py {sandbox}/out/okun-law --rerun",
+            "expect_exit": 0,
+            "timeout": 600,
+            "severity": "major"
+          },
+          {
+            "id": "no-secrets",
+            "type": "command",
+            "cmd": "{python} {skill}/scripts/report/scan_secrets.py {sandbox}/out/okun-law",
+            "expect_exit": 0,
+            "severity": "critical"
+          },
+          {
+            "id": "no-pycache-in-skill",
+            "type": "file_absent",
+            "path": "{skill}/**/__pycache__",
+            "severity": "minor"
+          },
+          {
+            "id": "estimated-not-borrowed",
+            "type": "command",
+            "cmd": "{python} -I {case}/verify.py basis {sandbox}/out/okun-law empirical",
+            "expect_exit": 0,
+            "severity": "major",
+            "desc": "at least one assumption rests on an estimate from the data (basis empirical)"
+          },
+          {
+            "id": "sensitivity-run",
+            "type": "command",
+            "cmd": "{python} -I {case}/verify.py sens {sandbox}/out/okun-law 1",
+            "expect_exit": 0,
+            "severity": "major",
+            "desc": "exhibits/sensitivity.csv has at least one row (the audit checks its headlines are registered facts)"
+          },
+          {
+            "id": "references-opened",
+            "type": "file_exists",
+            "path": "out/okun-law/references/opened.json",
+            "severity": "minor",
+            "desc": "the literature cited was opened with fetch.py --cite"
+          },
+          {
+            "id": "okun-full",
+            "type": "command",
+            "cmd": "{python} -I {case}/verify.py facts {sandbox}/out/okun-law -0.587 0.03 --abs",
+            "expect_exit": 0,
+            "severity": "major",
+            "desc": "Okun coefficient 1990-2024 = -0.587 (either sign)"
+          },
+          {
+            "id": "okun-ex-covid",
+            "type": "command",
+            "cmd": "{python} -I {case}/verify.py facts {sandbox}/out/okun-law -0.443 0.03 --abs",
+            "expect_exit": 0,
+            "severity": "major",
+            "desc": "coefficient without 2020-2021 = -0.443 (either sign)"
+          },
+          {
+            "id": "okun-se",
+            "type": "command",
+            "cmd": "{python} -I {case}/verify.py se {sandbox}/out/okun-law 0.065 0.11",
+            "expect_exit": 0,
+            "severity": "minor",
+            "desc": "a standard error of the coefficient between 0.065 and 0.11 (classical 0.075, HC1 0.097)"
+          },
+          {
+            "id": "break-even",
+            "type": "command",
+            "cmd": "{python} -I {case}/verify.py facts {sandbox}/out/okun-law 2.45 0.15",
+            "expect_exit": 0,
+            "severity": "minor",
+            "desc": "growth that keeps unemployment unchanged, 1990-2024, about 2.4 percent"
+          }
+        ],
+        "ground_truth": {
+          "full_1990_2024": {
+            "n": 35,
+            "intercept": 1.4367,
+            "slope": -0.5869,
+            "se": 0.0753,
+            "r2": 0.6483,
+            "break_even_growth": 2.448
+          },
+          "excluding_2020_2021": {
+            "n": 33,
+            "intercept": 1.0327,
+            "slope": -0.443,
+            "se": 0.0832,
+            "r2": 0.4774,
+            "break_even_growth": 2.331
+          },
+          "tolerance": "+/-0.03 on slopes (GDP vintage revisions), +/-0.012 on SE, +/-0.15 on break-even growth",
+          "source": "FRED GDPCA (BEA real GDP, annual, chained 2017 dollars) and UNRATE (BLS, monthly, averaged to annual and rounded to 0.1 as BLS publishes annual averages), retrieved 2026-10-30; OLS of the change in the unemployment rate on 100*(GDP_t/GDP_t-1 - 1)",
+          "source_url": "https://fred.stlouisfed.org/series/GDPCA"
+        },
+        "case_files": [
+          "case/okun-law-1990-2024/verify.py"
+        ],
+        "coverage_tags": [
+          "two sources (BEA + BLS, or FRED copies)",
+          "model estimation",
+          "regression with standard error",
+          "outlier sensitivity (pandemic years)",
+          "literature comparison",
+          "unattended no_user",
+          "live API"
+        ],
+        "why": "A textbook regression whose published coefficients are easy to borrow; the pandemic years move it, so the case shows whether the skill estimates, tests and compares rather than quotes",
+        "origin": {
+          "run": null,
+          "iteration": null,
+          "case": "hand-written: model-estimate cases"
+        },
+        "added_at": "2026-10-30T00:00:00+00:00"
+      }
     }
   ]
 }
