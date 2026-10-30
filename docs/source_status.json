@@ -212,13 +212,6 @@
   "last_fixed": "2026-10-22",
   "note": "station defaults now all; location/address removed; PVWatts hourly rows; open_date history"
  },
- "nvd": {
-  "last_checked": "2026-10-30",
-  "status": "ok",
-  "last_ok": "2026-10-30",
-  "last_fixed": "2026-10-30",
-  "note": "new pack: NVD CVE API 2.0 (cves, cve_count); bare query flags (core \"flag\" params)"
- },
  "nws": {
   "last_checked": "2026-10-30",
   "status": "ok",

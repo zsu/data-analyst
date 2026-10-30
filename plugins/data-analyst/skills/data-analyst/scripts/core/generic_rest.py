@@ -16,7 +16,7 @@ endpoints.json:
       "description": "...",
       "params": {"dataset": {"in": "path", "required": true, "desc": "...", "catalog": true},
                  # "in": "query" (default for GET) | "path" | "body" (default for POST) | "spec" (never sent)
-                 # "flag": true: a query flag with no value (?hasKev), sent only when the spec gives true
+                 # "flag": true: a query flag with no value (?flagName), sent only when the spec gives true
                  "$where": {"desc": "SoQL filter"}, "state": {"desc": "...", "enum": [...]}},
       "defaults": {"$order": ":id"},        # sent unless the spec overrides them
       "body": {...},                         # POST body template (spec params with in=body merge into it)
@@ -159,7 +159,7 @@ def split(ep: dict, params: dict) -> tuple[str, dict, dict | None]:
         where = (pdefs.get(k) or {}).get("in", "body" if ep.get("method") == "POST" else "query")
         if where == "spec":                          # read by the adapter, never sent
             continue
-        if (pdefs.get(k) or {}).get("flag"):         # a bare query flag (?hasKev): sent when true, never with a value
+        if (pdefs.get(k) or {}).get("flag"):         # a bare query flag (?flagName): sent when true, never with a value
             if v is True or str(v).strip().lower() in ("true", "1", "yes"):
                 flags.append(urllib.parse.quote(k))
             continue
