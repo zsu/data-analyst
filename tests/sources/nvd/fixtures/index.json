@@ -1,7 +1,0 @@
-{
- "GET https://services.nvd.nist.gov/rest/json/cves/2.0?noRejected=&cveId=CVE-2021-44228&resultsPerPage=2000&startIndex=0": "r001.json",
- "GET https://services.nvd.nist.gov/rest/json/cves/2.0?noRejected=&resultsPerPage=1&cvssV3Severity=CRITICAL&pubStartDate=2025-01-01T00%3A00%3A00.000&pubEndDate=2025-03-31T23%3A59%3A59.999": "r002.json",
- "GET https://services.nvd.nist.gov/rest/json/cves/2.0?noRejected=&resultsPerPage=1&cvssV3Severity=CRITICAL&pubStartDate=2025-04-01T00%3A00%3A00.000&pubEndDate=2025-06-30T23%3A59%3A59.999": "r003.json",
- "GET https://services.nvd.nist.gov/rest/json/cves/2.0?noRejected=&hasKev=&resultsPerPage=1": "r004.json",
- "GET https://services.nvd.nist.gov/rest/json/cves/2.0?noRejected=&resultsPerPage=1&cweId=CWE-79&pubStartDate=2025-01-01T00%3A00%3A00.000&pubEndDate=2025-03-31T23%3A59%3A59.999": "r005.json"
-}
