@@ -12,8 +12,9 @@ replication_package.zip, decompressed) for:
     (the placeholders {API_KEY}, [REDACTED] and __NAME__ are fine)
   - for sources whose API echoes keys in error text (policy auth.echoes_key: BLS, BEA), any 32-hex token
     (a SHA-256 checksum is 64 hex digits and does not match), except inside data/<id>/ of a source that does
-    not echo keys: a 32-hex value there is that source's own identifier (AFDC network ids, ...), and a real key
-    is still caught by the literal-value check
+    not echo keys: a 32-hex value there is that source's own identifier (AFDC network ids, ...), and except
+    inside references/ (web pages fetch.py --cite saved: image cache hashes, cookie-script ids). A real key
+    is still caught there by the literal-value check and the key-shaped patterns
 Sources: --sources, else the data/<id>/ folders of the first directory argument.
 Exit code 0 = clean, 1 = something found (file names and line numbers are listed, values are not).
 """
@@ -119,6 +120,16 @@ def other_source_data(rel: str, quiet: set[str]) -> bool:
     return any(parts[i] == "data" and i + 1 < len(parts) and parts[i + 1] in quiet for i in range(len(parts) - 1))
 
 
+def reference_page(rel: str) -> bool:
+    """Is rel inside references/ (pages fetch.py --cite saved: cache hashes and script ids, never an API reply)?"""
+    parts = [x for x in re.split(r"[\\/]", rel) if x and x != "."]
+    return bool(parts) and parts[0] == "references"
+
+
+def _hex_rule(rel: str, quiet: set[str]) -> bool:
+    return not other_source_data(rel, quiet) and not reference_page(rel)
+
+
 def scan_file(path: str, keys=None, hex32: bool = False, quiet: set[str] | None = None, rel: str = "") -> list[str]:
     keys = [keys] if isinstance(keys, bytes) else [k.lower() for k in (keys or []) if k]
     quiet = quiet or set()
@@ -126,14 +137,14 @@ def scan_file(path: str, keys=None, hex32: bool = False, quiet: set[str] | None 
         # a PDF's trailer /ID holds two 32-hex document ids: only real key values count in one
         pdf = f.read(5) == b"%PDF-"
         f.seek(0)
-        hits = scan_stream(f, path, keys, hex32 and not pdf and not other_source_data(rel or path, quiet))
+        hits = scan_stream(f, path, keys, hex32 and not pdf and _hex_rule(rel or path, quiet))
     if zipfile.is_zipfile(path):                   # members are compressed: scan them decompressed too
         try:
             with zipfile.ZipFile(path) as z:
                 for info in z.infolist():
                     if not info.is_dir():
                         with z.open(info) as m:
-                            h = hex32 and not other_source_data(info.filename, quiet)
+                            h = hex32 and _hex_rule(info.filename, quiet)
                             hits += scan_stream(io.BufferedReader(m), f"{path}!{info.filename}", keys, h)
         except (zipfile.BadZipFile, OSError):
             pass
