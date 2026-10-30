@@ -93,7 +93,9 @@ class TestNoStalePaths(unittest.TestCase):
         me = os.path.abspath(__file__)
         hits = []
         for dp, dns, fns in os.walk(ROOT):
-            dns[:] = [d for d in dns if d not in skip]
+            # nested checkouts (git worktrees) carry their own copy of the repo
+            dns[:] = [d for d in dns if d not in skip
+                      and not os.path.exists(os.path.join(dp, d, ".git"))]
             for f in fns:
                 p = os.path.join(dp, f)
                 if os.path.abspath(p) == me or not f.endswith((".py", ".md", ".sh", ".ps1", ".json", ".txt")):
