@@ -59,6 +59,8 @@ PAIRINGS = [
     ("Food composition and nutrients", "usda-fooddata", "cdc", "FoodData Central; one row per food and nutrient."),
     ("Patents and trademarks", "uspto", "sec", "USPTO Open Data Portal (key needs a USPTO.gov account)."),
     ("Renewable energy resources", "nrel", "eia", "NREL resource and incentive data."),
+    ("Software vulnerabilities and cybersecurity", "nvd", "sec",
+     "NVD CVE records, CVSS scores and CISA KEV dates; recent CVEs often lack an NVD score (analysis backlog). SEC 8-K Item 1.05 for disclosed incidents."),
     ("International comparisons", "world-bank", "bea, fred", "World Bank indicators: check currency and base year."),
     ("Long histories, many indicators at once, data vintages", "fred", "the producing agency's pack",
      "FRED re-publishes; cite the original source too; ALFRED for as-of vintages."),

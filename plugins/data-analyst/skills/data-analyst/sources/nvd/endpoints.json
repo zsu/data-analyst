@@ -1,0 +1,79 @@
+{
+ "base_url": "https://services.nvd.nist.gov/rest/json",
+ "timeout": 60,
+ "endpoints": {
+  "cves": {
+   "path": "/cves/2.0",
+   "method": "GET",
+   "description": "CVE records matching the filters, one row per CVE (2,000 a page, offset paging with startIndex).",
+   "params": {
+    "cveId": {"desc": "one CVE id, e.g. CVE-2021-44228"},
+    "keywordSearch": {"desc": "words in the description (every word must appear)"},
+    "keywordExactMatch": {"flag": true, "desc": "true: keywordSearch is one exact phrase (a flag)"},
+    "cpeName": {"desc": "CPE 2.3 name of a product, e.g. cpe:2.3:a:apache:log4j:2.14.1:*:*:*:*:*:*:*"},
+    "virtualMatchString": {"desc": "CPE match string with wildcards, e.g. cpe:2.3:o:microsoft:windows_10"},
+    "cweId": {"desc": "weakness id, e.g. CWE-79"},
+    "cvssV3Severity": {"desc": "LOW, MEDIUM, HIGH or CRITICAL (CVSS v3)"},
+    "cvssV4Severity": {"desc": "LOW, MEDIUM, HIGH or CRITICAL (CVSS v4; see traps)"},
+    "cvssV2Severity": {"desc": "LOW, MEDIUM or HIGH (CVSS v2, older CVEs)"},
+    "pubStartDate": {"desc": "published on or after (YYYY-MM-DD or ISO 8601); needs pubEndDate, range at most 120 days"},
+    "pubEndDate": {"desc": "published on or before"},
+    "lastModStartDate": {"desc": "modified on or after; needs lastModEndDate, range at most 120 days"},
+    "lastModEndDate": {"desc": "modified on or before"},
+    "kevStartDate": {"desc": "added to CISA's Known Exploited Vulnerabilities catalog on or after; needs kevEndDate, at most 120 days"},
+    "kevEndDate": {"desc": "added to the KEV catalog on or before"},
+    "hasKev": {"flag": true, "desc": "true: only CVEs in CISA's KEV catalog (a flag)"},
+    "noRejected": {"flag": true, "desc": "true (default): leave out REJECTED CVEs; false keeps them"},
+    "isVulnerable": {"flag": true, "desc": "true: with cpeName, only configurations marked vulnerable (a flag)"},
+    "sourceIdentifier": {"desc": "the CNA that published the record, e.g. secure@microsoft.com"}
+   },
+   "defaults": {"noRejected": true},
+   "records": "vulnerabilities",
+   "total": "totalResults",
+   "paging": {"type": "offset", "limit_param": "resultsPerPage", "offset_param": "startIndex", "size": 2000},
+   "max_rows": 20000,
+   "missing": [""],
+   "flatten": false
+  },
+  "cve_count": {
+   "path": "/cves/2.0",
+   "method": "GET",
+   "description": "How many CVEs match the filters (one row: total_results), without downloading them. Same filters as cves.",
+   "params": {
+    "cveId": {"desc": "one CVE id"},
+    "keywordSearch": {"desc": "words in the description"},
+    "keywordExactMatch": {"flag": true, "desc": "true: exact phrase (a flag)"},
+    "cpeName": {"desc": "CPE 2.3 name"},
+    "virtualMatchString": {"desc": "CPE match string"},
+    "cweId": {"desc": "weakness id, e.g. CWE-79"},
+    "cvssV3Severity": {"desc": "LOW, MEDIUM, HIGH or CRITICAL"},
+    "cvssV4Severity": {"desc": "LOW, MEDIUM, HIGH or CRITICAL"},
+    "cvssV2Severity": {"desc": "LOW, MEDIUM or HIGH"},
+    "pubStartDate": {"desc": "published on or after; needs pubEndDate, at most 120 days"},
+    "pubEndDate": {"desc": "published on or before"},
+    "lastModStartDate": {"desc": "modified on or after; needs lastModEndDate"},
+    "lastModEndDate": {"desc": "modified on or before"},
+    "kevStartDate": {"desc": "added to the KEV catalog on or after; needs kevEndDate"},
+    "kevEndDate": {"desc": "added to the KEV catalog on or before"},
+    "hasKev": {"flag": true, "desc": "true: only KEV CVEs (a flag)"},
+    "noRejected": {"flag": true, "desc": "true (default): leave out REJECTED CVEs"},
+    "isVulnerable": {"flag": true, "desc": "true: with cpeName, vulnerable configurations only"},
+    "sourceIdentifier": {"desc": "the CNA that published the record"}
+   },
+   "defaults": {"noRejected": true, "resultsPerPage": 1},
+   "records": "",
+   "paging": {"type": "none"},
+   "max_rows": 1,
+   "missing": [""],
+   "flatten": false
+  }
+ },
+ "catalog": {},
+ "enums": {
+  "severity_v3": ["LOW", "MEDIUM", "HIGH", "CRITICAL"],
+  "severity_v2": ["LOW", "MEDIUM", "HIGH"],
+  "date_pairs": [["pubStartDate", "pubEndDate"], ["lastModStartDate", "lastModEndDate"], ["kevStartDate", "kevEndDate"]],
+  "max_range_days": 120,
+  "note": "Verified live 2026-10-30: flags take no value (hasKev=true is refused with HTTP 404, hasKev or hasKev= works); each date pair needs both ends, full ISO 8601 date-times, and at most 120 days (kev pair too); severities are upper case; errors are HTTP 404 with the reason in a 'message' response header."
+ }
+}

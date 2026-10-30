@@ -1,0 +1,84 @@
+{
+  "id": "nvd",
+  "title": "NIST National Vulnerability Database (NVD CVE API 2.0)",
+  "agency": "National Institute of Standards and Technology",
+  "depth": "standard",
+  "domains": [
+    "cybersecurity",
+    "software vulnerabilities"
+  ],
+  "keywords": [
+    "cve",
+    "cves",
+    "vulnerability",
+    "vulnerabilities",
+    "nvd",
+    "cvss",
+    "cwe",
+    "exploited",
+    "known exploited",
+    "kev",
+    "security flaw",
+    "zero-day",
+    "patch",
+    "cybersecurity",
+    "software bug"
+  ],
+  "questions": [
+    "how many critical vulnerabilities were published this year",
+    "one CVE's severity score and weakness type",
+    "known exploited vulnerabilities added to the CISA catalog",
+    "vulnerabilities in a product or vendor",
+    "most common weakness types (CWE)"
+  ],
+  "homepage": "https://nvd.nist.gov/",
+  "terms_url": "https://nvd.nist.gov/developers/terms-of-use",
+  "auth": {
+    "env": null,
+    "required": "none",
+    "placement": "none",
+    "signup_url": null,
+    "echoes_key": false
+  },
+  "limits": {
+    "rps": 0.16,
+    "burst": 1,
+    "max_rows": 20000
+  },
+  "routes": {
+    "api": {
+      "base": "https://services.nvd.nist.gov/rest/json",
+      "probe": "https://services.nvd.nist.gov/rest/json/cves/2.0?cveId=CVE-2021-44228",
+      "hosts": [
+        "services.nvd.nist.gov"
+      ]
+    },
+    "manual": {
+      "how": "Open each link in INSTRUCTIONS.md in a browser (each returns JSON, up to 2,000 CVEs) and save it under the given name, waiting about 6 seconds between links (NVD allows 5 requests in 30 seconds without a key). For whole years, the yearly CVE JSON 2.0 feeds at https://nvd.nist.gov/vuln/data-feeds are an alternative but are large and must be filtered by hand. Upload the saved files."
+    }
+  },
+  "cache": {
+    "mode": "run_only",
+    "ttl_hours": null,
+    "why": "Records are re-analyzed and modified daily (lastModified); data/ is reused within a run."
+  },
+  "redistribution": {
+    "mode": "allowed",
+    "why": "NVD data are a work of the U.S. government (NIST), not subject to copyright in the U.S. (17 U.S.C. 105); the terms of use ask products that use the API to carry the notice below (https://nvd.nist.gov/developers/terms-of-use)."
+  },
+  "notices": [
+    "This product uses data from the NVD API but is not endorsed or certified by the NVD."
+  ],
+  "retention": null,
+  "citation": "National Institute of Standards and Technology, National Vulnerability Database, {dataset}, NVD CVE API 2.0 (services.nvd.nist.gov), retrieved {retrieved_long}.",
+  "audit_hooks": [],
+  "clarify": [
+    "Which score counts for severity: NVD's own CVSS v3.1 assessment (the default here) or the reporting organization's (CNA) score? They differ for many CVEs.",
+    "Published date or last-modified date? CVE counts by year normally use the published date.",
+    "Include CVEs still awaiting NVD analysis (no NVD score yet)? Severity counts leave them out."
+  ],
+  "formats": [
+    "json",
+    "csv"
+  ]
+}
