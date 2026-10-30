@@ -302,10 +302,13 @@ def _check_sensitivity(i: int, row: dict, facts: dict) -> tuple[bool, str]:
     b, a = nums["base"], nums["alt"]
     thr = _sens_number(row.get("threshold"))
     if thr:
-        changes = (b - thr[0]) * (a - thr[0]) < 0
-        if (says == "yes") != changes:
-            return False, (f"{label}: base {b:g} and alternative {a:g} are {'on opposite sides' if changes else 'on the same side'} "
-                           f"of the threshold {thr[0]:g}, so conclusion_changes must be {'yes' if changes else 'no'}")
+        # a sign flip is a change too (a fall that becomes a rise), whichever side of the threshold both are on
+        crosses, flips = (b - thr[0]) * (a - thr[0]) < 0, b * a < 0
+        if (says == "yes") != (crosses or flips):
+            why = (f"are on opposite sides of the threshold {thr[0]:g}" if crosses else
+                   f"differ in sign" if flips else f"are on the same side of the threshold {thr[0]:g} and of zero")
+            return False, (f"{label}: base {b:g} and alternative {a:g} {why}, so conclusion_changes must be "
+                           f"{'yes' if crosses or flips else 'no'}")
     elif says == "no" and b * a < 0:
         return False, (f"{label}: the headline changes sign ({b:g} to {a:g}), so the conclusion changes: write yes, "
                        "or give the threshold the conclusion turns on in a threshold column")

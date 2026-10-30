@@ -64,11 +64,13 @@ def probe(pack) -> dict:
 
 def route_check(pack, spec: dict, spec_path: str, out: str, env: str, force: bool = False,
                 key_only_needs: list[str] | None = None, ping=None, spec_problems: list[str] | None = None,
-                manual_items=None, failed: dict | None = None) -> dict:
+                manual_items=None, failed: dict | None = None, keyless_files=None) -> dict:
     """ping(key) -> {"auth_ok": bool, "kind": str, "detail": str}; manual_items() -> [item, ...].
     failed = {"route", "kind", "error"} after a fetch by that route failed: the route is not offered again
     (a probe can answer while the real request is blocked, e.g. HTTP 403 from a bot filter, or a key the
-    probe never checks)."""
+    probe never checks). A rate limit ("rate") on a pack's shared demo key, with no key of the user's, counts
+    as a key needed. keyless_files() -> [{"request", "url", "filename"}]: the pack's keyless_file for this
+    spec ([] when the spec is not covered; without the hook, the policy's keyless_file text is offered)."""
     from core import manual
     P, a = pack.policy, pack.policy["auth"]
     out = os.path.abspath(out)
@@ -77,10 +79,23 @@ def route_check(pack, spec: dict, spec_path: str, out: str, env: str, force: boo
     ingest = cmd(base, "--ingest", "<the uploaded files or their folder>")
     key, key_src = keys.find_auth_key(a)
     needs = list(key_only_needs or [])
+    if failed and failed.get("kind") == "rate" and not key and a.get("demo_key"):
+        needs.append(f"more requests than the shared {a['demo_key']} allows now (HTTP 429: its limit is spent; "
+                     "it resets within hours)")
     r = {"status": "route_check", "source": pack.id, "environment": env, "os": sys.platform,
          "restricted": keys.restricted(), "key_env": a.get("env"), "key_source": key_src,
          "key_required": a["required"], "key_ok": None, "key_only_needs": needs, "probed": {},
          "existing_data": None, "route": None, "message": "", "action": "", "next_command": ""}
+
+    def keyless() -> bool:
+        """Add the pack's keyless_file (a direct, small agency file that --ingest reads and filters) when it
+        covers this spec."""
+        how = P["routes"]["manual"].get("keyless_file")
+        files = keyless_files() if how and keyless_files else None
+        if not how or files == []:
+            return False
+        r.update(keyless_file=how, ingest_command=ingest, **({"keyless_files": files} if files else {}))
+        return True
 
     def done(route, message, action, next_command=""):
         r.update(route=route, message=message, action=action, next_command=next_command)
@@ -141,8 +156,14 @@ def route_check(pack, spec: dict, spec_path: str, out: str, env: str, force: boo
         if p.get("kind") not in ("auth", "key_missing"):
             return done("report_error", f"The key check failed: {p.get('detail', '')}", "Tell the user and stop.")
     if api_ok and a["required"] == "optional" and not needs and not key:
+        demo = a.get("demo_key") and keyless()   # the shared demo key can be spent: say what works without it
         return done("api", f"{P['title']} answers from here without a key (a free key at {signup} raises the "
-                    "rate limits).", "Run next_command. Mention once that a key raises the limits.", run)
+                    "rate limits)." + (f" If the shared {a['demo_key']} is rate-limited (HTTP 429), the same series "
+                                       "come keyless in keyless_files." if demo else ""),
+                    "Run next_command. Mention once that a key raises the limits." +
+                    (" If the fetch stops with HTTP 429 and nobody can set up a key, download keyless_files (each url "
+                     "under its filename) into a new folder and run ingest_command on that folder." if demo else ""),
+                    run)
     rejected = r["key_ok"] is False
     lead = (f"{P['title']} rejected the {a['env']} key found in {key_src}. " if rejected else
             f"No {a['env']} key is set up. " if key_needed and not key else "")
@@ -165,15 +186,15 @@ def route_check(pack, spec: dict, spec_path: str, out: str, env: str, force: boo
             # provenance like any fetch (a file copied in by hand has neither)
             r.update(setup_script=path, run_command=setup, keyless_alternative=P["routes"]["manual"]["how"],
                      ingest_command=ingest)
-            if P["routes"]["manual"].get("keyless_file"):    # a direct, small file that --ingest reads and filters
-                r["keyless_file"] = P["routes"]["manual"]["keyless_file"]
+            keyless()
             return done("run_setup", lead + need + " The setup script asks for it with hidden input, checks it and "
                         "stores it in the skill's keys.json (~/.config/data-analyst).",
                         "Give the user run_command to run in their own terminal (never run it for them, never ask for "
                         "the key in chat), and offer keyless_alternative (the pack's keyless way to the same data). "
                         "When they say the key is stored, run --check again. A file obtained the keyless way goes "
                         "through ingest_command, never straight into the analysis. With nobody to ask, fetch only a "
-                        "keyless_file (a direct file the pack's ingest reads and filters); without one, report the "
+                        "keyless_file (a direct file the pack's ingest reads and filters; keyless_files, when given, "
+                        "lists each url and filename); without one, report the "
                         "data as not fetched, with run_command.", setup)
         b = bundle(f"the request needs a {a['env']} key")
         if env == "cloud":

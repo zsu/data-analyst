@@ -717,7 +717,8 @@ def replication_readme(ctx: Ctx, excluded: list[dict]) -> str:
         for s in ctx.ids:
             P = ctx.prov[s][1]
             v = P.get("vintage")
-            cites.append(pol.citation(ctx.policies[s], retrieved=str(P.get("retrieved") or P.get("downloaded") or "")[:10],
+            cites.append(pol.citation(ctx.policies[s], route=str(P.get("route") or ""),
+                                      retrieved=str(P.get("retrieved") or P.get("downloaded") or "")[:10],
                                       dataset=str((P.get("spec") or {}).get("description") or ctx.title(s)),
                                       vintage="" if v in (None, "latest") else str(v)))
     if cites:

@@ -87,9 +87,14 @@ Field rules (`core/policy.py: validate` enforces the starred ones):
   Each network route needs a cheap `probe` URL that needs no key and returns quickly (any HTTP status means
   reachable). Use `api_keyless` for a different keyless host (FRED graph CSVs), `bulk` for flat files.
   `manual.keyless_file` (optional) names a direct, small agency file that holds a keyed request's rows and
-  that the pack's `--ingest` reads and filters by the spec (epa-aqs AirData files); `--check` returns it with
-  `run_setup`, and it is the only keyless download an unattended run makes. Never set it for an interactive
-  page, a large bulk file or a file that must be filtered by hand.
+  that the pack's `--ingest` reads and filters by the spec (epa-aqs AirData files, eia dnav history files);
+  `--check` returns it with `run_setup`, and it is the only keyless download an unattended run makes. With the
+  adapter hook `keyless_files`, `--check` also lists the exact files (`keyless_files`) and offers the route only
+  when they cover the spec; a pack with a shared `demo_key` then names them on the keyless `api` route too, and
+  a fetch stopped by HTTP 429 on that demo key returns to the check as a key needed (`run_setup` with the
+  files). `--ingest` records the route `keyless_file` when every file is an item's `alt_filenames`, and
+  `manual.keyless_citation` (optional, a citation template) then replaces `citation` for that data. Never set it
+  for an interactive page, a large bulk file or a file that must be filtered by hand.
 - **`cache.mode`**\*: `none` when the terms forbid copies (FRED); `run_only` by default; `persistent` (with
   `ttl_hours`) only for large, slowly changing files whose terms allow caching.
 - **`redistribution.mode`**\*: `allowed` (public domain or open licence), `aggregates_only` (row-level files
@@ -157,7 +162,8 @@ Standard packs run through `scripts/fetch.py` → `core.generic_rest`. An adapte
 | `search` | `(query, pack) -> list[dict]` | Live search (e.g. Census variables). Default: search the catalog in endpoints.json. |
 | `key_only_needs` | `(spec) -> list[str]` | Features of this request that need a key even when a keyless route exists. |
 | `manual_items` | `(spec, pack) -> list[item]` | Manual download links when the generic ones do not fit. |
-| `parse_upload` | `(pack, req, paths) -> rows` | Read uploaded files (e.g. a dataset page's CSV export). |
+| `parse_upload` | `(pack, req, paths) -> rows` | Read uploaded files (e.g. a dataset page's CSV export). A missing optional reader raises `DataError(kind="install_deps")`. |
+| `keyless_files` | `(spec, pack) -> list[{"request", "url", "filename"}]` | The `keyless_file` downloads that hold every request of the spec; `[]` when one is not covered or the reader is missing. Each also goes in the matching manual item's `alt_filenames`. |
 
 Use `core.combine` (in `scripts/analysis/combine.py`) for state codes; do not copy the table.
 

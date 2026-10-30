@@ -8,7 +8,9 @@ policy.json is where a source's rules live so code can enforce them, not just do
   *auth        {env, required: "required"|"optional"|"none", signup_url, placement: "query"|"header"|"body"|
                 "none", param, prefix, home, echoes_key: bool, key_only: [features a keyless route lacks]}
   *limits      {rps, burst, daily_quota, max_series, max_years, errors_per_min, bytes_per_min, max_rows}
-  *routes      {api: {base, probe, hosts}, api_keyless: {...}, bulk: {...}, manual: {how}}  (manual required)
+  *routes      {api: {base, probe, hosts}, api_keyless: {...}, bulk: {...}, manual: {how}}  (manual required;
+               manual.keyless_file: a direct keyless agency file --ingest reads, manual.keyless_citation: the
+               citation template for data that came by that file, when it is not the API's)
   *cache       {mode: "none"|"run_only"|"persistent", ttl_hours, why}
   *redistribution {mode: "allowed"|"aggregates_only"|"definition_only", microdata_globs: [..], why,
                 package_include: [globs under data/<id>/ that MAY leave the analysis folder under
@@ -119,6 +121,9 @@ def validate(p: dict, pack_dir: str | None = None) -> list[str]:
             bad.append(f"audit hook {h.get('id')!r}: why is required")
     if "{retrieved" not in (p.get("citation") or ""):
         bad.append("citation must contain {retrieved} or {retrieved_long}")
+    kc = (r.get("manual") or {}).get("keyless_citation")
+    if kc is not None and "{retrieved" not in str(kc):
+        bad.append("routes.manual.keyless_citation must contain {retrieved} or {retrieved_long}")
     return bad
 
 
@@ -288,7 +293,9 @@ def local_stamp(stamp) -> str:
     return f"{d.astimezone():%Y-%m-%d %H:%M} local time ({d.astimezone(timezone.utc):%Y-%m-%d %H:%M} UTC)"
 
 
-def citation(p: dict, **vals) -> str:
+def citation(p: dict, route: str = "", **vals) -> str:
+    """The source's citation; data that came by the keyless_file route cite that file when the pack says how
+    (routes.manual.keyless_citation), not the API."""
     from datetime import datetime
     if vals.get("retrieved"):
         vals["retrieved"] = local_day(vals["retrieved"])
@@ -306,4 +313,5 @@ def citation(p: dict, **vals) -> str:
     class _D(dict):
         def __missing__(self, k):
             return "{" + k + "}"
-    return p["citation"].format_map(_D(vals))
+    tmpl = (p.get("routes", {}).get("manual") or {}).get("keyless_citation") if route == "keyless_file" else None
+    return (tmpl or p["citation"]).format_map(_D(vals))

@@ -28,6 +28,11 @@ MORE = {"description": "SEDS per capita, WTI, gasoline, sectors",
                       "params": {"route": "gasoline_diesel_retail", "facets": {"series": ["EMM_EPMR_PTE_NUS_DPG"]},
                                  "frequency": "weekly", "start": "2026-09-01", "end": "2026-10-19"}},
                      {"name": "sectors", "endpoint": "facet_values", "params": {"route": "retail_sales", "facet": "sectorid"}}]}
+GAS_MONTHLY = {"description": "U.S. regular gasoline, monthly 2024",
+               "requests": [{"name": "gas_2024", "endpoint": "data",
+                             "params": {"route": "gasoline_diesel_retail", "facets": {"series": ["EMM_EPMR_PTE_NUS_DPG"]},
+                                        "frequency": "monthly", "start": "2024", "end": "2024"}}]}
+XLS = "EMM_EPMR_PTE_NUS_DPGm.xls"
 
 
 class TestEia(PackTest):
@@ -108,6 +113,98 @@ class TestEia(PackTest):
         self.assertEqual((q["start"], q["end"]), ("2010", "2012"))             # annual: years stay years
         self.assertEqual(ad.whole_year("2021", "quarterly", "end"), "2021-Q4")
         self.assertEqual(ad.whole_year("2021-06", "monthly", "start"), "2021-06")
+
+    # ------------------------------------------------------------ keyless dnav history files
+    # EMM_EPMR_PTE_NUS_DPGm.xls was downloaded live from www.eia.gov/dnav/pet/hist_xls/ on 2026-10-30 (no key);
+    # its 2024 values equal the API's (3.075, 3.212, 3.426 for 2024-01..03, checked the same day). doc_429.json is
+    # api.data.gov's documented OVER_RATE_LIMIT body, served with HTTP 429 for the monthly gasoline request.
+
+    def test_check_without_key_lists_the_keyless_file(self):
+        code, r = self.check(GAS_MONTHLY)
+        self.assertEqual((code, r["route"]), (0, "api"), r)
+        self.assertEqual(r["keyless_files"], [{"request": "gas_2024", "frequency": "monthly", "filename": XLS,
+                                               "url": "https://www.eia.gov/dnav/pet/hist_xls/" + XLS}])
+        self.assertIn("hist_xls", r["keyless_file"])
+        self.assertIn("--ingest", r["ingest_command"])
+        self.assertIn("429", r["action"])
+        # a request no history file holds (SEDS, electricity) gets none
+        code, r = self.check(SPEC)
+        self.assertNotIn("keyless_file", r)
+
+    def test_demo_key_429_offers_the_keyless_file(self):
+        """Eval gas-tax-elasticity-choice: DEMO_KEY was spent (HTTP 429) and the run stopped with no data."""
+        sp, out = self.write_spec(GAS_MONTHLY)
+        code, r = self.cli(sp, "--out", out, "--env", "local")
+        self.assertEqual(code, 4, r)
+        self.assertEqual((r["status"], r["kind"], r["route"]), ("blocked", "rate", "run_setup"), r)
+        self.assertEqual([f["filename"] for f in r["keyless_files"]], [XLS])
+        self.assertIn("DEMO_KEY", r["message"])
+        # with a key of the user's, a 429 stays an error (no keyless detour)
+        code, r = self.cli(sp, "--out", out, "--env", "local", env={"EIA_API_KEY": "x" * 40})
+        self.assertEqual((code, r["status"]), (2, "error"), r)
+
+    def test_api_fetch_cites_the_api(self):
+        code, r, out = self.fetch(SPEC)
+        self.assertIn("EIA Open Data API v2 (api.eia.gov)", r["citation"])
+
+    def test_ingest_keyless_file(self):
+        import shutil
+        sp, out = self.write_spec(GAS_MONTHLY)
+        up = os.path.join(out, "up")
+        os.makedirs(up)
+        shutil.copy(os.path.join(self.fixtures, XLS), up)
+        code, r = self.cli(sp, "--out", out, "--ingest", up)
+        self.assertEqual((code, r.get("route")), (0, "keyless_file"), r)
+        rows = self.csv(out, "gas_2024")
+        self.assertEqual(len(rows), 12)
+        self.assertEqual([(x["period"], x["value"]) for x in rows[-3:]],
+                         [("2024-03", "3.426"), ("2024-02", "3.212"), ("2024-01", "3.075")])     # newest first, as the API
+        self.assertEqual((rows[0]["series"], rows[0]["units"]), ("EMM_EPMR_PTE_NUS_DPG", "Dollars per Gallon"))
+        with open(os.path.join(out, "data", "eia", "request.json"), encoding="utf-8") as f:
+            req = json.load(f)
+        self.assertEqual((req["route"], req["acquired"]), ("keyless_file", "keyless_file"))
+        self.assertIn(XLS, req["notes"][0])
+        with open(os.path.join(out, "data", "eia", "README.md"), encoding="utf-8") as f:
+            readme = f.read()
+        self.assertIn("www.eia.gov/dnav/pet", readme)          # cites the file, not the API
+        self.assertNotIn("api.eia.gov", readme)
+        # the weekly file is not the monthly request's
+        os.rename(os.path.join(up, XLS), os.path.join(up, XLS.replace("m.xls", "w.xls")))
+        code, r = self.cli(sp, "--out", out, "--ingest", os.path.join(up, XLS.replace("m.xls", "w.xls")), "--force")
+        self.assertEqual(code, 2, r)
+        self.assertIn(XLS, r["message"])
+
+    def test_keyless_file_coverage_and_missing_xlrd(self):
+        from testkit import load_pack_module
+        from core.http import DataError
+        ad = load_pack_module("eia")
+        one = lambda **p: ad.dnav_file({"name": "x", "endpoint": "data"}, p)
+        self.assertEqual(one(route="petroleum/cons/psup", facets={"series": ["MGFUPUS2"]}, frequency="monthly")
+                         ["filename"], "MGFUPUS2m.xls")
+        self.assertEqual(one(route="petroleum/pri/spt", facets={"series": "RWTC"}, frequency="daily")["filename"],
+                         "RWTCd.xls")
+        self.assertEqual(one(route="petroleum/pri/gnd", facets={"series": ["EMM_EPMR_PTE_NUS_DPG"]})["filename"],
+                         XLS.replace("m.xls", "w.xls"))                      # the route's default frequency
+        self.assertIsNone(one(route="petroleum/pri/spt", facets={"series": ["RWTC", "RBRTE"]}, frequency="daily"))
+        self.assertIsNone(one(route="petroleum/pri/gnd", facets={"series": ["EMM_EPMR_PTE_NUS_DPG"],
+                                                                 "duoarea": ["NUS"]}, frequency="weekly"))
+        self.assertIsNone(one(route="seds", msn="TETPB"))
+        self.assertIsNone(one(route="natural-gas/pri/sum", facets={"series": ["N3010US3"]}, frequency="monthly"))
+        # without xlrd: no file is offered and --ingest says what to install
+        saved = sys.modules.get("xlrd")
+        sys.modules["xlrd"] = None
+        try:
+            from core import packs
+            self.assertEqual(ad.keyless_files(GAS_MONTHLY, packs.load("eia")), [])
+            with self.assertRaises(DataError) as e:
+                ad._dnav_rows(os.path.join(self.fixtures, XLS), GAS_MONTHLY["requests"][0],
+                              {**GAS_MONTHLY["requests"][0]["params"], "route": "petroleum/pri/gnd"})
+            self.assertEqual(e.exception.kind, "install_deps")
+        finally:
+            if saved is None:
+                sys.modules.pop("xlrd", None)
+            else:
+                sys.modules["xlrd"] = saved
 
 if __name__ == "__main__":
     unittest.main()
