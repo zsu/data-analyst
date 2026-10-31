@@ -786,6 +786,28 @@ class TestSpreadsheetRecords(unittest.TestCase):
         with self.assertRaises(DataError):
             gr._records({"records": "$zip:*.json"}, self.R(buf.getvalue()))
 
+    def test_spec_sets_sheet_and_header_row_and_they_are_not_sent(self):
+        ep = {"path": "/f.xlsx", "records": "$xlsx", "params": {"sheet": {"in": "records"},
+                                                                "header_row": {"in": "records"}}}
+        path, query, _ = gr.split(ep, {"sheet": "B", "header_row": "2"})
+        self.assertEqual((path, query), ("/f.xlsx", {}))
+        e2 = gr.with_record_params(ep, {"sheet": "B", "header_row": "2"})
+        body = xlsx_bytes({"A": [["x"], ["1"]], "B": [["title"], ["y"], ["2"]]})
+        self.assertEqual(gr._records(e2, self.R(body)), [{"y": "2"}])
+
+    def test_xls_needs_xlrd_or_says_install_deps(self):
+        ole = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1" + b"\0" * 504
+        with mock.patch.dict(sys.modules, {"xlrd": None}):
+            with self.assertRaises(DataError) as e:
+                gr._records({"records": "$xls"}, self.R(ole))
+        self.assertEqual(e.exception.kind, "install_deps")
+        with self.assertRaises(DataError) as e:
+            gr._records({"records": "$xls"}, self.R(b"<html>404</html>"))
+        self.assertEqual(e.exception.kind, "api")
+        # an .xlsx behind an .xls name is read as .xlsx
+        body = xlsx_bytes({"S": [["k"], ["v"]]})
+        self.assertEqual(gr._records({"records": "$xls"}, self.R(body)), [{"k": "v"}])
+
     def test_html_in_place_of_a_file_is_an_error(self):
         for rec in ("$xlsx", "$zip:*.csv"):
             with self.assertRaises(DataError):

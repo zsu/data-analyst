@@ -23,11 +23,13 @@ endpoints.json:
       "records": "results",                  # dotted path to the list of records; "" = body is the list;
                                              # "$table" = list of lists whose first row is the header (Census);
                                              # "$csv" = CSV text; "$xlsx" = an .xlsx workbook (one sheet);
+                                             # "$xls" = a legacy .xls (needs xlrd: install_deps without it);
                                              # "$zip:<glob>" = a zip whose members matching glob (CSV or
                                              # .xlsx) are read in name order and stacked
       "sheet": "Table 1",                    # $xlsx / zipped .xlsx: sheet name, or 1-based number (default 1)
       "header_row": 1,                       # $xlsx / zipped .xlsx: 1-based row holding the column names;
                                              # rows above it are titles, blank rows below it are dropped
+                                             # (a param declared "in": "records" lets the spec set either one)
       "total": "meta.count",                 # optional dotted path to the total row count
       "paging": {"type": "offset", "limit_param": "$limit", "offset_param": "$offset", "size": 1000,
                  "manual_size": 50000}       # manual_size: rows per browser download (default size)
@@ -164,7 +166,7 @@ def split(ep: dict, params: dict) -> tuple[str, dict, dict | None]:
     flags = []
     for k, v in params.items():
         where = (pdefs.get(k) or {}).get("in", "body" if ep.get("method") == "POST" else "query")
-        if where == "spec":                          # read by the adapter, never sent
+        if where in ("spec", "records"):             # read by the adapter / the file reader, never sent
             continue
         if (pdefs.get(k) or {}).get("flag"):         # a bare query flag (?flagName): sent when true, never with a value
             if v is True or str(v).strip().lower() in ("true", "1", "yes"):
@@ -328,9 +330,41 @@ def xlsx_sheets(src, only: set[str] | None = None) -> dict[str, list[list]]:
 
 
 def sheet_records(ep: dict, src) -> list[dict]:
-    """Rows of one sheet as dicts: ep["sheet"] (name or 1-based number, default 1) and ep["header_row"]
+    """Rows of one .xlsx sheet as dicts: ep["sheet"] (name or 1-based number, default 1) and ep["header_row"]
     (1-based, default 1). Blank and repeated column names get colN names; blank rows are dropped."""
-    sheets = xlsx_sheets(src)
+    return grid_records(ep, xlsx_sheets(src))
+
+
+def xls_sheets(src) -> dict[str, list[list]]:
+    """Sheets of a legacy .xls (bytes or a path) as lists of row values; needs the optional package xlrd."""
+    try:
+        import xlrd
+    except ImportError:
+        raise DataError("reading a legacy .xls file needs the Python package xlrd, which is not installed: install "
+                        "it if the network allows (pip install xlrd), or open the file in a spreadsheet program, "
+                        "save the sheet as CSV and upload that", kind="install_deps")
+    book = (xlrd.open_workbook(file_contents=bytes(src)) if isinstance(src, (bytes, bytearray))
+            else xlrd.open_workbook(src))
+    out = {}
+    for sh in book.sheets():
+        rows = []
+        for i in range(sh.nrows):
+            vals = []
+            for c in sh.row(i):
+                v = c.value
+                if c.ctype == xlrd.XL_CELL_EMPTY or v == "":
+                    vals.append(None)
+                elif isinstance(v, float):
+                    vals.append(str(int(v)) if v.is_integer() else repr(v))
+                else:
+                    vals.append(str(v))
+            rows.append(vals)
+        out[sh.name] = rows
+    return out
+
+
+def grid_records(ep: dict, sheets: dict[str, list[list]]) -> list[dict]:
+    """The sheet ep["sheet"] of {name: rows} as dicts, header at ep["header_row"] (see sheet_records)."""
     want = ep.get("sheet", 1)
     if isinstance(want, int) or str(want).isdigit():
         names = list(sheets)
@@ -371,6 +405,12 @@ def _records(ep: dict, resp) -> list:
         return list(csv.DictReader(io.StringIO(resp.text())))
     if path == "$xlsx":
         return sheet_records(ep, resp.body)
+    if path == "$xls":
+        if resp.body[:4] == b"PK\x03\x04":            # an .xlsx served under an .xls name
+            return sheet_records(ep, resp.body)
+        if resp.body[:8] != b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1":
+            raise DataError("expected an .xls workbook, got something else (an HTML page?)", kind="api")
+        return grid_records(ep, xls_sheets(resp.body))
     if path.startswith("$zip:"):
         try:
             z = zipfile.ZipFile(io.BytesIO(resp.body))
@@ -385,6 +425,8 @@ def _records(ep: dict, resp) -> list:
         for n in members:
             if n.lower().endswith(".xlsx"):
                 rows += sheet_records(ep, z.read(n))
+            elif n.lower().endswith(".xls"):
+                rows += grid_records(ep, xls_sheets(z.read(n)))
             else:
                 rows += list(csv.DictReader(io.StringIO(_csv_text(z.read(n)))))
         return rows
@@ -409,8 +451,16 @@ def _clean(rows: list, ep: dict) -> list[dict]:
     return out
 
 
+def with_record_params(ep: dict, params: dict) -> dict:
+    """The endpoint with the spec's file-reading params (declared "in": "records": sheet, header_row) applied."""
+    pdefs = ep.get("params") or {}
+    over = {k: v for k, v in params.items() if (pdefs.get(k) or {}).get("in") == "records" and v not in (None, "")}
+    return {**ep, **over} if over else ep
+
+
 def fetch_request(client: Client, ep: dict, params: dict, max_rows: int | None = None) -> tuple[list[dict], dict]:
     """All pages of one request. Returns (rows, meta {pages, total, truncated, urls})."""
+    ep = with_record_params(ep, params)
     pg = ep.get("paging") or {"type": "none"}
     kind = pg.get("type", "none")
     limit = min(int(max_rows or ep.get("max_rows") or 100000), int(ep.get("max_rows") or 10 ** 9))
@@ -647,7 +697,7 @@ def manual_items(pack, spec: dict) -> list[dict]:
         limit = int(r.get("max_rows") or size)
         pages = 1 if pg.get("type") in ("none", "cursor", "link") else min(25, max(1, math.ceil(limit / size)))
         rec = ep.get("records") or ""
-        ext = {"$csv": "csv", "$xlsx": "xlsx"}.get(rec, "zip" if rec.startswith("$zip:") else "json")
+        ext = {"$csv": "csv", "$xlsx": "xlsx", "$xls": "xls"}.get(rec, "zip" if rec.startswith("$zip:") else "json")
         for i in range(pages):
             q = dict(query)
             b = dict(body) if body is not None else None
@@ -679,7 +729,8 @@ def manual_items(pack, spec: dict) -> list[dict]:
 
 def parse_upload(pack, req: dict, paths: list[str]) -> list[dict]:
     """Rows from uploaded files for one request (its pages in order)."""
-    ep, _, _ = resolve(pack, req)
+    ep, params, _ = resolve(pack, req)
+    ep = with_record_params(ep, params)
     rows = []
     for p in sorted(paths, key=lambda s: [int(x) if x.isdigit() else x for x in re.split(r"(\d+)", s)]):
         with open(p, "rb") as f:
