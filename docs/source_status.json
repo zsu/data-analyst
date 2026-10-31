@@ -29,7 +29,7 @@
  },
  "census": {
   "last_checked": "2026-10-30",
-  "status": "key_absent",
+  "status": "missing_key_ok",
   "last_fixed": "2026-10-22",
   "note": "PEP vintages; county population via FRED regional without a key"
  },
@@ -63,10 +63,10 @@
  },
  "congress": {
   "last_checked": "2026-10-30",
-  "status": "ok",
+  "status": "external_down",
   "last_ok": "2026-10-30",
   "last_fixed": "2026-10-22",
-  "note": "house votes from the 115th; introducedDate sort; committee bills by congress; sort '+' sent as space; 2026-10-30: www.senate.gov roll-call XML HTTP 403 from the checking host (external); Congress.gov API ok"
+  "note": "senate.gov roll-call XML answers scripts with HTTP 403 (external); house votes and api.congress.gov work"
  },
  "doj-news": {
   "last_checked": "2026-10-30",
@@ -77,7 +77,7 @@
  },
  "dol": {
   "last_checked": "2026-10-30",
-  "status": "key_absent",
+  "status": "missing_key_ok",
   "last_fixed": "2026-10-22",
   "note": "OSHA insp_type legend from DOL dictionary"
  },
@@ -97,9 +97,9 @@
  },
  "epa-aqs": {
   "last_checked": "2026-10-30",
-  "status": "key_absent",
-  "last_fixed": "2026-10-22",
-  "note": "list/durations removed"
+  "status": "missing_key_ok",
+  "last_fixed": "2026-10-30",
+  "note": "missing key/email now reported as key_missing (HTTP 400 mapped, core)"
  },
  "fbi": {
   "last_checked": "2026-10-30",
@@ -166,7 +166,7 @@
  },
  "hud": {
   "last_checked": "2026-10-30",
-  "status": "key_absent",
+  "status": "missing_key_ok",
   "last_fixed": "2026-10-22",
   "note": "income-limit effective dates"
  },
@@ -284,7 +284,7 @@
  },
  "usda-nass": {
   "last_checked": "2026-10-30",
-  "status": "key_absent",
+  "status": "missing_key_ok",
   "last_fixed": "2026-10-22",
   "note": "no-endorsement notice; __LT/__GT"
  },
@@ -297,7 +297,7 @@
  },
  "uspto": {
   "last_checked": "2026-10-30",
-  "status": "key_absent",
+  "status": "missing_key_ok",
   "last_fixed": null,
   "note": ""
  },
@@ -307,5 +307,12 @@
   "last_ok": "2026-10-30",
   "last_fixed": "2026-10-22",
   "note": "indicator lists; unknown-country message; dataset terms URL"
+ },
+ "nyfed": {
+  "last_checked": "2026-10-30",
+  "status": "ok",
+  "last_ok": "2026-10-30",
+  "last_fixed": "2026-10-30",
+  "note": "new pack: reference rates, SOMA, Treasury operations, primary dealers"
  }
 }
