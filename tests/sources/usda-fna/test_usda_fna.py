@@ -10,7 +10,8 @@ Two index entries are not responses to their own URL, to test the gates: the TBA
 (the dashboard ignoring a parameter), and the ESAP request answers HTTP 404 (a republished dashboard).
 Program Data (recorded live 2026-10-30/31): the three listing pages (pd_*.html) and the workbooks snap-persons-10,
 26wifypart-10, 27wilatest-10 (its "June 2025" column holds June 2026), 01slfypart-10, cncost-10 and 36slmonthly-10
-(hidden columns 9-10 hold numbers), all unchanged. Two are trimmed copies of larger real files:
+(hidden columns 9-10 hold numbers), all unchanged; 27wilatest-9 (the September 2026 release, downloaded 2026-10-31,
+not in index.json) prints "Data as of September 11, 2025" over June 2026 data. Two are trimmed copies of larger real files:
   snap-zip-fy69tocurrent-10_FY25only.zip  the SNAP data zip (1.6 MB) with only its FY25.xlsx member
   wicagencies2025ytd_3sheets.xlsx         wicagencies2025ytd.xlsx (225 KB) with three of its sixteen sheets (Children,
                                           Total Number of Participants, NSA costs), the sheet XML unchanged
@@ -269,6 +270,22 @@ class TestUsdaFnaProgramData(PackTest):
         self.assertEqual(r["status"], "partial", r)
         self.assertIn("June 2025", " ".join(r["truncated"]))
         self.assertEqual(sorted(x["period"] for x in self.csv(out, "wl")), ["2025-07", "2026-07"])
+        self.assertFalse([n for n in r["notes"] if "Data as of" in n], r["notes"])     # -10: October 9, 2026
+
+    def test_asof_before_latest_data_is_noted(self):
+        """27wilatest-9 says "Data as of September 11, 2025" over June 2026: noted, kept as printed, never fixed."""
+        ad = load_pack_module("usda-fna")
+        k, c = ad._table({"table": "wic_participation_latest"})
+        with open(os.path.join(FX, "27wilatest-9.xlsx"), "rb") as f:
+            rows, notes = ad.program_rows(k, c, f.read(), {})
+        self.assertEqual({x["data_as_of"] for x in rows}, {"2025-09-11"})
+        hit = [n for n in notes if "Data as of" in n]
+        self.assertEqual(len(hit), 1, notes)
+        self.assertIn("2025-09-11, before its own latest data (2026-06)", hit[0])
+        # the same date a year later (as FNA meant it) passes
+        fixed = _rezip(os.path.join(FX, "27wilatest-9.xlsx"),
+                       lambda n, b: b.replace(b"September 11, 2025", b"September 11, 2026"))
+        self.assertFalse([n for n in ad.program_rows(k, c, fixed, {})[1] if "Data as of" in n])
 
     def test_layout_gates(self):
         ad = load_pack_module("usda-fna")

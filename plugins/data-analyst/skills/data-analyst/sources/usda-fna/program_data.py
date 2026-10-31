@@ -120,6 +120,28 @@ def as_of(rows: list[list]) -> str:
     return ""
 
 
+def asof_notes(key: str, rows: list[dict]) -> list[str]:
+    """A note when "Data as of" precedes the table's own latest data (the month after its latest month; for fiscal
+    years, November of the year's first month): the printed date is wrong. 27wilatest-5 to -9 print 2025 for 2026."""
+    asof = next((x["data_as_of"] for x in rows if x["data_as_of"]), "")
+    try:
+        d = dt.date.fromisoformat(asof)
+    except ValueError:
+        return []
+    latest = max(((int(x["period"][:4]), int(x["period"][5:7])) if x["period_type"] == "month"
+                  else (x["fiscal_year"] - 1, 10) for x in rows if x["value_num"]), default=None)
+    if not latest:
+        return []
+    y, m = latest
+    need = dt.date(y + (m == 12), m % 12 + 1, 1)
+    if d >= need:
+        return []
+    per = f"{y}-{m:02d}" if any(x["period_type"] == "month" for x in rows) else f"FY {y + 1}"
+    return [f"{key}: the workbook says \"Data as of\" {asof}, before its own latest data ({per}): the printed date "
+            f"is wrong (most likely its year). data_as_of keeps the date as printed; cite the release by its file "
+            f"name and the date you retrieved it rather than that date"]
+
+
 def label_ok(head, label: str) -> bool:
     h = re.sub(r"\s+", "", norm(head)).lower()
     return bool(h) and all(w.lower() in h for w in re.findall(r"[A-Za-z0-9]+", label))
@@ -419,12 +441,14 @@ def parse_table(key: str, d: dict, body: bytes, areas: Areas) -> tuple[list[dict
         raise LayoutError(f"{key}: no sheet titled like {d['title']!r} with the {d['layout']} layout")
     _, rows, hidden = found
     if d["layout"] == "annual":
-        return parse_annual(key, d, rows, hidden), []
-    if d["layout"] == "monthly":
-        return parse_monthly(key, d, rows, hidden), []
-    if d["layout"] == "state_fy":
-        return parse_state_fy(key, d, rows, hidden, areas)
-    return parse_state_latest(key, d, rows, hidden, areas)
+        out, notes = parse_annual(key, d, rows, hidden), []
+    elif d["layout"] == "monthly":
+        out, notes = parse_monthly(key, d, rows, hidden), []
+    elif d["layout"] == "state_fy":
+        out, notes = parse_state_fy(key, d, rows, hidden, areas)
+    else:
+        out, notes = parse_state_latest(key, d, rows, hidden, areas)
+    return out, asof_notes(key, out) + notes
 
 
 # ---------------------------------------------------------------------- SNAP state monthly (zip of FYyy.xlsx)
@@ -587,4 +611,4 @@ def parse_wic_sheet(key: str, d: dict, rows, hidden, fy: int, areas: Areas) -> t
                                      f"{regions:,.0f}, TOTAL {v:,.0f}")
                 else:
                     run += v
-    return out, notes
+    return out, asof_notes(f"wic_agency_monthly FY {fy} {key}", out) + notes
