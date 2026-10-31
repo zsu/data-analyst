@@ -17,8 +17,8 @@ state for recent years and months. Two SNAP reports cover states:
   FY 2019-2023 (tidy rows), or for FY 2004-2018 (page text).
 - Not here:
   - SNAP by state and month before FY 2020 (old .xls files in the same zip; this pack does not read them);
-  - SNAP Quality Control microdata (snapqcdata.net) and payment error rates (PDF charts at
-    https://www.fna.usda.gov/snap/qc/per): not covered;
+  - characteristics of SNAP households from the Quality Control microdata (snapqcdata.net): snapqc;
+  - official payment error rates (PDF charts at https://www.fna.usda.gov/snap/qc/per): not covered;
   - P-EBT and SNAP by county/project area (zips on the SNAP page): not read;
   - poverty and SNAP receipt in household surveys: census (ACS), ipums;
   - federal spending on SNAP by recipient: usaspending.
