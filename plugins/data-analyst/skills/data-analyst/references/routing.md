@@ -33,6 +33,7 @@ Use `fetch.py --route "<question>"` for a ranked suggestion.
 | Housing costs and assistance | hud | census, fred | HUD FMRs and income limits; ACS rents and values. |
 | Agriculture | usda-nass | bls, world-bank | NASS Quick Stats. |
 | SNAP, WIC and school meals: participation, costs, state policy options | usda-fna | census, usaspending | FNA Program Data (monthly, by state); SNAP State Options Report; State Activity Reports (FY 2019-2023 tidy). |
+| Characteristics of SNAP households: income, earnings, children, elderly, benefit amounts | snapqc | usda-fna, ipums | SNAP QC public-use microdata (FY 2014 on), weighted with FYWGT; caseload totals from usda-fna; IPUMS CPS/ACS for SNAP-reporting households. |
 | Transportation | bts | nhtsa | BTS statistics; NHTSA for vehicle safety. |
 | Environment, air and water quality | epa | epa-aqs, usgs, noaa | EPA envirofacts/ECHO; AQS monitor data; USGS water. |
 | Weather and climate | noaa | nws | NOAA NCEI history; NWS is forecasts and the last week of observations only. |
@@ -90,6 +91,7 @@ Use `fetch.py --route "<question>"` for a ranked suggestion.
 | regulations | standard | optional (DATA_GOV_API_KEY) | legislation, regulation, rulemaking | Regulations.gov (API v4) |
 | sec | standard | none | finance, corporations, securities | SEC EDGAR (XBRL financial data, filings, full-text search) |
 | senate-lobbying | standard | optional (LDA_API_KEY) | legislation, lobbying, influence | Lobbying Disclosure (LDA.gov API) |
+| snapqc | standard | none | nutrition assistance, social safety net, household microdata, program administration | SNAP Quality Control (QC) public-use microdata: characteristics of SNAP households (snapqcdata.net) |
 | treasury | deep | none | federal budget, federal debt, public finance, spending, revenue | U.S. Treasury Fiscal Data (fiscaldata.treasury.gov) |
 | treasury-yields | standard | none | interest rates, bond market, finance | Treasury Daily Interest Rate Statistics (home.treasury.gov) |
 | usaspending | standard | none | spending, federal budget, procurement, grants | USAspending.gov API (federal awards and spending) |

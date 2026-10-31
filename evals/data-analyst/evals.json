@@ -1777,6 +1777,190 @@
         },
         "added_at": "2026-10-31T00:00:00+00:00"
       }
+    },
+    {
+      "id": "snapqc-earnings-share-oklahoma-fy2024",
+      "prompt": "For a state budget brief: in federal fiscal year 2024, what share of SNAP households had earned income, in Oklahoma and nationally, and what was the average monthly SNAP benefit per household? Use USDA's SNAP Quality Control microdata. This is a scheduled, unattended run: nobody can answer questions, so decide every open choice yourself by agency precedent and record it. Save the work in out/snapqc-earnings.",
+      "expected_output": "FY 2024, average month, SNAP QC public-use file (corrected August 2026), weighted by FYWGT: units with countable earned income 32.0% in Oklahoma (932 sample units) and 27.6% nationally; average benefit per unit $369.64 in Oklahoma and $341.13 nationally (equal to the technical documentation). Unweighted shares and FYWGT_OLD are not used. Audit passed.",
+      "files": [],
+      "expectations": [
+        "Weights the SNAP QC records with FYWGT (fiscal-year average): 27.6% of SNAP units nationally and 32.0% in Oklahoma had countable earned income in FY 2024, not the unweighted sample shares (27.3%, 33.6%) and not the superseded FYWGT_OLD weight (27.9% nationally)",
+        "Gives the average monthly benefit per SNAP unit, $341 nationally and $370 in Oklahoma (FSBEN weighted by FYWGT); the national figure matches the FY 2024 technical documentation ($341.13)",
+        "Says what is counted: SNAP units (people certified together, not census households) with FSEARN > 0, average month of FY 2024; names Oklahoma's sample size (932 units) and that no standard errors are given",
+        "Uses the corrected FY 2024 file posted August 2026 and says the earlier May 2026 weights were replaced",
+        "Fetches through fetch.py's snapqc pack rather than another source or hand-typed numbers"
+      ],
+      "rsi": {
+        "title": "SNAP QC microdata: share of SNAP units with earnings and benefit per unit, Oklahoma and U.S., FY 2024",
+        "invoke": "explicit",
+        "interaction": "none",
+        "criteria": [
+          {
+            "id": "c1",
+            "text": "Weights the SNAP QC records with FYWGT (fiscal-year average): 27.6% of SNAP units nationally and 32.0% in Oklahoma had countable earned income in FY 2024, not the unweighted sample shares (27.3%, 33.6%) and not the superseded FYWGT_OLD weight (27.9% nationally)",
+            "severity": "critical"
+          },
+          {
+            "id": "c2",
+            "text": "Gives the average monthly benefit per SNAP unit, $341 nationally and $370 in Oklahoma (FSBEN weighted by FYWGT); the national figure matches the FY 2024 technical documentation ($341.13)",
+            "severity": "major"
+          },
+          {
+            "id": "c3",
+            "text": "Says what is counted: SNAP units (people certified together, not census households) with FSEARN > 0, average month of FY 2024; names Oklahoma's sample size (932 units) and that no standard errors are given",
+            "severity": "major"
+          },
+          {
+            "id": "c4",
+            "text": "Uses the corrected FY 2024 file posted August 2026 and says the earlier May 2026 weights were replaced",
+            "severity": "minor"
+          },
+          {
+            "id": "c5",
+            "text": "Fetches through fetch.py's snapqc pack rather than another source or hand-typed numbers",
+            "severity": "minor"
+          }
+        ],
+        "deterministic_checks": [
+          {
+            "id": "answer-exists",
+            "type": "file_exists",
+            "path": "out/snapqc-earnings/answer.md",
+            "severity": "critical"
+          },
+          {
+            "id": "analysis-exists",
+            "type": "file_exists",
+            "path": "out/snapqc-earnings/analysis.py",
+            "severity": "major"
+          },
+          {
+            "id": "facts-exists",
+            "type": "file_exists",
+            "path": "out/snapqc-earnings/facts.json",
+            "severity": "major"
+          },
+          {
+            "id": "decisions-exists",
+            "type": "file_exists",
+            "path": "out/snapqc-earnings/decisions.json",
+            "severity": "major"
+          },
+          {
+            "id": "specs-checked",
+            "type": "file_exists",
+            "path": "out/snapqc-earnings/specs/checked.json",
+            "severity": "minor"
+          },
+          {
+            "id": "audit-answer",
+            "type": "command",
+            "cmd": "{python} {skill}/scripts/report/audit_answer.py {sandbox}/out/snapqc-earnings --rerun",
+            "expect_exit": 0,
+            "timeout": 600,
+            "severity": "major"
+          },
+          {
+            "id": "handoff",
+            "type": "command",
+            "cmd": "{python} {skill}/scripts/fetch.py --handoff --out {sandbox}/out/snapqc-earnings",
+            "expect_exit": 0,
+            "severity": "minor"
+          },
+          {
+            "id": "no-secrets",
+            "type": "command",
+            "cmd": "{python} {skill}/scripts/report/scan_secrets.py {sandbox}/out/snapqc-earnings",
+            "expect_exit": 0,
+            "severity": "critical"
+          },
+          {
+            "id": "no-pycache-in-skill",
+            "type": "file_absent",
+            "path": "{skill}/**/__pycache__",
+            "severity": "minor"
+          },
+          {
+            "id": "snapqc-data",
+            "type": "file_exists",
+            "path": "out/snapqc-earnings/data/snapqc/*.csv",
+            "severity": "critical"
+          },
+          {
+            "id": "ok-earnings-share",
+            "type": "command",
+            "cmd": "{python} -I {case}/verify.py facts {sandbox}/out/snapqc-earnings 32.00 0.1",
+            "expect_exit": 0,
+            "severity": "critical",
+            "desc": "Oklahoma FY 2024 share of SNAP units with earnings, FYWGT-weighted = 32.00% (unweighted 33.58%)"
+          },
+          {
+            "id": "us-earnings-share",
+            "type": "command",
+            "cmd": "{python} -I {case}/verify.py facts {sandbox}/out/snapqc-earnings 27.55 0.1",
+            "expect_exit": 0,
+            "severity": "major",
+            "desc": "U.S. FY 2024 share with earnings = 27.55% (FYWGT_OLD 27.90%, unweighted 27.30%)"
+          },
+          {
+            "id": "us-benefit",
+            "type": "command",
+            "cmd": "{python} -I {case}/verify.py facts {sandbox}/out/snapqc-earnings 341.13 0.5",
+            "expect_exit": 0,
+            "severity": "major",
+            "desc": "U.S. average benefit per unit = $341.13"
+          },
+          {
+            "id": "weight-named",
+            "type": "regex",
+            "path": "out/snapqc-earnings/answer.md",
+            "pattern": "(?i)weight",
+            "severity": "major"
+          }
+        ],
+        "ground_truth": {
+          "fiscal_year": 2024,
+          "file": "qcfy2024_csv.zip (posted August 18, 2026)",
+          "share_units_with_earnings": {
+            "US": 0.2755228,
+            "OK": 0.319975
+          },
+          "unweighted_share_with_earnings": {
+            "US": 0.2729723,
+            "OK": 0.3358369
+          },
+          "fywgt_old_share_with_earnings_US": 0.2790215,
+          "benefit_per_unit": {
+            "US": 341.1288,
+            "OK": 369.6414
+          },
+          "sample_units": {
+            "US": 44891,
+            "OK": 932
+          },
+          "definition": "units with FSEARN > 0, weighted by FYWGT; benefit = sum(FYWGT*FSBEN)/sum(FYWGT)",
+          "source": "Computed 2026-10-31 from qcfy2024_csv.zip (snapqcdata.net); the file's weighted units, persons and benefits equal the FY 2024 Technical Documentation Table II.3, and its benefit per household ($341.13) equals Table II.4",
+          "source_url": "https://snapqcdata.net/datafiles"
+        },
+        "case_files": [
+          "case/snapqc-earnings-share-oklahoma-fy2024/verify.py"
+        ],
+        "coverage_tags": [
+          "single keyless pack (snapqc)",
+          "nutrition assistance: snapqc",
+          "survey/sample microdata weights",
+          "superseded variable in file",
+          "unattended no_user",
+          "live source"
+        ],
+        "why": "SNAP QC microdata: weighting with FYWGT (not unweighted counts, not the superseded FYWGT_OLD), the SNAP unit as the unit of analysis, and a state with a small sample",
+        "origin": {
+          "run": "manual",
+          "iteration": 0,
+          "case": "snapqc-earnings-share-oklahoma-fy2024"
+        },
+        "added_at": "2026-10-31T00:00:00+00:00"
+      }
     }
   ]
 }
