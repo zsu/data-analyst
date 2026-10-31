@@ -1,7 +1,9 @@
-# Census Bureau Data API (ACS, decennial census, population estimates, SIPP)
+# Census Bureau Data API (ACS, decennial census, population estimates, SIPP, economic indicators, trade, government finances)
 Depth: standard. Key: required (CENSUS_API_KEY). American Community Survey 1-year and 5-year estimates,
 2020 and 2010 decennial census counts, population estimates, County Business Patterns and the Economic
-Census, for the nation, states, counties, places, tracts and ZIP code areas; SIPP person-month microdata.
+Census, for the nation, states, counties, places, tracts and ZIP code areas; SIPP person-month microdata;
+time series of monthly economic indicators, imports and exports by commodity, and state and local government
+taxes, finances and pensions.
 
 ## When to use
 - Population, age, race and Hispanic origin, household income, per capita income, poverty, home values,
@@ -10,6 +12,10 @@ Census, for the nation, states, counties, places, tracts and ZIP code areas; SIP
 - Month-to-month income, program participation (SNAP, SSI, Medicaid, unemployment benefits), health
   coverage spells, assets and debts of the same people over time: SIPP microdata (`sipp`), national
   estimates weighted by the pack.
+- Monthly retail sales, housing starts, construction spending; quarterly state and local tax revenue
+  (QTAX) and public pension assets; annual state and local government revenue, spending, debt, state tax
+  collections and pension systems; monthly imports and exports by HS commodity and country, with the duty
+  calculated on imports (tariff revenue by product or country).
 - Not here: monthly unemployment and jobs (bls), GDP and personal income by state (bea), CPS, ACS and
   NHIS microdata for custom tabulations (ipums), international comparisons (world-bank), federal spending
   by state (usaspending, which ships stale population figures: use this pack for the denominator).
@@ -33,6 +39,13 @@ returns the national cross-section for one date, to filter by state FIPS),
 `pep_population_2021` 2021/pep/population (POP_2020, POP_2021; states and above only),
 `pep_population_2019` (2010-2019, down to places), `cbp` 2023/cbp,
 `ecnbasic_2022`, `sipp` latest/sipp (SIPP microdata; 2022-2025 on the API, one per calendar year).
+Time series (no vintage in the path; select periods with `time`): `eits_retail` timeseries/eits/marts,
+`eits_housing_starts` timeseries/eits/resconst, `eits_construction` timeseries/eits/vip, `eits_qtax`
+timeseries/eits/qtax, `eits_pensions` timeseries/eits/qpr (other indicators: timeseries/eits/m3, mtis,
+mrts, ftd, bfs, qfr, qss), `trade_imports_hs` / `trade_exports_hs` timeseries/intltrade/imports|exports/hs
+(also .../naics, .../statehs, .../porths, .../enduse), `govs_finances` timeseries/govslocalfin (2017-2024),
+`govs_state_finances` timeseries/govsstatefin (1967-2024), `govs_state_tax` timeseries/govsstatetax
+(2016-2025), `govs_pensions` timeseries/govspension (2012-2025); every dataset: https://api.census.gov/data/timeseries.json.
 Any path works (`2019/acs/acs1`, `2023/acs/acs5/subject`).
 Common variables: B01003_001E population, B01002_001E median age, B19013_001E median household income,
 B19301_001E per capita income, B17001_002E below poverty (universe B17001_001E), S1701_C03_001E poverty
@@ -66,6 +79,21 @@ Find others: `fetch.py --source census --search "median household income"` (late
 {"description": "Share of people without health coverage in December, SIPP 2024 (weighted by WPFINWGT)",
  "requests": [{"name": "sipp_coverage_dec", "endpoint": "query",
    "params": {"dataset": "2024/sipp", "get": "TAGE,RHLTHMTH,TPTOTINC", "MONTHCODE": "12"}}]}
+```
+
+```json
+{"description": "Retail sales, 2026 to date; customs duty on imports from China, August 2026, by HS chapter",
+ "requests": [{"name": "retail_2026", "endpoint": "query",
+   "params": {"dataset": "eits_retail", "get": "cell_value,data_type_code,category_code,seasonally_adj,time_slot_id,error_data",
+              "for": "us:*", "time": "2026"}},
+  {"name": "china_duty_2026_08", "endpoint": "query",
+   "params": {"dataset": "trade_imports_hs", "get": "CTY_NAME,I_COMMODITY,GEN_VAL_MO,CON_VAL_MO,DUT_VAL_MO,CAL_DUT_MO",
+              "CTY_CODE": "5700", "COMM_LVL": "HS2", "time": "2026-08"}}]}
+```
+```json
+{"description": "State and local government finances by state, 2024",
+ "requests": [{"name": "govfin_2024", "endpoint": "query",
+   "params": {"dataset": "govs_finances", "get": "AGG_DESC,GOVTYPE,AMOUNT,AMOUNT_CV", "for": "state:*", "time": "2024"}}]}
 ```
 
 ## Data format and traps
@@ -115,6 +143,20 @@ Find others: `fetch.py --source census --search "median household income"` (late
   give the point estimate and say no standard error was computed. Variable names and codes:
   `--search "<YYYY>/sipp: health insurance"` or the dataset's variables.json. The bulk primary file
   (`pu<YYYY>_csv.zip`, about 100 MB) has every variable, for a manual download.
+- Time series (`timeseries/...`): give `time` (`2026`, `2026-08`, `2026-Q2`, or `from 2024-01 to 2026-08`).
+  Economic indicators (eits) return one row per code combination: `category_code` (industry or tax type),
+  `data_type_code` (level, percent change, ...), `seasonally_adj` (yes/no), `time_slot_id`, `error_data` (yes =
+  the row is a margin or standard error, not an estimate). The codes are not in the API's metadata: run one
+  narrow query and read the codes that come back, or the program's definitions page (census.gov/econ/currentdata),
+  then filter on them; never sum across data types or adjustment flags. Monthly indicators are revised (advance,
+  preliminary, revised): say which release. Units: retail and construction $ millions, housing units in
+  thousands, QTAX `CELL_VALUE` $ millions (variables.json labels say so); government finances `AMOUNT` $ thousands
+  with a coefficient of variation `AMOUNT_CV` (percent, sample-based local figures). Government finance years are
+  each government's fiscal year, not the calendar year. International trade: values in dollars; `GEN_VAL_MO`
+  general imports vs `CON_VAL_MO` imports for consumption; `CAL_DUT_MO` is the duty calculated on imports for
+  consumption (an estimate of duty owed, not Treasury's customs receipts); `COMM_LVL` HS2/HS4/HS6/HS10 must be
+  fixed or totals double-count; `CTY_CODE` country codes (5700 China, 2010 Mexico, 1220 Canada); it takes no
+  for= geography; `SUMMARY_LVL` CGP rows are country groups, not countries (drop them before summing).
 - Key: since 2026-05-12 every data query needs a key; the API redirects keyless queries to a "Missing
   Key" page, which the pack reports as a key error. Metadata (variables, discovery) still answer
   without a key.
