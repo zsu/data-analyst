@@ -359,7 +359,7 @@ class TestBlsInProcess(unittest.TestCase):
         self.api.usage_today("v1")
 
     def test_keycheck(self):
-        keycheck = load("bls_pack_keycheck", "keycheck.py")
+        keycheck = load("bls_pack_keycheck", "bls_api.py")
         orig = keycheck.BlsClient.ping
         try:
             keycheck.BlsClient.ping = lambda self_: {"reachable": True, "auth_ok": False, "kind": "auth",

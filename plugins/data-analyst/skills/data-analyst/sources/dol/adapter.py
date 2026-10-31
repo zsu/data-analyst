@@ -12,16 +12,32 @@
 - sort: defaults to the dataset's date field, descending (newest first), as listed in the catalog.
 - Empty bodies (no match) count as zero rows. The key goes in the X-API-KEY query parameter (verified in
   the DOL API User Guide; the API's 401 text says the key is missing "from your query").
-- key_only_needs: everything except the keyless catalog endpoints (datasets, dataset_info) needs a key.
+- key_only_needs: everything except the keyless catalog endpoints (datasets, dataset_info) and the OUI files
+  needs a key.
+
+Unemployment insurance files of the Office of Unemployment Insurance (oui.doleta.gov, keyless, fixed names
+refreshed in place; endpoints with "host": "oui"):
+- ui_trust_fund: ETA 2112 (UI financial transaction summary), /unemploy/csv/ar2112.csv, one row per state and
+  month since 1979, columns coded c1..c136. The codes are renamed from the data map (ET Handbook 402, table
+  ar2112; endpoints.json "columns"): <line item>_<account>, account total (column C, sum of the three accounts),
+  clearing, utf (the state's account in the Unemployment Trust Fund) or bpa (benefit payment account). The map
+  prints line 17 F as c23; the report edits (c21 = c22+c23+c24, c8 = c20+c24+...) make it c24. The identities
+  c85 = c1+c5-c47, c87 = c3+c7-c49 and the deposit/disbursement sums hold on the live file (checked 2026-10).
+  The whole file (23 MB) is downloaded once per fetch and filtered here by state, month and fields.
+- ui_data_summary: the UI Data Summary workbook (SummaryTables.xlsx, latest calendar-year quarter). Read from row
+  1 so the quarter in the title row is kept (cyq); the header row is found by its first cell ("State").
+These go to oui.doleta.gov with a client that has no credentials: the DOL API key is never sent there.
 """
 from __future__ import annotations
 
 import json
 import os
+import re
 import urllib.parse
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-KEYLESS = ("datasets", "dataset_info")
+OUI = ("ui_trust_fund", "ui_data_summary")
+KEYLESS = ("datasets", "dataset_info") + OUI
 
 
 def _eps() -> dict:
@@ -80,6 +96,9 @@ def _named_fields(p: dict) -> list[str]:
 def check_spec(spec, pack=None) -> list[str]:
     probs = []
     for r in spec.get("requests") or []:
+        if r.get("endpoint") in OUI:
+            probs += _check_oui(r)
+            continue
         if (r.get("endpoint") or "query") != "query":
             continue
         p = r.get("params") or {}
@@ -201,10 +220,16 @@ def fetch(spec, pack, route):
     from core.http import DataError
     client = _EmptyOk(gr.client_for(pack))
     tables, notes = {}, []
+    files: dict = {}
     for r in spec["requests"]:
         ep, params, probs = gr.resolve(pack, r)
         if probs:
             raise DataError("; ".join(probs), kind="bad_request")
+        if r.get("endpoint") in OUI:
+            rows, n = fetch_oui(pack, r, ep, params, files)
+            tables[r["name"]] = rows
+            notes += n
+            continue
         try:
             ep2, q, n = prepare(r, ep, params)
         except (ValueError, KeyError) as e:
@@ -228,6 +253,11 @@ def manual_items(spec, pack):
     for r in spec.get("requests") or []:
         ep, params, probs = gr.resolve(pack, r)
         if probs:
+            continue
+        if r.get("endpoint") in OUI:
+            items.append({"name": f"{r['name']}#1", "request": r["name"], "url": ep["path"],
+                          "filename": ep["path"].rsplit("/", 1)[1], "needs_key": False, "method": "GET", "body": None,
+                          "note": "the whole file (ar2112.csv is about 23 MB); the ingest filters it as the spec says"})
             continue
         try:
             ep2, q, _ = prepare(r, ep, params)
@@ -255,7 +285,12 @@ def manual_items(spec, pack):
 
 def parse_upload(pack, req, paths):
     from core import generic_rest as gr
-    ep, _, _ = gr.resolve(pack, req)
+    ep, params, _ = gr.resolve(pack, req)
+    if req.get("endpoint") in OUI:
+        p = sorted(paths)[-1]
+        with open(p, "rb") as f:
+            body = f.read()
+        return _tidy_oui(req, ep, params, body, os.path.basename(p))[0]
     rows = []
     for p in sorted(paths):
         with open(p, "rb") as f:
@@ -265,6 +300,205 @@ def parse_upload(pack, req, paths):
         doc = json.loads(data.decode("utf-8-sig"))
         rows += gr.dig(doc, ep.get("records", "data")) or []
     return gr._clean(rows, ep)
+
+
+# ---------------------------------------------------------------------- OUI unemployment insurance files
+OUI_BASE = "https://oui.doleta.gov"
+
+
+def _usps(x) -> str:
+    s = str(x).strip()
+    if re.fullmatch(r"[A-Za-z]{2}", s):
+        return s.upper()
+    try:
+        import sys
+        p = os.path.join(HERE, "..", "..", "scripts", "analysis")
+        if p not in sys.path:
+            sys.path.insert(0, p)
+        from combine import state
+        return state(s, "usps")
+    except (ImportError, ValueError):
+        raise ValueError(f"unknown state {x!r}: use a two-letter code (WY)")
+
+
+def _states(v) -> set[str]:
+    vals = [v] if isinstance(v, str) else list(v or [])
+    return {_usps(x) for x in vals if str(x).strip()}
+
+
+def _bound(v, end: bool) -> str | None:
+    if v in (None, ""):
+        return None
+    s = str(v).strip()
+    if re.fullmatch(r"\d{4}-\d{2}-\d{2}", s):
+        return s
+    if re.fullmatch(r"\d{4}-\d{2}", s):
+        return s + ("-31" if end else "-01")
+    if re.fullmatch(r"\d{4}", s):
+        return s + ("-12-31" if end else "-01-01")
+    raise ValueError(f"{'end' if end else 'start'} {v!r}: use YYYY-MM or YYYY-MM-DD")
+
+
+def _check_oui(r) -> list[str]:
+    p, name, probs = r.get("params") or {}, r.get("name"), []
+    if r.get("endpoint") != "ui_trust_fund":
+        return probs
+    try:
+        _states(p.get("state"))
+    except ValueError as e:
+        probs.append(f"request {name!r}: {e}")
+    for k in ("start", "end"):
+        try:
+            _bound(p.get(k), k == "end")
+        except ValueError as e:
+            probs.append(f"request {name!r}: {e}")
+    if p.get("fields"):
+        cols = _eps()["endpoints"]["ui_trust_fund"]["columns"]
+        f = p["fields"] if isinstance(p["fields"], list) else str(p["fields"]).split(",")
+        bad = [x.strip() for x in f if x.strip() and x.strip() not in cols and x.strip() not in cols.values()
+               and x.strip() not in ("st", "rptdate")]
+        if bad:
+            probs.append(f"request {name!r}: unknown field(s) {', '.join(map(repr, bad))}: ui_trust_fund columns are "
+                         "<line item>_<account> names such as balance_close_utf, dep_ui_contributions_total, "
+                         "dis_ui_benefits_total, dep_treasury_interest_utf (endpoints.json 'columns' lists all), "
+                         "or the file's c-codes")
+    return probs
+
+
+def fetch_oui(pack, r, ep, params, files: dict):
+    """One OUI file (downloaded once per fetch, keyless) filtered and renamed as the request says."""
+    from core.http import Client, DataError
+    url = ep["path"]
+    if url not in files:
+        L = pack.policy["limits"]
+        c = Client(OUI_BASE, name="dol (oui.doleta.gov)", auth={}, rps=L.get("rps") or 2, burst=L.get("burst") or 4,
+                   timeout=120, deadline=600)
+        try:
+            files[url] = c.request("GET", url).body
+        except DataError as e:
+            raise DataError(f"request {r['name']!r} ({r.get('endpoint')}): {e}", kind=e.kind,
+                            status=getattr(e, "status", None)) from None
+    rows, notes = _tidy_oui(r, ep, params, files[url], url.rsplit("/", 1)[1])
+    if not rows and not r.get("allow_empty"):
+        raise DataError(f"request {r['name']!r} returned no rows: check state and the month range (the file runs "
+                        "from 1979-01 to the latest month each state has reported)", kind="bad_request")
+    return rows, notes
+
+
+def _tidy_oui(req, ep, params, body: bytes, fname: str):
+    from core.http import DataError
+    if req.get("endpoint") == "ui_data_summary":
+        return _data_summary(req, ep, params, body)
+    import csv
+    import io
+    text = body.decode("utf-8-sig", errors="replace")
+    first = text[:200].splitlines()[0] if text.strip() else ""
+    if ('"st"' not in first and not first.startswith("st,")) or "rptdate" not in first:
+        raise DataError(f"{fname}: expected the ETA 2112 CSV (header st, rptdate, c1, ...), got something else "
+                        "(an HTML page?)", kind="api")
+    cols = ep["columns"]
+    states = _states(params.get("state"))
+    lo, hi = _bound(params.get("start"), False), _bound(params.get("end"), True)
+    want = None
+    if params.get("fields"):
+        f = params["fields"] if isinstance(params["fields"], list) else str(params["fields"]).split(",")
+        want = {cols.get(x.strip(), x.strip()) for x in f}
+    missing = set(ep.get("missing") or [""])
+    rows = []
+    for rec in csv.DictReader(io.StringIO(text)):
+        st, d = rec.get("st", ""), rec.get("rptdate", "")
+        if (states and st not in states) or (lo and d < lo) or (hi and d > hi):
+            continue
+        out = {"st": st, "rptdate": d}
+        for k, v in rec.items():
+            if k in ("st", "rptdate"):
+                continue
+            name = cols.get(k, k)
+            if want is None or name in want:
+                out[name] = "" if (v is None or v.strip() in missing) else v
+        rows.append(out)
+    notes = []
+    if params.get("latest") in (True, "true", "True", 1, "1"):
+        last = {}
+        for x in rows:
+            last[x["st"]] = max(last.get(x["st"], ""), x["rptdate"])
+        rows = [x for x in rows if x["rptdate"] == last[x["st"]]]
+        top = max(last.values(), default="")
+        lag = sorted(f"{s} {d[:7]}" for s, d in last.items() if d != top)
+        if lag:
+            notes.append(f"{req['name']}: latest month per state; the newest month in the file is {top[:7]}, these "
+                         f"states have not reported it yet: {', '.join(lag)}")
+    if rows:
+        notes.append(f"{req['name']}: ETA 2112 ({fname}), {len(rows):,} state-months "
+                     f"{min(x['rptdate'] for x in rows)[:7]} to {max(x['rptdate'] for x in rows)[:7]}; amounts in "
+                     "dollars; the state's trust fund balance at month end is balance_close_utf (c87); "
+                     "<item>_total is the sum of the clearing, utf and bpa accounts (column C of the report)")
+    return rows, notes
+
+
+def _summary_col(h: str) -> str:
+    s = h.replace("*", "").strip()
+    unit = ""
+    if "(000)" in s:
+        s, unit = s.replace("(000)", ""), "thousands"
+    s = s.replace("(%)", " pct").replace("%", " pct ")
+    slug = re.sub(r"[^a-z0-9]+", "_", s.lower()).strip("_")
+    return "_".join(x for x in (slug, unit) if x)
+
+
+def _num(v: str) -> str:
+    """A number as the workbook stores it ('319139.59999999998', '7.0000000000000007E-2') in its shortest form
+    ('319139.6', '0.07'): the same value, without binary float noise. Text is kept as is."""
+    if not re.fullmatch(r"-?\d+(\.\d+)?([eE][-+]?\d+)?", v or ""):
+        return v
+    f = float(v)
+    return str(int(f)) if f.is_integer() and "e" not in v.lower() and "." not in v else repr(f)
+
+
+def _data_summary(req, ep, params, body: bytes):
+    """SummaryTables.xlsx, one sheet: the quarter from the title row, the header found by its first cell."""
+    from core import generic_rest as gr
+    from core.http import DataError
+    e2 = gr.with_record_params(ep, params)
+    rows = gr._clean(gr.sheet_records(e2, body), e2)
+    keys = []
+    for r in rows:
+        keys += [k for k in r if k not in keys]
+    head = ["" if re.fullmatch(r"col\d+", k) else k for k in keys]
+    grid = [head] + [[str(r.get(k, "")).strip() for k in keys] for r in rows]
+    cyq = next((c for c in head if re.fullmatch(r"\d{4}\.[1-4]", c)), "")
+    li = next((i for i, g in enumerate(grid) if g and g[0] == "State"), None)
+    if li is None:
+        raise DataError(f"SummaryTables.xlsx sheet {e2.get('sheet')!r}: the layout changed (no 'State' header row); "
+                        "open the file and check", kind="api")
+    names = ["state"] + [_summary_col(h) for h in grid[li][1:] if h]
+    data, foot = [], []
+    for g in grid[li + 1:]:
+        if not any(v for v in g[1:len(names)]):
+            if g and g[0]:
+                foot.append(g[0])
+            continue
+        data.append(dict(zip(names, [g[0]] + [_num(v) for v in g[1:len(names)]])))
+    star = next((f.lstrip("*").strip() for f in foot if f.startswith("*")), "")
+    quarter_end = ""
+    if cyq:
+        y, q = cyq.split(".")
+        quarter_end = f"{y}-{('03-31', '06-30', '09-30', '12-31')[int(q) - 1]}"
+    out = []
+    for d in data:
+        name = d["state"]
+        flagged = name.endswith("*")
+        name = name.rstrip("*").strip()
+        try:
+            code = "US" if name == "United States" else _usps(name.replace("Virgin Islands", "U.S. Virgin Islands")
+                                                               if name == "Virgin Islands" else name)
+        except ValueError:
+            code = ""
+        out.append({"cyq": cyq, "quarter_end": quarter_end, "state": name, "st": code, **{k: v for k, v in d.items() if k != "state"},
+                    "note": star if flagged else ""})
+    notes = [f"{req['name']}: UI Data Summary, sheet {e2.get('sheet')}, calendar-year quarter {cyq}"
+             + (": " + " ".join(foot) if foot else "")]
+    return out, notes
 
 
 def search(query, pack):

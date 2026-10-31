@@ -236,7 +236,7 @@ class TestIpums(PackTest):
         try:
             sys.path.insert(0, self.pack_dir)
             import importlib.util
-            spec = importlib.util.spec_from_file_location("ipums_keycheck_t", os.path.join(self.pack_dir, "keycheck.py"))
+            spec = importlib.util.spec_from_file_location("ipums_keycheck_t", os.path.join(self.pack_dir, "ipums_api.py"))
             mod = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(mod)
             ok, detail = mod.verify("offline-test-key-not-real")

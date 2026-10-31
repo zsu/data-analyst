@@ -17,7 +17,24 @@ Use `fetch.py --route "<question>"` for a ranked suggestion.
 | Wages and earnings | bls | ipums, opm | BLS ECI, CES, OEWS; IPUMS CPS/ACS for distributions by group (weighted, with SEs). |
 | Federal workforce: headcount, hires, separations, pay | opm | bls, ipums, usaspending | OPM FWD (coverage gaps: USPS, intelligence agencies; pay withheld for ~45% of records); BLS ECI or IPUMS for private comparisons. |
 | Demographics, poverty, income by place | census | ipums, bea | ACS tables with margins of error; IPUMS microdata for custom tabulations; BEA regional income. |
-| Custom tabulations from survey microdata | ipums | census, bls | IPUMS CPS/ACS/decennial, NHIS, MEPS; weighted estimates with SEs; microdata never redistributed. |
+| Custom tabulations from survey microdata | ipums | census, bls | IPUMS CPS/ACS/decennial, NHIS, MEPS; weighted estimates with SEs; microdata never redistributed. SIPP through census. |
+| Income and program participation month to month (SNAP, SSI, Medicaid, coverage spells) | census | ipums, medicaid | SIPP microdata (person-months; weight by WPFINWGT; reference year = file year - 1). |
+| Federal budget by account or function, historical tables, credit subsidy rates | omb | treasury, usaspending | OMB Historical Tables and Public Budget Database by budget edition (each revises history); Treasury MTS for actual monthly totals. |
+| Social Security and Medicare trust funds, national health spending projections | actuaries | treasury, cms, medicaid | Trustees Reports (intermediate assumptions) and CMS NHE; SSA tables by manual download. |
+| Medicaid and CHIP enrollment, spending, drug use | medicaid | cms, census | data.medicaid.gov; preliminary vs updated rows; recent CMS-64 expenditure reports are manual downloads. |
+| Income tax returns, AGI and migration by state, county, ZIP code | irs-soi | census, bea | SOI amounts in thousands; tax year vs filing year; small cells suppressed. |
+| State and local government taxes, finances, pensions | census | pbgc, bea | Census QTAX (quarterly) and annual government finances; fiscal years differ by government. |
+| Imports, exports, tariffs and customs duty | census | treasury, world-bank | Census international trade by HS code with calculated duty; Treasury MTS customs duties for receipts. |
+| Economic forecasts and forecast benchmarks | philfed | fred, usda-outlook | SPF and Greenbook (5-year lag) forecasts; USDA WASDE and baseline for agriculture. |
+| Household balance sheets, consumer credit, bank lending surveys | fed-board | fred, nyfed | Fed Board Z.1, G.19, SLOOS, SCF; FRED for single-series histories. |
+| Farm income, crop supply and demand outlook | usda-outlook | usda-nass | WASDE projections, ERS farm income forecasts, USDA baseline; NASS for survey estimates. |
+| Immigration: green cards, naturalizations, refugees, enforcement | dhs-ohss | census | OHSS Yearbook by fiscal year; counts are events, not people. |
+| Veterans: population, benefits, VA spending by place | va | census, usaspending | VetPop is a projection model; GDX for expenditures by state and district. |
+| Student loans: portfolio, delinquency, repayment plans, volume by school | fsa | college-scorecard, treasury | FSA data center (.xls); recipients are not additive across programs. |
+| Private pension insurance | pbgc | fed-board | PBGC data tables; single- and multiemployer programs are separate. |
+| House prices and conforming loan limits | fhfa | fred, hud | FHFA HPI flavors differ; loan limits by county and units. |
+| Unemployment insurance trust funds | dol | treasury | ETA 2112 state trust fund flows and balances; Treasury for Title XII advances and federal accounts. |
+| TANF and child care program spending and caseloads | acf | usaspending, census | ACF files are manual downloads (the site refuses scripts). |
 | Health insurance, access to care, health care spending by group | ipums | census, cdc, cms | IPUMS NHIS (insurance, access, conditions) and MEPS (spending by payer); ACS tables for state coverage; CMS for Medicare program data. |
 | Federal spending by agency, program, place, recipient | usaspending | treasury, census | Obligations vs outlays differ; Treasury MTS for totals; Census population (not USAspending's) for per-person figures. |
 | Legislation, votes, laws, CRS reports | congress | govinfo, federal-register | Congress.gov for bills and actions; GovInfo for text and CBO/committee reports; Federal Register for rules. |
@@ -52,18 +69,21 @@ Use `fetch.py --route "<question>"` for a ranked suggestion.
 
 | Source | Depth | Key | Domains | Title |
 |---|---|---|---|---|
+| acf | standard | none | welfare, cash assistance, child care, safety net, state spending, federal grants to states | HHS Administration for Children and Families program data (TANF financial and caseload data, CCDF expenditures) |
+| actuaries | standard | none | social security, medicare, health spending, entitlement programs, long-term fiscal outlook | Social Security and Medicare Trustees Reports and National Health Expenditure data (SSA and CMS actuaries) |
 | bea | deep | required (BEA_API_KEY) | economy, national accounts, income, regional economy, international trade | Bureau of Economic Analysis (BEA) Data API and bulk files |
 | bls | deep | optional (BLS_API_KEY) | labor, employment, prices, inflation, wages, productivity | Bureau of Labor Statistics Public Data API |
 | bts | standard | none | transportation, freight, travel | Bureau of Transportation Statistics Open Data (data.bts.gov) |
 | cdc | standard | none | health, mortality, public health | CDC Open Data (data.cdc.gov) |
-| census | standard | required (CENSUS_API_KEY) | demographics, population, income, housing, poverty, education | Census Bureau Data API (ACS, decennial census, population estimates) |
+| census | standard | required (CENSUS_API_KEY) | demographics, population, income, housing, poverty, education, program participation, international trade, state and local government finance, economic indicators | Census Bureau Data API (ACS, decennial census, population estimates, SIPP, economic indicators, international trade, government finances) |
 | cfpb | standard | none | finance, consumer protection | CFPB Consumer Complaint Database |
 | clinical-trials | standard | none | health, clinical research | ClinicalTrials.gov (API v2) |
 | cms | standard | none | health, health care, medicare | CMS Provider Data and Medicare data (data.cms.gov) |
 | college-scorecard | standard | optional (DATA_GOV_API_KEY) | education, higher education, student debt | College Scorecard (U.S. Department of Education) |
 | congress | standard | optional (DATA_GOV_API_KEY) | legislation, congress, votes | Congress.gov API (Library of Congress) with House and Senate roll-call votes |
+| dhs-ohss | standard | none | immigration, demographics | DHS Office of Homeland Security Statistics: Yearbook of Immigration Statistics |
 | doj-news | standard | none | justice, law enforcement, news releases | Department of Justice News (justice.gov press releases and blog) |
-| dol | standard | optional (DOL_API_KEY) | workplace safety, labor enforcement, unemployment insurance, labor | Department of Labor Open Data API (OSHA, WHD, ETA unemployment claims, MSHA) |
+| dol | standard | optional (DOL_API_KEY) | workplace safety, labor enforcement, unemployment insurance, labor, unemployment trust fund | Department of Labor (DOL Open Data API: OSHA, WHD, ETA unemployment claims, MSHA; OUI unemployment insurance trust fund files) |
 | eia | standard | optional (EIA_API_KEY) | energy, prices, environment | EIA Open Data API v2 (U.S. Energy Information Administration) |
 | epa | standard | none | environment, pollution, regulation, enforcement | EPA Envirofacts and ECHO (TRI, GHGRP, SDWIS, Superfund, compliance and enforcement) |
 | epa-aqs | standard | required (AQS_API_KEY) | environment, air quality, health | EPA Air Quality System (AQS) Data Mart API |
@@ -71,13 +91,18 @@ Use `fetch.py --route "<question>"` for a ranked suggestion.
 | fda | standard | optional (DATA_GOV_API_KEY) | health, drugs, medical devices, food safety | openFDA (api.fda.gov) |
 | fdic | standard | none | finance, banking | FDIC BankFind Suite API |
 | fec | standard | optional (DATA_GOV_API_KEY) | elections, campaign finance, legislation | OpenFEC (Federal Election Commission API) |
+| fed-board | standard | none | household finance, credit, financial accounts, wealth, banking, monetary policy | Federal Reserve Board data (Data Download Program releases, Z.1 Financial Accounts, Survey of Consumer Finances) |
 | federal-register | standard | none | legislation, regulation, executive actions | Federal Register (federalregister.gov API) |
 | fema | standard | none | disasters, emergency management, housing, insurance, federal spending | OpenFEMA (FEMA open data API) |
+| fhfa | standard | none | housing, house prices, mortgage finance | FHFA House Price Index, conforming loan limits and Public Use Databases (fhfa.gov files) |
 | fred | deep | optional (FRED_API_KEY) | economy, finance, federal budget, prices, interest rates, revisions | FRED, ALFRED and GeoFRED (Federal Reserve Bank of St. Louis) |
+| fsa | standard | none | education, student loans, federal credit, higher education finance | Federal Student Aid Data Center (student loan portfolio, Title IV volume by school) |
 | govinfo | standard | optional (DATA_GOV_API_KEY) | legislation, regulation, government publications | GovInfo (Government Publishing Office API) |
 | gsa-calc | standard | none | federal procurement, contracting, labor rates | GSA CALC+ Labor Ceiling Rates (Quick Rate API) |
 | hud | standard | required (HUD_USER_TOKEN) | housing | HUD Fair Market Rents and Income Limits API (HUD User) |
 | ipums | deep | required (IPUMS_API_KEY) | labor, earnings, income, poverty, demographics, immigration, health insurance, health care spending, access to care, survey microdata | IPUMS microdata (USA/ACS, CPS and other collections) |
+| irs-soi | standard | none | taxes, income, migration, geography | IRS Statistics of Income: individual income tax data by ZIP code, county, state and migration (irs.gov) |
+| medicaid | standard | none | health, health care, medicaid, federal spending, prescription drugs | Medicaid and CHIP open data (data.medicaid.gov) |
 | naep | standard | none | education, k-12, student achievement | NAEP, The Nation's Report Card (NAEP Data Service) |
 | nhtsa | standard | none | vehicle safety, transportation, consumer protection | NHTSA Vehicle Safety APIs (recalls, complaints, NCAP ratings, vPIC) |
 | nih | standard | none | health, research funding, science | NIH RePORTER (research grants) |
@@ -85,8 +110,11 @@ Use `fetch.py --route "<question>"` for a ranked suggestion.
 | nrel | standard | optional (DATA_GOV_API_KEY) | energy, transportation, environment | NREL / NLR Developer APIs (alt fuel stations, utility rates, solar resource, PVWatts) |
 | nws | standard | none | weather, emergency management | National Weather Service API (forecasts, alerts, observations) |
 | nyfed | standard | none | monetary policy, interest rates, federal debt financing, financial conditions | New York Fed Markets Data API (reference rates, SOMA, Treasury operations, primary dealers) |
+| omb | standard | none | federal budget, public finance, federal debt, federal credit | OMB President's Budget data (Historical Tables, Public Budget Database, Federal Credit Supplement) via GovInfo |
 | open-payments | standard | none | health, health care, industry payments | CMS Open Payments (openpaymentsdata.cms.gov) |
 | opm | deep | none | federal workforce, government employment, public sector pay, personnel | OPM Federal Workforce Data (FWD / EHRI) |
+| pbgc | standard | none | pensions, retirement, social insurance | PBGC Pension Insurance Data Tables (single-employer and multiemployer programs) |
+| philfed | standard | none | macroeconomic forecasts, economic outlook, inflation expectations, real-time data | Philadelphia Fed Real-Time Data Research Center (Survey of Professional Forecasters, Greenbook/Tealbook, Livingston Survey, Real-Time Data Set) |
 | regulations | standard | optional (DATA_GOV_API_KEY) | legislation, regulation, rulemaking | Regulations.gov (API v4) |
 | sec | standard | none | finance, corporations, securities | SEC EDGAR (XBRL financial data, filings, full-text search) |
 | senate-lobbying | standard | optional (LDA_API_KEY) | legislation, lobbying, influence | Lobbying Disclosure (LDA.gov API) |
@@ -96,6 +124,8 @@ Use `fetch.py --route "<question>"` for a ranked suggestion.
 | usda-fna | standard | none | nutrition assistance, social safety net, state policy, program administration | USDA Food and Nutrition Administration: SNAP State Options Report and SNAP State Activity Reports |
 | usda-fooddata | standard | optional (DATA_GOV_API_KEY) | nutrition, food, health, agriculture | USDA FoodData Central |
 | usda-nass | standard | required (USDA_NASS_API_KEY) | agriculture, food | USDA NASS Quick Stats |
+| usda-outlook | standard | none | agriculture, food, economy | USDA forecasts and projections (WASDE, ERS farm income forecasts, USDA Agricultural Baseline) |
 | usgs | standard | optional (DATA_GOV_API_KEY) | natural hazards, earthquakes, water, environment | USGS earthquakes (ComCat) and Water Data (streamflow, groundwater) |
 | uspto | standard | required (USPTO_API_KEY) | patents, innovation, intellectual property, research | USPTO Open Data Portal (patent applications, PTAB, petitions, bulk datasets) |
+| va | standard | none | veterans, federal spending, population projections, disability benefits | VA Open Data (data.va.gov) and NCVAS Veteran Statistics |
 | world-bank | standard | none | international, economy, development, population, health, education | World Bank Indicators API (World Development Indicators and other databases) |
