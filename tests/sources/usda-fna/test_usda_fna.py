@@ -8,12 +8,21 @@ signature waiver). The PDFs are 1.4-5.9 MB, so the PDF fixtures are real pages c
   sor17_p132_p134.pdf   State Options Report 17th edition, pages 132-134 (Texas's two profile pages, Utah's first)
 Two index entries are not responses to their own URL, to test the gates: the TBA request replays the BBCE export
 (the dashboard ignoring a parameter), and the ESAP request answers HTTP 404 (a republished dashboard).
+Program Data (recorded live 2026-10-30/31): the three listing pages (pd_*.html) and the workbooks snap-persons-10,
+26wifypart-10, 27wilatest-10 (its "June 2025" column holds June 2026), 01slfypart-10, cncost-10 and 36slmonthly-10
+(hidden columns 9-10 hold numbers), all unchanged. Two are trimmed copies of larger real files:
+  snap-zip-fy69tocurrent-10_FY25only.zip  the SNAP data zip (1.6 MB) with only its FY25.xlsx member
+  wicagencies2025ytd_3sheets.xlsx         wicagencies2025ytd.xlsx (225 KB) with three of its sixteen sheets (Children,
+                                          Total Number of Participants, NSA costs), the sheet XML unchanged
 """
 import importlib.util
+import io
 import os
+import re
 import shutil
 import sys
 import unittest
+import zipfile
 
 sys.path[:0] = [os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."),      # tests/ (testkit)
                 os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "plugins", "data-analyst",
@@ -189,6 +198,172 @@ class TestUsdaFna(PackTest):
         code, r = run(["--source", self.source, sp, "--out", out, "--env", "sandbox"], None,
                       {"DATA_ACCESS_FORCE": "restricted"}, self.home)
         self.assertEqual(r.get("route"), "manual_download", r)
+
+
+PD = {"description": "FNA Program Data: SNAP persons (latest months), WIC and school lunch participation by state, "
+                     "school meal costs, NSLP national monthly",
+      "requests": [
+          {"name": "snap", "endpoint": "program_table", "params": {"table": "snap_persons_latest", "state": ["TX", "CA"]}},
+          {"name": "wic", "endpoint": "program_table", "params": {"table": "wic_participation_state", "state": "AZ"}},
+          {"name": "nslp", "endpoint": "program_table",
+           "params": {"table": "nslp_participation_state", "state": "TX", "fiscal_year": [2024, 2025]}},
+          {"name": "costs", "endpoint": "program_table", "params": {"table": "school_meals_costs", "fiscal_year": 2025}},
+          {"name": "nslp_monthly", "endpoint": "program_table", "params": {"table": "nslp_monthly", "fiscal_year": 2025}}]}
+PD_COLS = ["table", "table_title", "data_as_of", "state", "state_abbr", "agency", "row_type", "period", "period_type",
+           "fiscal_year", "measure", "unit", "value", "value_num", "value_flag", "status", "footnote"]
+
+
+def _rezip(path: str, edit) -> bytes:
+    """The fixture workbook with edit(member name, bytes) -> bytes applied to each member."""
+    out = io.BytesIO()
+    with zipfile.ZipFile(path) as z, zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as o:
+        for n in z.namelist():
+            o.writestr(n, edit(n, z.read(n)))
+    return out.getvalue()
+
+
+class TestUsdaFnaProgramData(PackTest):
+    source = "usda-fna"
+    sample_spec = PD
+
+    def test_check_api(self):
+        code, r = self.check(PD)
+        self.assertEqual(code, 0, r)
+        self.assertEqual(r["route"], "api")
+
+    def test_program_tables(self):
+        code, r, out = self.fetch(PD)
+        self.assertEqual(code, 0, r)
+        self.assertEqual(r["status"], "ok", r)
+        snap = self.csv(out, "snap")
+        self.assertEqual(list(snap[0]), PD_COLS)
+        v = {(x["state_abbr"], x["period"]): x for x in snap}
+        self.assertEqual(len(snap), 6)                                    # 2 states x 3 months
+        self.assertEqual((v[("CA", "2025-07")]["value_num"], v[("CA", "2025-07")]["data_as_of"]),
+                         ("5449432", "2026-10-09"))
+        self.assertEqual(v[("CA", "2026-06")]["status"], "preliminary")
+        self.assertEqual(v[("TX", "2026-07")]["status"], "initial")
+        wic = {(x["agency"], x["period"]): x for x in self.csv(out, "wic")}
+        self.assertEqual(wic[("", "FY 2025")]["value_num"], "157532.9167")         # the state total, ITOs included
+        self.assertEqual(wic[("", "FY 2025")]["row_type"], "state")
+        self.assertEqual(wic[("Navajo Nation", "FY 2025")]["row_type"], "sub_agency")
+        self.assertEqual({x["fiscal_year"] for x in self.csv(out, "nslp")}, {"2024", "2025"})
+        costs = {x["measure"]: x for x in self.csv(out, "costs")}
+        self.assertEqual(costs["cash_nslp"]["value_num"], "17236.12265209")
+        self.assertEqual(costs["cash_nslp"]["unit"], "millions of dollars")
+        self.assertEqual((costs["commodities_bonus"]["value_num"], costs["commodities_bonus"]["value_flag"]),
+                         ("", "blank"))
+        mon = self.csv(out, "nslp_monthly")
+        self.assertEqual({x["measure"] for x in mon}, {"participation", "lunches_served", "share_free",
+                                                       "share_reduced_price", "snacks_served", "cash_payments",
+                                                       "commodity_costs"})              # hidden columns 9-10 skipped
+        self.assertEqual(len([x for x in mon if x["period_type"] == "month"]), 12 * 7)
+        oct_ = next(x for x in mon if x["period"] == "2024-10" and x["measure"] == "share_free")
+        self.assertEqual(oct_["unit"], "fraction of lunches (0-1)")
+
+    def test_mislabeled_month_column_is_dropped(self):
+        """27wilatest labels June 2026 "June 2025": the column is dropped and named, never relabeled."""
+        code, r, out = self.fetch({"requests": [{"name": "wl", "endpoint": "program_table",
+                                                 "params": {"table": "wic_participation_latest", "state": "AL"}}]})
+        self.assertEqual(code, 0, r)
+        self.assertEqual(r["status"], "partial", r)
+        self.assertIn("June 2025", " ".join(r["truncated"]))
+        self.assertEqual(sorted(x["period"] for x in self.csv(out, "wl")), ["2025-07", "2026-07"])
+
+    def test_layout_gates(self):
+        ad = load_pack_module("usda-fna")
+        k, c = ad._table({"table": "nslp_participation_state"})
+        with open(os.path.join(FX, "01slfypart-10.xlsx"), "rb") as f:
+            good = f.read()
+        self.assertEqual(len(ad.program_rows(k, c, good, {})[0]), 305)
+        bad = _rezip(os.path.join(FX, "01slfypart-10.xlsx"),
+                     lambda n, b: b.replace(b"FY 2023", b"FY 2033") if n == "xl/sharedStrings.xml" else b)
+        with self.assertRaises(ad.DataError) as e:
+            ad.program_rows(k, c, bad, {})
+        self.assertIn("expected layout", str(e.exception))
+        # the hidden columns of 36slmonthly made visible: values under no label fail the table
+        k, c = ad._table({"table": "nslp_monthly"})
+        shown = _rezip(os.path.join(FX, "36slmonthly-10.xlsx"),
+                       lambda n, b: re.sub(rb' hidden="1"', b"", b) if n.startswith("xl/worksheets/") else b)
+        with self.assertRaises(ad.DataError) as e:
+            ad.program_rows(k, c, shown, {})
+        self.assertIn("unlabeled column", str(e.exception))
+        # a workbook that is another table is refused by its title
+        with self.assertRaises(ad.DataError):
+            ad.program_rows(*ad._table({"table": "wic_participation_state"}), good, {})
+
+    def test_snap_state_monthly(self):
+        code, r, out = self.fetch({"requests": [{"name": "sm", "endpoint": "snap_state_monthly",
+                                                 "params": {"fiscal_year": 2025}}]})
+        self.assertEqual(code, 0, r)
+        self.assertEqual(r["status"], "ok", r)
+        self.assertFalse([n for n in r["notes"] if "check:" in n], r["notes"])          # states = regions = U.S.
+        rows = self.csv(out, "sm")
+        tx = {(x["period"], x["measure"]): x for x in rows if x["state_abbr"] == "TX"}
+        self.assertEqual(tx[("FY 2025", "persons")]["value_num"], "3472443.0833")
+        self.assertEqual(tx[("2025-07", "benefits")]["value_num"], "625221101")
+        self.assertEqual(len([k for k in tx if k[1] == "persons"]), 13)                 # 12 months + the FY
+        self.assertEqual({x["row_type"] for x in rows}, {"state", "region", "national"})
+        code, r = self.check({"requests": [{"name": "x", "endpoint": "snap_state_monthly",
+                                            "params": {"fiscal_year": 2019}}]})
+        self.assertEqual(r["route"], "fix_spec", r)
+        self.assertIn(".xls", r["message"])
+
+    def test_wic_agency_monthly(self):
+        code, r, out = self.fetch({"requests": [{"name": "wa", "endpoint": "wic_agency_monthly",
+                                                 "params": {"fiscal_year": 2025, "state": "AZ",
+                                                            "measures": ["participants_total", "nsa_costs"]}}]})
+        self.assertEqual(code, 0, r)
+        self.assertEqual(r["status"], "ok", r)
+        rows = self.csv(out, "wa")
+        tot = {(x["agency"], x["row_type"]): x for x in rows if x["measure"] == "participants_total"
+               and x["period"] == "FY 2025"}
+        self.assertEqual(round(float(tot[("", "state_agency")]["value_num"])), 146899)   # the state agency only
+        self.assertIn(("Navajo Nation", "tribal_org"), tot)
+        self.assertEqual({x["period_type"] for x in rows if x["measure"] == "nsa_costs"}, {"fiscal_year"})
+        # a sheet missing from the workbook makes the table incomplete
+        code, r, out = self.fetch({"requests": [{"name": "wf", "endpoint": "wic_agency_monthly",
+                                                 "params": {"fiscal_year": 2025, "measures": ["food_costs"]}}]})
+        self.assertEqual(r["status"], "partial", r)
+        self.assertIn("food_costs", " ".join(r["truncated"]))
+
+    def test_program_spec_checks(self):
+        for params, words in [({"table": "nslp_annual", "state": "TX"}, "national table"),
+                              ({"table": "no_such_table"}, "not a Program Data table")]:
+            code, r = self.check({"requests": [{"name": "x", "endpoint": "program_table", "params": params}]})
+            self.assertEqual(r["route"], "fix_spec", r)
+            self.assertIn(words, r["message"])
+        code, r = self.check({"requests": [{"name": "x", "endpoint": "option_states",
+                                            "params": {"policy": "nslp_annual"}}]})
+        self.assertEqual(r["route"], "fix_spec", r)                    # a table key is not a State Options policy
+
+    def test_manual_bundle_and_ingest(self):
+        spec = {"requests": PD["requests"][:2] + [
+            {"name": "sm", "endpoint": "snap_state_monthly", "params": {"fiscal_year": 2025, "state": "TX"}},
+            {"name": "wa", "endpoint": "wic_agency_monthly", "params": {"fiscal_year": 2025, "state": "AZ"}}]}
+        sp, out = self.write_spec(spec)
+        code, r = self.cli(sp, "--out", out, "--manual-bundle")
+        self.assertEqual(code, 0, r)
+        names = [i["filename"] for i in r["items"]]
+        self.assertEqual(names, ["snap_snap-persons.xlsx", "wic_26wifypart.xlsx", "sm_snap-zip-fy69tocurrent.zip",
+                                 "wa_wicagencies2025ytd.xlsx"])
+        self.assertTrue(r["items"][0]["url"].endswith("/resource-files/snap-persons-10.xlsx"))
+        up = os.path.join(self.tmp.name, "up")
+        os.makedirs(up)
+        # saved under the bundle's names; parse_upload still checks each file's content (title, fiscal year)
+        for src, dst in zip(["snap-persons-10.xlsx", "26wifypart-10.xlsx", "snap-zip-fy69tocurrent-10_FY25only.zip",
+                             "wicagencies2025ytd_3sheets.xlsx"], names):
+            shutil.copy(os.path.join(FX, src), os.path.join(up, dst))
+        code, r = self.cli(sp, "--out", out, "--ingest", up, fixtures=False)
+        self.assertEqual(code, 0, r)
+        self.assertEqual(len(self.csv(out, "snap")), 6)
+        self.assertEqual(len(self.csv(out, "wic")), 20)
+        self.assertEqual({x["state_abbr"] for x in self.csv(out, "sm")}, {"TX"})
+        self.assertIn("Navajo Nation", {x["agency"] for x in self.csv(out, "wa")})
+
+    def test_incomplete_marker_matches_core(self):
+        from core import generic_rest as gr
+        self.assertEqual(load_pack_module("usda-fna").pdx.INCOMPLETE, gr.INCOMPLETE)
 
 
 if __name__ == "__main__":

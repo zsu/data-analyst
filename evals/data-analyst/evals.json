@@ -1592,6 +1592,191 @@
         },
         "added_at": "2026-10-30T23:00:00+00:00"
       }
+    },
+    {
+      "id": "oklahoma-wic-school-lunch-snap-fy2025",
+      "prompt": "For a state budget brief: how many people did SNAP, WIC and the National School Lunch Program reach in Oklahoma in federal fiscal year 2025, compared with FY 2024? Use USDA's own program data. For WIC, count everyone served in the state, including by tribal WIC agencies. This is a scheduled, unattended run: nobody can answer questions, so decide every open choice yourself by agency precedent and record it. Save the work in out/ok-nutrition.",
+      "expected_output": "Oklahoma FY 2025 (FY 2024): SNAP 694,230 persons a month (686,808); WIC 100,419 participants a month, of whom 74,371 through the state agency and 26,049 through nine tribal organizations (99,753); NSLP 397,853 children a day, nine-month average (397,601). FNA Program Data, data as of 2026-10-09; the three are not added together. Audit passed.",
+      "files": [],
+      "expectations": [
+        "WIC participation for Oklahoma counts every WIC agency in the state, the state agency and its nine Indian tribal organizations (100,419 in FY 2025), not the state agency alone (74,371), and says which it reports",
+        "Gets FY 2025 Oklahoma average monthly SNAP persons (694,230) and school lunch average daily participation (397,853), with FY 2024 for comparison (686,808; 397,601) and the WIC FY 2024 figure (99,753)",
+        "States each program's measure and averaging: WIC and SNAP monthly averages over the federal fiscal year, NSLP a nine-month school-year average (summer excluded); does not add the three programs' participants together as people",
+        "Labels any figure the workbook marks preliminary and gives the data-as-of date of FNA's tables",
+        "Fetches through fetch.py's usda-fna pack (program_table / snap_state_monthly or wic_agency_monthly) rather than another source or hand-typed numbers"
+      ],
+      "rsi": {
+        "title": "USDA FNA Program Data: Oklahoma SNAP, WIC (with tribal agencies) and school lunch, FY 2025 vs FY 2024",
+        "invoke": "explicit",
+        "interaction": "none",
+        "criteria": [
+          {
+            "id": "c1",
+            "text": "WIC participation for Oklahoma counts every WIC agency in the state, the state agency and its nine Indian tribal organizations (100,419 in FY 2025), not the state agency alone (74,371), and says which it reports",
+            "severity": "critical"
+          },
+          {
+            "id": "c2",
+            "text": "Gets FY 2025 Oklahoma average monthly SNAP persons (694,230) and school lunch average daily participation (397,853), with FY 2024 for comparison (686,808; 397,601) and the WIC FY 2024 figure (99,753)",
+            "severity": "major"
+          },
+          {
+            "id": "c3",
+            "text": "States each program's measure and averaging: WIC and SNAP monthly averages over the federal fiscal year, NSLP a nine-month school-year average (summer excluded); does not add the three programs' participants together as people",
+            "severity": "major"
+          },
+          {
+            "id": "c4",
+            "text": "Labels any figure the workbook marks preliminary and gives the data-as-of date of FNA's tables",
+            "severity": "minor"
+          },
+          {
+            "id": "c5",
+            "text": "Fetches through fetch.py's usda-fna pack (program_table / snap_state_monthly or wic_agency_monthly) rather than another source or hand-typed numbers",
+            "severity": "minor"
+          }
+        ],
+        "deterministic_checks": [
+          {
+            "id": "answer-exists",
+            "type": "file_exists",
+            "path": "out/ok-nutrition/answer.md",
+            "severity": "critical"
+          },
+          {
+            "id": "analysis-exists",
+            "type": "file_exists",
+            "path": "out/ok-nutrition/analysis.py",
+            "severity": "major"
+          },
+          {
+            "id": "facts-exists",
+            "type": "file_exists",
+            "path": "out/ok-nutrition/facts.json",
+            "severity": "major"
+          },
+          {
+            "id": "decisions-exists",
+            "type": "file_exists",
+            "path": "out/ok-nutrition/decisions.json",
+            "severity": "major"
+          },
+          {
+            "id": "specs-checked",
+            "type": "file_exists",
+            "path": "out/ok-nutrition/specs/checked.json",
+            "severity": "minor"
+          },
+          {
+            "id": "audit-answer",
+            "type": "command",
+            "cmd": "{python} {skill}/scripts/report/audit_answer.py {sandbox}/out/ok-nutrition --rerun",
+            "expect_exit": 0,
+            "timeout": 600,
+            "severity": "major"
+          },
+          {
+            "id": "handoff",
+            "type": "command",
+            "cmd": "{python} {skill}/scripts/fetch.py --handoff --out {sandbox}/out/ok-nutrition",
+            "expect_exit": 0,
+            "severity": "minor"
+          },
+          {
+            "id": "no-secrets",
+            "type": "command",
+            "cmd": "{python} {skill}/scripts/report/scan_secrets.py {sandbox}/out/ok-nutrition",
+            "expect_exit": 0,
+            "severity": "critical"
+          },
+          {
+            "id": "no-pycache-in-skill",
+            "type": "file_absent",
+            "path": "{skill}/**/__pycache__",
+            "severity": "minor"
+          },
+          {
+            "id": "usda-fna-data",
+            "type": "file_exists",
+            "path": "out/ok-nutrition/data/usda-fna/*.csv",
+            "severity": "critical"
+          },
+          {
+            "id": "wic-state-total",
+            "type": "command",
+            "cmd": "{python} -I {case}/verify.py facts {sandbox}/out/ok-nutrition 100419.08 1.5",
+            "expect_exit": 0,
+            "severity": "critical",
+            "desc": "Oklahoma WIC FY 2025 with tribal organizations = 100,419.08 (state agency alone 74,370.5)"
+          },
+          {
+            "id": "snap-persons",
+            "type": "command",
+            "cmd": "{python} -I {case}/verify.py facts {sandbox}/out/ok-nutrition 694230.33 1.5",
+            "expect_exit": 0,
+            "severity": "major",
+            "desc": "Oklahoma SNAP FY 2025 average monthly persons = 694,230.33"
+          },
+          {
+            "id": "nslp",
+            "type": "command",
+            "cmd": "{python} -I {case}/verify.py facts {sandbox}/out/ok-nutrition 397853.17 1.5",
+            "expect_exit": 0,
+            "severity": "major",
+            "desc": "Oklahoma NSLP FY 2025 participation = 397,853.17"
+          },
+          {
+            "id": "tribal-named",
+            "type": "regex",
+            "path": "out/ok-nutrition/answer.md",
+            "pattern": "(?i)tribal|tribe|ITO",
+            "severity": "major"
+          }
+        ],
+        "ground_truth": {
+          "state": "Oklahoma",
+          "fiscal_years": [
+            2024,
+            2025
+          ],
+          "wic_participation_state_total": {
+            "2024": 99753.0834,
+            "2025": 100419.0833
+          },
+          "wic_state_agency_only_2025": 74370.5,
+          "wic_tribal_organizations_2025": 9,
+          "snap_avg_monthly_persons": {
+            "2024": 686807.75,
+            "2025": 694230.3333
+          },
+          "nslp_participation_9_month_avg": {
+            "2024": 397600.9829,
+            "2025": 397853.1703
+          },
+          "data_as_of": "2026-10-09",
+          "source": "FNA Program Data, verified 2026-10-31 with the usda-fna pack: 26wifypart-10.xlsx (WIC state rows include their tribal agencies), wicagencies2025ytd.xlsx (Oklahoma state agency 74,370.5), 01slfypart-10.xlsx (NSLP), snap-zip-fy69tocurrent-10.zip FY24/FY25.xlsx (SNAP); state and agency sums equal the printed totals",
+          "source_url": "https://www.fna.usda.gov/pd/overview"
+        },
+        "case_files": [
+          "case/oklahoma-wic-school-lunch-snap-fy2025/verify.py"
+        ],
+        "coverage_tags": [
+          "single keyless pack (usda-fna)",
+          "nutrition assistance: usda-fna",
+          "XLSX workbook parsing",
+          "state total vs agency parts",
+          "units and averaging differ by program",
+          "unattended no_user",
+          "live source"
+        ],
+        "why": "Program Data XLSX tables across three programs; guards the WIC state-total vs state-agency trap (tribal agencies) and adding unlike participation measures",
+        "origin": {
+          "run": "manual",
+          "iteration": 0,
+          "case": "oklahoma-wic-school-lunch-snap-fy2025"
+        },
+        "added_at": "2026-10-31T00:00:00+00:00"
+      }
     }
   ]
 }

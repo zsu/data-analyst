@@ -32,7 +32,7 @@ Use `fetch.py --route "<question>"` for a ranked suggestion.
 | Company financials and filings | sec | fred | EDGAR XBRL facts; SEC asks for a contact User-Agent. |
 | Housing costs and assistance | hud | census, fred | HUD FMRs and income limits; ACS rents and values. |
 | Agriculture | usda-nass | bls, world-bank | NASS Quick Stats. |
-| SNAP state policy options, waivers and program activity | usda-fna | census, usaspending | State Options Report (editions 16-17 tidy, all 17 as PDF text); State Activity Reports (tidy FY 2019-2023). |
+| SNAP, WIC and school meals: participation, costs, state policy options | usda-fna | census, usaspending | FNA Program Data (monthly, by state); SNAP State Options Report; State Activity Reports (FY 2019-2023 tidy). |
 | Transportation | bts | nhtsa | BTS statistics; NHTSA for vehicle safety. |
 | Environment, air and water quality | epa | epa-aqs, usgs, noaa | EPA envirofacts/ECHO; AQS monitor data; USGS water. |
 | Weather and climate | noaa | nws | NOAA NCEI history; NWS is forecasts and the last week of observations only. |
@@ -93,7 +93,7 @@ Use `fetch.py --route "<question>"` for a ranked suggestion.
 | treasury | deep | none | federal budget, federal debt, public finance, spending, revenue | U.S. Treasury Fiscal Data (fiscaldata.treasury.gov) |
 | treasury-yields | standard | none | interest rates, bond market, finance | Treasury Daily Interest Rate Statistics (home.treasury.gov) |
 | usaspending | standard | none | spending, federal budget, procurement, grants | USAspending.gov API (federal awards and spending) |
-| usda-fna | standard | none | nutrition assistance, social safety net, state policy, program administration | USDA Food and Nutrition Administration: SNAP State Options Report and SNAP State Activity Reports |
+| usda-fna | standard | none | nutrition assistance, social safety net, state policy, program administration, school meals | USDA Food and Nutrition Administration: SNAP, WIC and child nutrition program data, SNAP State Options Report and SNAP State Activity Reports |
 | usda-fooddata | standard | optional (DATA_GOV_API_KEY) | nutrition, food, health, agriculture | USDA FoodData Central |
 | usda-nass | standard | required (USDA_NASS_API_KEY) | agriculture, food | USDA NASS Quick Stats |
 | usgs | standard | optional (DATA_GOV_API_KEY) | natural hazards, earthquakes, water, environment | USGS earthquakes (ComCat) and Water Data (streamflow, groundwater) |

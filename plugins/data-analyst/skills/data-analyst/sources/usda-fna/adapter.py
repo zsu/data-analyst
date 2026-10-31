@@ -1,4 +1,5 @@
-"""usda-fna adapter: SNAP State Options Report (dashboard CSV exports and PDFs) and SNAP State Activity Reports (PDF).
+"""usda-fna adapter: SNAP State Options Report (dashboard CSV exports and PDFs), SNAP State Activity Reports (PDF), and
+FNA's Program Data tables (XLSX: SNAP, WIC, child nutrition; read by program_data.py).
 
 Neither report has an API (verified 2026-10-30). What this adapter reads:
   - The State Options Report dashboard is a Tableau view on publicdashboards.dl.usda.gov. Appending ".csv" to a
@@ -18,6 +19,9 @@ Neither report has an API (verified 2026-10-30). What this adapter reads:
     its column count and every column label's words appear in the printed header (endpoints.json
     activity_tables); otherwise its rows are dropped and the table is named as incomplete. Agency sums are checked
     against the printed U.S. row.
+  - The Program Data workbooks are linked from three listing pages; their file names carry a release number that
+    changes (snap-persons-10.xlsx), so each fetch reads the current name from the listing page (endpoints.json
+    program_pages) and never builds it. program_data.py documents the layouts and their gates.
 State agencies are the reports' 53 (50 states, DC, Guam, Virgin Islands) under the reports' own names, so the
 table is here, not core.combine (pandas-only analysis code that names them differently).
 """
@@ -30,6 +34,7 @@ import re
 import sys
 import unicodedata
 import urllib.parse
+import zipfile
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "scripts"))
 from core import generic_rest as gr  # noqa: E402
@@ -37,6 +42,9 @@ from core import packfiles  # noqa: E402
 from core.http import Client, DataError  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)
+import program_data as pdx  # noqa: E402
+
 EPS = packfiles.read_json(HERE, "endpoints.json") or {}
 
 AGENCIES = [
@@ -55,11 +63,13 @@ NAME = dict(AGENCIES)
 ABBR = {n.lower(): a for a, n in AGENCIES}
 ALIASES = {"u.s. virgin islands": "VI", "us virgin islands": "VI", "dc": "DC", "washington dc": "DC",
            "washington, d.c.": "DC"}
+AREAS = pdx.Areas(AGENCIES)                                  # + AS, PR, MP: the Program Data tables have them
 BY_LENGTH = sorted(NAME.values(), key=len, reverse=True)     # "West Virginia" before "Virginia"
 ABBR_CASE = set(NAME.values())
 MISSING = ("N/A", "NA", "-", "--", "—", "–", "*", "")
 RANGE = re.compile(r"FY\s*(\d{4})\s*[-–]\s*(?:FY\s*)?(\d{4})")
 _CLIENTS: dict[str, Client] = {}
+_LISTINGS: dict[str, str] = {}
 
 
 # ---------------------------------------------------------------------- spec helpers
@@ -121,10 +131,33 @@ def _policy(params: dict) -> dict:
     """The catalog entry of the requested policy (alias, or its exact name)."""
     p = str(params.get("policy") or "").strip()
     for alias, c in (EPS.get("catalog") or {}).items():
-        if p in (alias, c["id"]) or p.lower() == c["id"].lower():
+        if c.get("endpoint") == "option_states" and (p in (alias, c["id"]) or p.lower() == c["id"].lower()):
             return c
     raise ValueError(f"policy {p!r} is not in the catalog: use an alias or name from --endpoints / --search "
                      "(e.g. bbce, abawd_waiver, telephonic_signature_waiver)")
+
+
+def _table(params: dict) -> tuple[str, dict]:
+    """(key, definition) of a Program Data table (catalog entries with endpoint program_table)."""
+    k = str(params.get("table") or "").strip()
+    c = (EPS.get("catalog") or {}).get(k)
+    if not c or c.get("endpoint") != "program_table":
+        keys = [a for a, d in (EPS.get("catalog") or {}).items() if d.get("endpoint") == "program_table"]
+        raise ValueError(f"table {k!r} is not a Program Data table; known: {', '.join(keys)}")
+    return k, c
+
+
+def _wic_measures(v) -> list[str]:
+    sheets = EPS["wic_agency_sheets"]
+    if v in (None, ""):
+        return ["participants_total"]
+    if v in ("all", ["all"]):
+        return list(sheets)
+    vals = v if isinstance(v, list) else [x.strip() for x in str(v).split(",") if x.strip()]
+    bad = [x for x in vals if x not in sheets]
+    if bad:
+        raise ValueError(f"unknown WIC measure(s) {bad}; known: {', '.join(sheets)}")
+    return vals
 
 
 def _endpoint(req: dict) -> str:
@@ -164,6 +197,29 @@ def check_spec(spec):
                         probs.append(f"request {n!r}: unknown table(s) {bad}; known: {', '.join(EPS['activity_tables'])}")
                 if p.get("state") not in (None, ""):
                     _agencies(p["state"])
+            elif e == "program_table":
+                k, c = _table({"table": p.get("table") or r.get("dataset")})
+                if p.get("state") not in (None, ""):
+                    if c["layout"] in ("annual", "monthly"):
+                        probs.append(f"request {n!r}: {k} is a national table; drop state (state tables: the "
+                                     "catalog entries ending in _state or _latest)")
+                    AREAS.codes(p["state"])
+                if p.get("fiscal_year") not in (None, ""):
+                    _ints(p["fiscal_year"], 1969, 2100, "fiscal_year")
+            elif e == "snap_state_monthly":
+                lo = EPS["snap_zip"]["first_xlsx_year"]
+                _ints(p.get("fiscal_year"), lo, 2100, f"fiscal_year (FY {lo} onward; earlier years are .xls files "
+                      "this pack does not read: snap_annual has national totals)")
+                if p.get("state") not in (None, ""):
+                    AREAS.codes(p["state"])
+            elif e == "wic_agency_monthly":
+                yrs = EPS["wic_agency_files"]["years"]
+                fys = _ints(p.get("fiscal_year"), min(yrs), 2100, f"fiscal_year (FY {min(yrs)} onward)")
+                if len(fys) > 1:
+                    probs.append(f"request {n!r}: wic_agency_monthly takes one fiscal_year a request")
+                _wic_measures(p.get("measures"))
+                if p.get("state") not in (None, ""):
+                    AREAS.codes(p["state"])
             elif e == "activity_report":
                 _ints(p.get("fiscal_year"), 2004, 2023, "fiscal_year")
                 if len(p["fiscal_year"] if isinstance(p.get("fiscal_year"), list) else [1]) > 1:
@@ -202,6 +258,38 @@ def _get_pdf(pack, path: str) -> bytes:
     body = gr.client_for(pack).get(path).body
     if not body.startswith(b"%PDF"):
         raise DataError(f"usda-fna: {path} did not return a PDF (the site may have moved the file; see the listing "
+                        "pages in source.md Access)", kind="api")
+    return body
+
+
+def _listing(pack, program: str) -> str:
+    if program not in _LISTINGS:
+        _LISTINGS[program] = gr.client_for(pack).get(EPS["program_pages"][program]).body.decode("utf-8", "replace")
+    return _LISTINGS[program]
+
+
+def _listed(pack, program: str, rx: str, what: str) -> list[str]:
+    """The resource-file paths on a listing page whose file name matches rx (whole name)."""
+    found = re.findall(r'href="(/sites/default/files/resource-files/([^"/]+))"', _listing(pack, program))
+    hits = list(dict.fromkeys(path for path, name in found if re.fullmatch(rx, name, re.I)))
+    if not hits:
+        raise DataError(f"usda-fna: no {what} link on {EPS['base_url']}{EPS['program_pages'][program]} (FNA may have "
+                        "renamed or moved the file; endpoints.json program_pages / catalog stem need updating)",
+                        kind="api")
+    return hits
+
+
+def _one(hits: list[str], what: str) -> str:
+    if len(hits) > 1:
+        raise DataError(f"usda-fna: the listing page links several {what} files ({', '.join(hits)}); not guessing "
+                        "which is current", kind="api")
+    return hits[0]
+
+
+def _get_file(pack, path: str, kind: str) -> bytes:
+    body = gr.client_for(pack).get(path).body
+    if not body.startswith(b"PK"):
+        raise DataError(f"usda-fna: {path} did not return an {kind} file (the site may have moved it; see the listing "
                         "pages in source.md Access)", kind="api")
     return body
 
@@ -524,6 +612,88 @@ def activity_table_rows(pages: list[str], fy: int, params: dict) -> tuple[list[d
     return rows, notes
 
 
+# ---------------------------------------------------------------------- Program Data tables (XLSX)
+def _keep(rows: list[dict], p: dict) -> list[dict]:
+    if p.get("state") not in (None, ""):
+        codes = set(AREAS.codes(p["state"]))
+        rows = [x for x in rows if x["state_abbr"] in codes]
+    if p.get("fiscal_year") not in (None, ""):
+        fys = set(_ints(p["fiscal_year"], 1969, 2100, "fiscal_year"))
+        rows = [x for x in rows if x["fiscal_year"] in fys]
+    return rows
+
+
+def _layout(f):
+    try:
+        return f()
+    except pdx.LayoutError as ex:
+        raise DataError(f"usda-fna: the workbook does not have the expected layout ({ex}); its rows were not read. "
+                        "FNA changed the table: check it and update endpoints.json (catalog columns / title)",
+                        kind="api") from None
+
+
+def program_rows(k: str, c: dict, body: bytes, p: dict) -> tuple[list[dict], list[str]]:
+    rows, notes = _layout(lambda: pdx.parse_table(k, c, body, AREAS))
+    return _keep(rows, p), notes
+
+
+def snap_zip_years(body: bytes, fys: list[int], what: str) -> dict[int, bytes]:
+    try:
+        z = zipfile.ZipFile(io.BytesIO(body))
+    except zipfile.BadZipFile:
+        raise DataError(f"usda-fna: {what} is not a zip file", kind="api") from None
+    with z:
+        out = {fy: pdx.snap_zip_member(z, fy) for fy in fys}
+        missing = [fy for fy, b in out.items() if b is None]
+        if missing:
+            have = [y for y in pdx.snap_zip_years(z) if y >= EPS["snap_zip"]["first_xlsx_year"]]
+            raise DataError(f"usda-fna: the SNAP data zip has no FY{missing[0] % 100:02d}.xlsx (its .xlsx years: "
+                            f"{have})", kind="bad_request")
+    return out
+
+
+def snap_monthly_rows(bodies: dict[int, bytes], p: dict) -> tuple[list[dict], list[str]]:
+    rows, notes = [], []
+    for fy, body in sorted(bodies.items()):
+        rs, ns = _layout(lambda: pdx.parse_snap_year(body, fy, AREAS))
+        rows += rs
+        notes += ns
+    return _keep(rows, {"state": p.get("state")}), notes
+
+
+def wic_agency_rows(body: bytes, fy: int, p: dict) -> tuple[list[dict], list[str]]:
+    want = _wic_measures(p.get("measures"))
+    book = _layout(lambda: pdx.read_book(body))
+    rows, notes, seen = [], [], set()
+    for name, rs, hidden in book:
+        k = pdx.wic_sheet_key(name, EPS["wic_agency_sheets"])
+        if k not in want:
+            continue
+        try:
+            r2, n2 = pdx.parse_wic_sheet(k, EPS["wic_agency_sheets"][k], rs, hidden, fy, AREAS)
+        except pdx.LayoutError as ex:
+            notes.append(f"{gr.INCOMPLETE} sheet {name!r} dropped: {ex}")
+            continue
+        seen.add(k)
+        rows += r2
+        notes += n2
+    for k in want:
+        if k not in seen and not any(k in n for n in notes):
+            notes.append(f"{gr.INCOMPLETE} no sheet for {k} in the FY {fy} WIC agency workbook")
+    return _keep(rows, {"state": p.get("state")}), notes
+
+
+def _named(name: str, notes: list[str]) -> list[str]:
+    """Request-named notes: an incomplete one keeps the INCOMPLETE marker right after the name; the rest are checks."""
+    out = []
+    for n in notes:
+        if gr.INCOMPLETE in n:
+            out.append(f"{name}{n[n.index(gr.INCOMPLETE):]}")
+        else:
+            out.append(f"{name}: check: {n}")
+    return out
+
+
 # ---------------------------------------------------------------------- the fetch
 def _fetch_one(pack, r: dict, params: dict) -> tuple[list[dict], list[str]]:
     e, p = _endpoint(r), params
@@ -555,6 +725,32 @@ def _fetch_one(pack, r: dict, params: dict) -> tuple[list[dict], list[str]]:
         fy = _ints(p.get("fiscal_year"), 2004, 2023, "fiscal_year")[0]
         rows = activity_page_rows(_get_pdf(pack, EPS["activity_reports"][str(fy)]), fy, p)
         return rows, [f"{r['name']}: SNAP State Activity Report FY {fy}, {len(rows)} page(s) of text"]
+    if e == "program_table":
+        k, c = _table({"table": p.get("table") or r.get("dataset")})
+        path = _one(_listed(pack, c["program"], re.escape(c["stem"]) + r"-\d+\.xlsx", f"{k} ({c['stem']}-NN.xlsx)"), k)
+        rows, notes = program_rows(k, c, _get_file(pack, path, "XLSX"), p)
+        asof = rows[0]["data_as_of"] if rows else ""
+        return rows, _named(r["name"], notes) + [f"{r['name']}: {k} from {path.rsplit('/', 1)[-1]} (data as of "
+                                                  f"{asof or 'not stated'}): {len(rows):,} values"]
+    if e == "snap_state_monthly":
+        z = EPS["snap_zip"]
+        path = _one(_listed(pack, "snap", re.escape(z["stem"]) + r"-\d+\.zip", "SNAP data zip"), "SNAP data zip")
+        fys = _ints(p.get("fiscal_year"), z["first_xlsx_year"], 2100, "fiscal_year")
+        rows, notes = snap_monthly_rows(snap_zip_years(_get_file(pack, path, "zip"), fys, path), p)
+        return rows, _named(r["name"], notes) + [f"{r['name']}: SNAP by state and month, FY "
+                                                  f"{', '.join(map(str, fys))}, from {path.rsplit('/', 1)[-1]}: "
+                                                  f"{len(rows):,} values"]
+    if e == "wic_agency_monthly":
+        fy = _ints(p.get("fiscal_year"), 2022, 2100, "fiscal_year")[0]
+        hits = _listed(pack, "wic", r"wicagencies\d{4}ytd\.xlsx", "WIC agency monthly")
+        mine = [h for h in hits if h.lower().endswith(f"wicagencies{fy}ytd.xlsx")]
+        if not mine:
+            have = sorted(int(re.search(r"(\d{4})ytd", h).group(1)) for h in hits)
+            raise DataError(f"request {r['name']!r}: the WIC page lists agency files for FY {have}, not FY {fy}",
+                            kind="bad_request")
+        rows, notes = wic_agency_rows(_get_file(pack, mine[0], "XLSX"), fy, p)
+        return rows, _named(r["name"], notes) + [f"{r['name']}: WIC by agency and month, FY {fy}, from "
+                                                  f"{mine[0].rsplit('/', 1)[-1]}: {len(rows):,} values"]
     if e == "activity_tables":
         rows, notes = [], []
         for fy in _ints(p.get("fiscal_year"), 2019, 2023, "fiscal_year"):
@@ -603,6 +799,25 @@ def manual_items(spec, pack):
                 items.append({**base, "name": f"{name}#{i}", "url": tab + _view("OptionsProjectsWaivers",
                                                                                   _option_query(c["id"], s, label)),
                               "filename": f"{name}_{i:02d}.csv", "note": f"{c['id']}: {s} ({label})"})
+        elif e == "program_table":
+            k, c = _table({"table": p.get("table") or r.get("dataset")})
+            page = fna + EPS["program_pages"][c["program"]]
+            items.append({**base, "name": f"{name}#1", "url": f"{fna}/sites/default/files/resource-files/{c['stem']}-"
+                          f"{EPS['program_release']}.xlsx", "filename": f"{name}_{c['stem']}.xlsx",
+                          "note": f"{k}: {c['description']} (Excel). If the link is gone, the release number changed: "
+                                  f"open {page} and download the Excel file of this table"})
+        elif e == "snap_state_monthly":
+            items.append({**base, "name": f"{name}#1", "url": fna + EPS["snap_zip"]["file"],
+                          "filename": f"{name}_{EPS['snap_zip']['stem']}.zip",
+                          "note": "SNAP data zip (persons, households, benefits by state and month, FY 1969 on). If "
+                                  f"the link is gone, open {fna}{EPS['program_pages']['snap']} and download the "
+                                  "'FY 69 through FY ..' zip"})
+        elif e == "wic_agency_monthly":
+            fy = _ints(p.get("fiscal_year"), 2022, 2100, "fiscal_year")[0]
+            items.append({**base, "name": f"{name}#1", "url": fna + EPS["wic_agency_files"]["file"].format(fy=fy),
+                          "filename": f"{name}_wicagencies{fy}ytd.xlsx",
+                          "note": f"WIC monthly data by state agency, FY {fy} (Excel), from "
+                                  f"{fna}{EPS['program_pages']['wic']}"})
         elif e in ("options_report", "activity_report", "activity_tables"):
             if e == "options_report":
                 ed = _edition(p.get("edition"), tuple(EPS["options_reports"]))
@@ -627,6 +842,55 @@ def parse_upload(pack, req, paths):
         with open(path, "rb") as f:
             return f.read()
     paths = sorted(paths)
+    if e == "program_table":
+        k, c = _table({"table": p.get("table") or req.get("dataset")})
+        for x in paths:
+            body = read(x)
+            if body[:2] == b"PK":
+                try:
+                    if pdx.find_sheet(pdx.read_book(body), c):
+                        return program_rows(k, c, body, p)[0]
+                except pdx.LayoutError:
+                    continue
+        raise DataError(f"request {req['name']!r} needs the Excel file of {k} ({c['stem']}-NN.xlsx); none of the "
+                        "uploaded files is that table (checked by its title row)", kind="bad_request")
+    if e == "snap_state_monthly":
+        fys = _ints(p.get("fiscal_year"), EPS["snap_zip"]["first_xlsx_year"], 2100, "fiscal_year")
+        bodies = {}
+        for x in paths:
+            body = read(x)
+            if body[:2] != b"PK":
+                continue
+            with zipfile.ZipFile(io.BytesIO(body)) as z:
+                if "xl/workbook.xml" in z.namelist():           # one FYyy.xlsx uploaded on its own
+                    fy = next((y for y in fys if f"Fiscal Year {y}" in " ".join(
+                        pdx.norm(v) for r in pdx.read_book(body)[0][1][:3] for v in r if v)), None)
+                    if fy:
+                        bodies[fy] = body
+                    continue
+                for fy in fys:
+                    b = pdx.snap_zip_member(z, fy)
+                    if b is not None:
+                        bodies[fy] = b
+        if sorted(bodies) != sorted(fys):
+            raise DataError(f"request {req['name']!r} needs the SNAP data zip (or its FYyy.xlsx files) for FY {fys}; "
+                            f"the upload has {sorted(bodies) or 'none of them'}", kind="bad_request")
+        return snap_monthly_rows(bodies, p)[0]
+    if e == "wic_agency_monthly":
+        fy = _ints(p.get("fiscal_year"), 2022, 2100, "fiscal_year")[0]
+        for x in paths:
+            body = read(x)
+            if body[:2] != b"PK":
+                continue
+            try:
+                book = pdx.read_book(body)
+            except pdx.LayoutError:
+                continue
+            if any(re.search(rf"FISCAL YEAR {fy}\b", " ".join(pdx.norm(v) for r in rs[:4] for v in r if v), re.I)
+                   and pdx.wic_sheet_key(n, EPS["wic_agency_sheets"]) for n, rs, _ in book):
+                return wic_agency_rows(body, fy, p)[0]
+        raise DataError(f"request {req['name']!r} needs wicagencies{fy}ytd.xlsx; no uploaded file is the FY {fy} WIC "
+                        "agency workbook", kind="bad_request")
     if e == "options_by_state":
         abbrs = _agencies(p.get("state"))
         rows, notes = by_state_rows([read(x) for x in paths], abbrs, EPS["tableau"]["editions"][_edition(p.get("edition"))])
