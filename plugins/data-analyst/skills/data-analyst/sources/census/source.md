@@ -1,14 +1,17 @@
-# Census Bureau Data API (ACS, decennial census, population estimates)
+# Census Bureau Data API (ACS, decennial census, population estimates, SIPP)
 Depth: standard. Key: required (CENSUS_API_KEY). American Community Survey 1-year and 5-year estimates,
 2020 and 2010 decennial census counts, population estimates, County Business Patterns and the Economic
-Census, for the nation, states, counties, places, tracts and ZIP code areas.
+Census, for the nation, states, counties, places, tracts and ZIP code areas; SIPP person-month microdata.
 
 ## When to use
 - Population, age, race and Hispanic origin, household income, per capita income, poverty, home values,
   rents, tenure, education, health insurance, commuting, language, for any U.S. geography; state or
   county profiles; population denominators for per-capita figures (federal spending, deaths, energy use).
-- Not here: monthly unemployment and jobs (bls), GDP and personal income by state (bea), survey
-  microdata for custom tabulations (ipums), international comparisons (world-bank), federal spending
+- Month-to-month income, program participation (SNAP, SSI, Medicaid, unemployment benefits), health
+  coverage spells, assets and debts of the same people over time: SIPP microdata (`sipp`), national
+  estimates weighted by the pack.
+- Not here: monthly unemployment and jobs (bls), GDP and personal income by state (bea), CPS, ACS and
+  NHIS microdata for custom tabulations (ipums), international comparisons (world-bank), federal spending
   by state (usaspending, which ships stale population figures: use this pack for the denominator).
 
 ## Endpoints and datasets
@@ -29,7 +32,8 @@ every county, a fred `regional` request with any county population series and `r
 returns the national cross-section for one date, to filter by state FIPS),
 `pep_population_2021` 2021/pep/population (POP_2020, POP_2021; states and above only),
 `pep_population_2019` (2010-2019, down to places), `cbp` 2023/cbp,
-`ecnbasic_2022`. Any path works (`2019/acs/acs1`, `2023/acs/acs5/subject`).
+`ecnbasic_2022`, `sipp` latest/sipp (SIPP microdata; 2022-2025 on the API, one per calendar year).
+Any path works (`2019/acs/acs1`, `2023/acs/acs5/subject`).
 Common variables: B01003_001E population, B01002_001E median age, B19013_001E median household income,
 B19301_001E per capita income, B17001_002E below poverty (universe B17001_001E), S1701_C03_001E poverty
 rate, B25077_001E median home value, B25064_001E median gross rent, B15003_022E bachelor's degree
@@ -56,6 +60,12 @@ Find others: `fetch.py --source census --search "median household income"` (late
    "params": {"dataset": "2024/acs/acs1/subject", "get": "NAME,S1701_C03_001E", "for": "state:*"}},
   {"name": "pop_2020", "endpoint": "query",
    "params": {"dataset": "dec_pl_2020", "get": "NAME,P1_001N", "for": "state:*"}}]}
+```
+
+```json
+{"description": "Share of people without health coverage in December, SIPP 2024 (weighted by WPFINWGT)",
+ "requests": [{"name": "sipp_coverage_dec", "endpoint": "query",
+   "params": {"dataset": "2024/sipp", "get": "TAGE,RHLTHMTH,TPTOTINC", "MONTHCODE": "12"}}]}
 ```
 
 ## Data format and traps
@@ -93,6 +103,18 @@ Find others: `fetch.py --source census --search "median household income"` (late
   the last API vintage with place and county subdivision estimates. Vintages 2022 and 2024-2025 (county
   and city/town totals for 2022-2025) are not on the API: use the Census estimates files at
   https://www.census.gov/programs-surveys/popest/data/tables.html (manual download) and name the vintage.
+- SIPP (`sipp`, `20XX/sipp`): public-use microdata, one row per person per reference month (MONTHCODE
+  1-12). The reference year is the calendar year before the file's label: `2024/sipp` was collected in
+  2024 about January-December 2023; say "2023" for its figures. Filter MONTHCODE (12 = December) for a
+  point in time, or average the months for the year. The pack always adds SSUID, PNUM (person = SSUID + PNUM), MONTHCODE and
+  WPFINWGT, the person weight: every estimate is weighted by WPFINWGT, never a row count. No geography but
+  `state`, which filters TST_INTV (state of the interview address); SIPP is designed for national estimates.
+  -9 means NA or missing in most variables: drop it before summing. Standard errors need the replicate
+  weights, which are not on the API (bulk file `rw<YYYY>_csv.zip`, REPWGT1-REPWGT240, at
+  https://www2.census.gov/programs-surveys/sipp/data/datasets/<YYYY>/; method in the year's user guide); without them
+  give the point estimate and say no standard error was computed. Variable names and codes:
+  `--search "<YYYY>/sipp: health insurance"` or the dataset's variables.json. The bulk primary file
+  (`pu<YYYY>_csv.zip`, about 100 MB) has every variable, for a manual download.
 - Key: since 2026-05-12 every data query needs a key; the API redirects keyless queries to a "Missing
   Key" page, which the pack reports as a key error. Metadata (variables, discovery) still answer
   without a key.
@@ -124,6 +146,6 @@ FRED key.) A Census estimates file (popest tables) that is still needed is a pub
 
 ## Citation and terms
 "U.S. Census Bureau, <dataset, e.g. 2020-2024 American Community Survey 5-year estimates, table
-B19013>, Census Data API, retrieved <date>." Public domain. Required notice (Terms of Service): "This
+B19013; or 2024 Survey of Income and Program Participation, public-use file>, Census Data API, retrieved <date>." Public domain. Required notice (Terms of Service): "This
 product uses the Census Bureau Data API but is not endorsed or certified by the Census Bureau."
 Redistribution allowed. Metadata (variables lists) is cached on disk for 30 days; data are not.
