@@ -1,8 +1,10 @@
-# Department of Labor Open Data API (OSHA, WHD, ETA unemployment claims, MSHA)
-Depth: standard. Key: required for data (DOL_API_KEY); the dataset catalog is keyless. OSHA inspections,
-violations and accident investigations; Wage and Hour Division enforcement cases (back wages, penalties);
-weekly unemployment insurance claims (national and state); MSHA mines, inspections and violations; and
-the other 45 datasets of the DOL API v4.
+# Department of Labor (DOL Open Data API: OSHA, WHD, ETA unemployment claims, MSHA; OUI unemployment insurance trust fund files)
+Depth: standard. Key: required for API data (DOL_API_KEY); the dataset catalog and the unemployment insurance
+trust fund files (oui.doleta.gov) are keyless. OSHA inspections, violations and accident investigations; Wage
+and Hour Division enforcement cases (back wages, penalties); weekly unemployment insurance claims (national and
+state); MSHA mines, inspections and violations; the other 45 datasets of the DOL API v4; and each state's
+unemployment trust fund by month (ETA 2112: balances, UI tax contributions, interest, benefits paid) with the
+quarterly UI Data Summary (Title XII loan balances, solvency measures).
 
 ## When to use
 - Workplace safety enforcement: OSHA inspections by state, industry (NAICS/SIC), establishment, type;
@@ -10,9 +12,16 @@ the other 45 datasets of the DOL API v4.
 - Wage theft enforcement: WHD cases with back wages, employees owed, civil money penalties by law
   (FLSA minimum wage and overtime, child labor, FMLA, Davis-Bacon, SCA, H-1B, H-2A).
 - Weekly initial and continued UI claims, national (seasonally adjusted and not) and by state.
+- Unemployment insurance trust fund finances (keyless): a state's trust fund balance by month since 1979, UI tax
+  (contribution) receipts, Treasury interest credited, benefits paid, federal program flows (ETA 2112); the
+  latest quarter's trust fund and Title XII loan balances, tax rates, reserve ratio and average high cost
+  multiple by state (UI Data Summary). The annual Trust Fund Solvency Report
+  (https://oui.doleta.gov/unemploy/solvency.asp, PDF only, not fetched) is the published benchmark for solvency
+  measures (average high cost multiple, reserve ratio, Title XII advances since 2020).
 - Not here: unemployment rate, payroll jobs, wages, CPI, injury and illness rates (bls); the
   official monthly employment situation (bls); federal workforce (opm); federal contracts to the
-  employers (usaspending).
+  employers (usaspending); Treasury's daily Unemployment Trust Fund account balances (state and federal
+  accounts) and Title XII advances by state (treasury: utf_account_balances, title_xii).
 
 ## Endpoints and datasets
 | Endpoint | Key | Returns | Key parameters |
@@ -20,6 +29,8 @@ the other 45 datasets of the DOL API v4.
 | `query` | yes | rows of one dataset | `dataset`, `filters`, `search`, `state`, `filter_object`, `fields`, `sort_by`, `sort` |
 | `datasets` | no | the 45-dataset catalog: agency, api_url, name, frequency, tags | none |
 | `dataset_info` | no | the field dictionary: column_name, data_type, column_desc | `dataset_id` (number or alias) |
+| `ui_trust_fund` | no | ETA 2112, one row per state and month (1979-01 on), dollars, 134 readable columns | `state` (code or list), `start`, `end` (YYYY-MM), `latest` (true: each state's newest month), `fields` |
+| `ui_data_summary` | no | UI Data Summary, latest calendar-year quarter, one row per state + United States | `sheet`: Financial (default), Wage and Tax Rate, Regular Benefits, Benefits and Duration, Labor Force |
 
 Main aliases (`--search "words"` or `--endpoints` for all 45): `osha_inspection` (OSHA/inspection,
 daily; state field site_state; default sort open_date), `osha_violation` (issuance_date),
@@ -33,6 +44,22 @@ A accident, B complaint, C referral, D monitoring, E variance, F follow-up, G un
 H planned, I programmed related, J unprogrammed other, K programmed other, L other, M fatality/catastrophe,
 N unprogrammed emphasis; viol_type S serious, W willful, R repeat, O other-than-serious, U
 unclassified; degree_of_inj 1 fatality, 2 hospitalized, 3 not hospitalized.
+
+`ui_trust_fund` columns are `st`, `rptdate` (last day of the month) and `<line item>_<account>` from the ETA 2112
+data map (ET Handbook 402; the file's codes c1..c136 are mapped in endpoints.json `columns`). Accounts: `total`
+(the report's column C, sum of the other three), `clearing` (state clearing account, where taxes arrive), `utf`
+(the state's account in the Unemployment Trust Fund at Treasury), `bpa` (benefit payment account). Main columns:
+`balance_close_utf` (c87, the state trust fund balance at month end), `balance_close_total` (c85, all three
+accounts), `balance_forward_*` (start of month), `deposits_*` and `disbursements_*` (totals),
+`dep_ui_contributions_total` (c9, net UI tax contributions), `dep_penalty_interest_total`,
+`dep_treasury_interest_utf` (c14, interest credited by Treasury), `dep_reimb_*` (reimbursing employers),
+`dep_federal_share_eb_utf`, `dep_other_sources_1..5_*`, `dis_ui_benefits_total` (c51, net regular UI benefits),
+`dis_state_share_eb_total`, `dis_ucfe_*`, `dis_ucx_*`, pandemic programs (`dep_/dis_fpuc`, `pua`, `peuc`,
+`meuc`, `temporary_federal_comp`), `dis_other_*`, `withholding_*`. `ui_data_summary` Financial columns:
+`cyq` (2026.2 = April-June 2026), `quarter_end`, `state`, `st`, `revenues_thousands`,
+`net_trust_fund_balance_thousands` (balance minus loans), `tf_balance_thousands`, `loan_balance_thousands`
+(Title XII), `interest_earned_thousands`, `current_taxable_wage_base` (dollars), `note`; Wage and Tax Rate:
+`tf_as_pct_of_total_wages` (the reserve ratio), `ahcm`, `hcm`, tax rates.
 
 ## Spec examples
 ```json
@@ -51,6 +78,14 @@ unclassified; degree_of_inj 1 fatality, 2 hospitalized, 3 not hospitalized.
  "requests": [{"name": "ui_national", "endpoint": "query",
    "params": {"dataset": "eta_ui_national_weekly_claims", "filters": {"rptdate": {"gt": "2019-12-31"}}, "sort": "asc"}},
   {"name": "ui_fields", "endpoint": "dataset_info", "params": {"dataset_id": "eta_ui_national_weekly_claims"}}]}
+```
+```json
+{"description": "UI trust fund: Wyoming's latest month, two states since 2025, Title XII loans and solvency (keyless)",
+ "requests": [{"name": "wy_latest", "endpoint": "ui_trust_fund", "params": {"state": "WY", "latest": true}},
+  {"name": "ca_tx", "endpoint": "ui_trust_fund", "params": {"state": ["CA", "TX"], "start": "2025-01",
+   "fields": ["balance_close_utf", "dep_ui_contributions_total", "dep_treasury_interest_utf", "dis_ui_benefits_total"]}},
+  {"name": "loans", "endpoint": "ui_data_summary", "params": {"sheet": "Financial"}},
+  {"name": "solvency", "endpoint": "ui_data_summary", "params": {"sheet": "Wage and Tax Rate"}}]}
 ```
 
 ## Data format and traps
@@ -83,6 +118,40 @@ unclassified; degree_of_inj 1 fatality, 2 hospitalized, 3 not hospitalized.
   related columns per DOL's field notes); back wages are amounts agreed to be paid, not collected.
 - Names that do not exist: ETA/ui_claims_national and ETA/ui_claims_state (the live names are
   ui_national_weekly_claims and ui_state_weekly_claims); OSHA accident has no state field.
+- ETA 2112 (`ui_trust_fund`): amounts in dollars (CA's June 2026 balance_close_utf 18,308,724.16 = the Data
+  Summary's 18,309 thousand). Monthly by state, 53 jurisdictions (50 states, DC, PR, VI); `rptdate` is the month
+  end. States report with lags (in the 2026-10-30 file 39 states had September 2026, others stopped at August or
+  June): use `latest` per state and say each state's month; earlier months are revised when states resubmit. The
+  file is replaced in place (23 MB; the whole file is downloaded and filtered). Flows are for the month, balances
+  at month end; the report's own identities hold (balance_close = balance_forward + deposits - disbursements, per
+  account). The map prints c23 twice on line 17; the report edits show the benefit payment account cell is c24
+  (dep_interstate_benefits_bpa).
+- Trust fund balance: `balance_close_utf` is the state's report of its Unemployment Trust Fund account. The Data
+  Summary's `tf_balance_thousands` is Treasury's cash balance at quarter end (Bureau of the Public Debt, per its
+  definitions) and can differ from the state's report (June 2026: equal for AK, AZ, AR, CA, CO, DC; WY 576.5
+  million in the Data Summary vs 571.9 million in the 2112). Say which one you use. Neither nets out loans: a
+  borrowing state can show a positive balance (CA) while it owes billions.
+- Title XII loans: the 2112 has no line named for federal (Title XII) advances; they appear to arrive through
+  the Other Sources lines (CA's dep_other_sources_2_utf, about $0.5 billion a month in 2026) but this is NOT
+  verified (ET Handbook 401's reporting instructions could not be read: dol.gov refuses scripts). For loans
+  outstanding use `ui_data_summary` Financial `loan_balance_thousands` (end of quarter, from Treasury;
+  CA 18.72 billion in 2026 Q2) and `net_trust_fund_balance_thousands` (balance minus loans), or Treasury's
+  daily Title XII advance data (treasury pack, v2/accounting/od/title_xii; linked from
+  https://oui.doleta.gov/unemploy/budget.asp). States may also owe non-Title XII debt (bonds), which no column
+  here includes.
+- Federal accounts: the Unemployment Trust Fund also holds federal accounts (ESAA for administration, EUCA for
+  the federal share of extended benefits, FUA for Title XII loans to states) funded by the federal unemployment
+  (FUTA) tax; they are not in the 2112 or the
+  Data Summary (Treasury's UTF account balances: treasury pack, v1/accounting/od/utf_account_balances). The national total of state
+  balances is not the trust fund total.
+- UI Data Summary (`ui_data_summary`): one quarter only (the file is replaced each quarter: 2026.2 in 2026-10);
+  money in thousands of dollars except `current_taxable_wage_base` (dollars) and rates in percent; the Wage and
+  Tax Rate sheet (tax rates, reserve ratio `tf_as_pct_of_total_wages`, `ahcm`, `hcm`) lags two quarters (2025.4)
+  and its solvency measures exclude non-Title XII debt; `NA` (e.g. a borrowing state's AHCM) is empty; `note`
+  carries the "*" footnote (states missing some monthly revenue reports); Labor Force covered employment lags
+  6 months and is in thousands. AHCM = reserve ratio / average of the three highest calendar-year benefit cost
+  rates in the last 20 years (Data Summary definitions); the Solvency Report calls an AHCM above 1.0 the
+  minimum adequate level going into a recession.
 
 ## Access
 Key: free; register at https://dataportal.dol.gov/registration (login.gov), then copy a key from
@@ -93,9 +162,18 @@ and `dataset_info` run (route `api`); data requests route to `run_setup` (local)
 `{API_KEY}` to replace (or one command runs download_data.sh / .ps1, which asks for the key hidden); upload, then `--ingest`. Other
 sources of the same data: the API Query Builder on each dataset page, https://www.osha.gov/data,
 https://enforcedata.dol.gov, https://oui.doleta.gov/unemploy/claims.asp (weekly claims).
+The unemployment insurance trust fund files need no key and never receive it (a separate client fetches them
+from oui.doleta.gov): `ui_trust_fund` and `ui_data_summary` route `api` without a key (or `bulk` when only
+oui.doleta.gov answers). Manual: download https://oui.doleta.gov/unemploy/csv/ar2112.csv (listed on
+https://oui.doleta.gov/unemploy/DataDownloads.asp with its data map) or
+https://oui.doleta.gov/unemploy/data_summary/SummaryTables.xlsx (https://oui.doleta.gov/unemploy/data_summary/DataSum.asp),
+upload it unchanged, then --ingest (the spec's state, month and field filters are applied then).
 
 ## Citation and terms
-"U.S. Department of Labor, <agency> <dataset name>, DOL Open Data API, retrieved <date>." Public domain;
+"U.S. Department of Labor, <agency> <dataset name>, DOL Open Data API, retrieved <date>." For the trust fund
+files: "U.S. Department of Labor, Employment and Training Administration, Office of Unemployment Insurance,
+ETA 2112 UI Financial Transaction Summary (ar2112.csv) [or UI Data Summary, <quarter>], oui.doleta.gov,
+retrieved <date>." Public domain;
 redistribution allowed. Enforcement records name employers: present them as DOL records (findings and
 citations can be contested). Not verified live in this pack's tests (no key): data columns and the
 filter syntax follow the DOL API User Guide and the field dictionaries.

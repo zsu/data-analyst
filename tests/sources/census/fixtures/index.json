@@ -8,5 +8,6 @@
  "GET https://api.census.gov/data/2024/acs/acs5.json": "discovery_2024_acs5.json",
  "GET https://api.census.gov/data/2024/acs/acs5?get=NAME%2CB19013_001E%2CB19013_001M&for=county%3A%2A&in=state%3A24": "missing_key.html",
  "GET https://api.census.gov/data/2020/dec/pl/variables.json": "variables_2020_dec_pl.json",
- "GET https://api.census.gov/data/2019/acs/acs1?get=NAME%2CB02015_009E%2CB02015_009M&for=state%3A%2A": "doc_acs1_2019_hmong.json"
+ "GET https://api.census.gov/data/2019/acs/acs1?get=NAME%2CB02015_009E%2CB02015_009M&for=state%3A%2A": "doc_acs1_2019_hmong.json",
+ "GET https://api.census.gov/data/2024/sipp?get=TAGE%2CRHLTHMTH%2CSSUID%2CPNUM%2CMONTHCODE%2CWPFINWGT&MONTHCODE=12": "handmade_sipp_2024.json"
 }

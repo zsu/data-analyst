@@ -201,3 +201,16 @@ if __name__ == "__main__":
     c = IpumsClient()
     s = c.list_samples(coll)
     print(f"{coll}: {len(s)} samples; latest: {[x['name'] for x in s[-5:]]}")
+
+
+# ---------------------------------------------------------------------- key check (scripts/setup_key.py)
+def verify(key: str) -> tuple[bool | None, str]:
+    """Key check for the setup scripts: one cheap authenticated metadata call. (True, detail) when IPUMS
+    accepts the key; a rejected key raises DataError(kind="auth") (setup_key counts it as rejected); an
+    unreachable host raises kind "network". The key travels only in the Authorization header."""
+    c = Client(BASE, name="IPUMS", auth=AUTH, key=key, retries=1, timeout=30, deadline=60)
+    r = c.get("/metadata/samples", params={"collection": "usa", "version": "2", "pageSize": 1})
+    data = r.json() if r.body.strip() else {}
+    if isinstance(data, dict) and data.get("data") is not None:
+        return True, "IPUMS accepted the key (metadata call answered). Register for each collection you use (usa, cps, ...)."
+    return None, "IPUMS answered, but not with the expected metadata; the key could not be confirmed."

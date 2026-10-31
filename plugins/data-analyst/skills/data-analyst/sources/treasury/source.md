@@ -137,9 +137,8 @@ negative amounts.
   `mts_receipts_outlays_deficit_surplus` (totals from FY1981) or OMB's Historical Tables through FRED
   (`FYOINT` net interest, `FYFSD` deficit, `FYONET` outlays, in millions), and say where the series join.
   FRED carries only those totals: a receipt or outlay line before FY2015 (customs duties, a function) comes from
-  OMB's Historical Tables workbooks (Table 2.5 receipts by source, 3.2 outlays by function, 10.1 GDP; FY1940 on),
-  linked from whitehouse.gov/omb/information-resources/budget/historical-tables/ (file names carry the budget
-  year: `hist02z5_fy2027.xlsx`): save the rows you use in `published/` (SKILL.md section 2).
+  OMB's Historical Tables (Table 2.5 receipts by source, 3.2 outlays by function, 10.1 GDP; FY1940 on) through
+  the omb pack (`historical_table`, any budget edition); each edition revises history, so name the edition.
 
 ## Access
 - No key, no registration, GET only, no documented rate limit (the client keeps 4 requests a second and

@@ -6,14 +6,16 @@
     python setup_key.py save <source> [<file>]     # writes env.<VAR> into keys.json, or <file> (backup kept)
 
 The key travels only through the DATA_ANALYST_SETUP_KEY environment variable (never argv, never printed).
-A pack can supply sources/<id>/keycheck.py with verify(key) -> (True|False|None, detail); otherwise the
-pack's API probe is called with the key and an authentication error counts as a rejection.
+A pack can supply verify(key) -> (True|False|None, detail) in sources/<id>/keycheck.py or in its API module
+sources/<id>/<id>_api.py; otherwise the pack's API probe is called with the key and an authentication error
+counts as a rejection.
 """
 from __future__ import annotations
 
 import importlib.util
 import json
 import os
+import re
 import shutil
 import stat
 import sys
@@ -46,6 +48,17 @@ def _extras() -> dict:
         return {}
 
 
+def key_check_module(pack_dir: str, pid: str) -> str | None:
+    """The pack file that defines verify(key): keycheck.py, else the API module <id>_api.py."""
+    for name in ("keycheck.py", f"{pid.replace('-', '_')}_api.py"):
+        path = os.path.join(pack_dir, name)
+        if os.path.exists(path):
+            with open(path, encoding="utf-8") as f:
+                if re.search(r"^def verify\(", f.read(), re.M):
+                    return path
+    return None
+
+
 def verify(pid: str) -> int:
     key = os.environ.get("DATA_ANALYST_SETUP_KEY", "").strip()
     if not key:
@@ -53,9 +66,9 @@ def verify(pid: str) -> int:
     os.environ.update(_extras())
     remember(key)
     pack = packs.load(pid)
-    kc = os.path.join(pack.dir, "keycheck.py")
+    kc = key_check_module(pack.dir, pid)
     try:
-        if os.path.exists(kc):
+        if kc:
             spec = importlib.util.spec_from_file_location(f"keycheck_{pid}", kc)
             mod = importlib.util.module_from_spec(spec)
             sys.path.insert(0, pack.dir)
@@ -69,7 +82,7 @@ def verify(pid: str) -> int:
                 # a probe on another host never sees the key: it would answer "OK" for any string, and
                 # the key would go to a host that does not need it
                 ok, detail = None, (f"not checked: the probe ({probe_host or 'none'}) is not the keyed API host "
-                                    f"({base_host or 'none'}); add sources/{pid}/keycheck.py to check this key")
+                                    f"({base_host or 'none'}); add verify(key) to sources/{pid}/keycheck.py to check this key")
             else:
                 c = Client(api.get("base", ""), name=pid, auth=pack.policy["auth"], key=key, retries=1)
                 c.get(api["probe"])
