@@ -131,9 +131,12 @@ Program Data tables (`program_table`, `snap_state_monthly`, `wic_agency_monthly`
   a flag is never a zero. `footnote` holds marks printed beside a year or value (`1982 3]`: Puerto Rico left SNAP).
 - **Puerto Rico, American Samoa and the Northern Marianas** get Nutrition Assistance Grants, not SNAP: their SNAP
   rows are `--`.
-- **The pack never relabels a header.** `wic_participation_latest` (verified 2026-10-30) labels its middle column
-  "June 2025" while its values are June 2026. The pack drops the column, names it and marks the request incomplete.
-  Read June from `wic_agency_monthly` instead. Any table whose columns no longer match their labels in
+- **The pack never relabels a header.** `wic_participation_latest` labels its middle column with the year before
+  (in every release still online, 27wilatest-5 to -10, May-October 2026: "June 2025" over June 2026 values). The
+  pack drops the column, names it and marks the request incomplete. Read that month from `wic_agency_monthly`
+  instead. Releases -5 to -9 also print "Data as of" a year early (September 11, 2025 for 2026). When "Data as of"
+  precedes the table's own latest data, a note says so; `data_as_of` stays as printed, so cite the release by file
+  name and retrieval date rather than that date. Any table whose columns no longer match their labels in
   endpoints.json fails with "expected layout"; values in hidden columns (`nslp_monthly`, `cacfp_monthly`) are skipped.
 - **File names change.** Each workbook name carries a release number (`snap-persons-10.xlsx`). The pack reads the
   current name from the listing page; a table missing there fails rather than falling back.
