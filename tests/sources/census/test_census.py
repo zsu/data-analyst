@@ -8,6 +8,9 @@ Fixtures (fixtures/index.json):
 - doc_acs1_2019_hmong.json: NOT a recorded response. It is the documented example response of the Census
   Data API User Guide ("Example API Queries": 2019/acs/acs1?get=NAME,B02015_009E,B02015_009M&for=state:*),
   the rows the guide shows; no CENSUS_API_KEY was available to record a live data response.
+- handmade_sipp_2024.json: NOT a recorded response either. Hand-written rows in the API's table shape (one
+  header row, text values) for the SIPP request the pack builds; it tests the query (keys and weight added,
+  no geography) and that SIPP values skip the ACS special-value handling. The SIPP API needs a key.
 - normalize() is unit-tested on hand-written rows that carry the documented special values; those rows
   are test inputs, not fixtures.
 """
@@ -74,6 +77,56 @@ class TestCensus(PackTest):
         self.assertTrue(any("margins of error added" in n for n in r["notes"]), r)
         with open(os.path.join(out, "data", "census", "README.md"), encoding="utf-8") as f:
             self.assertIn("not endorsed or certified by the Census Bureau", f.read())
+
+    def test_sipp_adds_keys_and_weight_and_needs_no_geography(self):
+        spec = {"requests": [{"name": "sipp_dec", "endpoint": "query",
+                              "params": {"dataset": "2024/sipp", "get": "TAGE,RHLTHMTH", "MONTHCODE": "12"}}]}
+        code, r, out = self.fetch(spec, env=KEY)
+        self.assertEqual(code, 0, r)
+        rows = self.csv(out, "sipp_dec")
+        self.assertEqual(list(rows[0]), ["TAGE", "RHLTHMTH", "SSUID", "PNUM", "MONTHCODE", "WPFINWGT"])
+        self.assertEqual(rows[0]["SSUID"], "000114552134")             # leading zeros kept
+        self.assertEqual(rows[2]["WPFINWGT"], "-9")                     # no ACS sentinel handling, no _flag column
+        self.assertTrue(any("WPFINWGT" in n and "keys and weight added" in n for n in r["notes"]), r)
+
+    def test_sipp_state_is_the_interview_state_and_nothing_below(self):
+        spec = {"requests": [{"name": "md", "endpoint": "query",
+                              "params": {"dataset": "2024/sipp", "get": "TPTOTINC", "state": "Maryland"}}]}
+        sp, out = self.write_spec(spec)
+        code, r = self.cli(sp, "--out", out, "--dry-run")
+        self.assertEqual(code, 0, r)
+        url = r["manual_items"][0]["url"]
+        self.assertIn("/2024/sipp?get=TPTOTINC,SSUID,PNUM,MONTHCODE,WPFINWGT", url)
+        self.assertIn("TST_INTV=24", url)
+        self.assertNotIn("for=", url)
+        bad = {"requests": [{"name": "x", "endpoint": "query",
+                             "params": {"dataset": "2024/sipp", "get": "TPTOTINC", "state": "MD", "county": "031"}}]}
+        code, r = self.check(bad)
+        self.assertEqual(r["route"], "fix_spec", r)
+        self.assertIn("SIPP has no geography below the state", r["message"])
+
+    def test_time_series_links_and_checks(self):
+        spec = {"requests": [
+            {"name": "duty", "endpoint": "query",
+             "params": {"dataset": "trade_imports_hs", "get": "CTY_NAME,CAL_DUT_MO", "CTY_CODE": "5700",
+                        "COMM_LVL": "HS2", "time": "2026-08"}},
+            {"name": "qtax", "endpoint": "query",
+             "params": {"dataset": "eits_qtax", "get": "CELL_VALUE,CATEGORY_CODE", "state": "MD", "time": "2026-Q1"}}]}
+        sp, out = self.write_spec(spec)
+        code, r = self.cli(sp, "--out", out, "--dry-run")
+        self.assertEqual(code, 0, r)
+        urls = {i["request"]: i["url"] for i in r["manual_items"]}
+        self.assertIn("/timeseries/intltrade/imports/hs?get=CTY_NAME,CAL_DUT_MO", urls["duty"])
+        self.assertNotIn("for=", urls["duty"])
+        self.assertIn("for=state:24", urls["qtax"])
+        bad = {"requests": [{"name": "a", "endpoint": "query",
+                             "params": {"dataset": "trade_exports_hs", "get": "ALL_VAL_MO"}},
+                            {"name": "b", "endpoint": "query",
+                             "params": {"dataset": "eits_retail", "get": "cell_value", "for": "us:*"}}]}
+        code, r = self.check(bad)
+        self.assertEqual(r["route"], "fix_spec", r)
+        self.assertIn("international trade needs a time", r["message"])
+        self.assertIn("a time series needs time", r["message"])
 
     def test_latest_and_names_resolve_in_links(self):
         sp, out = self.write_spec(GEO)

@@ -1,6 +1,6 @@
 {
   "id": "census",
-  "title": "Census Bureau Data API (ACS, decennial census, population estimates)",
+  "title": "Census Bureau Data API (ACS, decennial census, population estimates, SIPP, economic indicators, international trade, government finances)",
   "agency": "U.S. Census Bureau",
   "depth": "standard",
   "domains": [
@@ -9,7 +9,11 @@
     "income",
     "housing",
     "poverty",
-    "education"
+    "education",
+    "program participation",
+    "international trade",
+    "state and local government finance",
+    "economic indicators"
   ],
   "keywords": [
     "census",
@@ -52,7 +56,35 @@
     "per 100,000 residents",
     "per resident",
     "demographic profile",
-    "state profile"
+    "state profile",
+    "sipp",
+    "survey of income and program participation",
+    "program participation",
+    "month to month income",
+    "income dynamics",
+    "snap participation",
+    "ssi",
+    "health coverage spells",
+    "assets and debts",
+    "retail sales",
+    "housing starts",
+    "building permits",
+    "construction spending",
+    "economic indicators",
+    "qtax",
+    "state and local tax revenue",
+    "state tax collections",
+    "government finances",
+    "state and local government spending",
+    "public pensions",
+    "pension assets",
+    "imports",
+    "exports",
+    "international trade",
+    "hs code",
+    "customs duty",
+    "tariff revenue",
+    "trade deficit"
   ],
   "questions": [
     "median household income by county in a state",
@@ -60,7 +92,12 @@
     "population of a city",
     "median home value and rent in a county",
     "share of adults with a bachelor's degree by state",
-    "population for per-capita calculations"
+    "population for per-capita calculations",
+    "month-to-month income and program participation from SIPP",
+    "monthly retail sales or housing starts",
+    "quarterly state and local tax revenue by state (QTAX)",
+    "state and local government revenue, spending and debt by state",
+    "imports from a country by HS chapter and the duty calculated on them"
   ],
   "homepage": "https://www.census.gov/data/developers.html",
   "terms_url": "https://www.census.gov/data/developers/about/terms-of-service.html",

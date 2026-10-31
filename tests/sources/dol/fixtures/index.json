@@ -11,5 +11,7 @@
   "status": 401
  },
  "GET https://apiprod.dol.gov/v4/get/ETA/ui_national_weekly_claims/json?sort_by=rptdate&sort=asc&limit=10&offset=0": "doc_ui_national_preview.json",
- "GET https://apiprod.dol.gov/v4/get/OSHA/inspection/json?limit=10&offset=0": "doc_osha_inspection_preview.json"
+ "GET https://apiprod.dol.gov/v4/get/OSHA/inspection/json?limit=10&offset=0": "doc_osha_inspection_preview.json",
+ "GET https://oui.doleta.gov/unemploy/data_summary/SummaryTables.xlsx": "SummaryTables.xlsx",
+ "GET https://oui.doleta.gov/unemploy/csv/ar2112.csv": "trimmed_ar2112.csv"
 }
