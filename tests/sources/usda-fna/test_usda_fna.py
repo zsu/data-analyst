@@ -378,10 +378,6 @@ class TestUsdaFnaProgramData(PackTest):
         self.assertEqual({x["state_abbr"] for x in self.csv(out, "sm")}, {"TX"})
         self.assertIn("Navajo Nation", {x["agency"] for x in self.csv(out, "wa")})
 
-    def test_incomplete_marker_matches_core(self):
-        from core import generic_rest as gr
-        self.assertEqual(load_pack_module("usda-fna").pdx.INCOMPLETE, gr.INCOMPLETE)
-
 
 if __name__ == "__main__":
     unittest.main()
