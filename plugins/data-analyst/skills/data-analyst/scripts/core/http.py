@@ -377,6 +377,11 @@ class Client:
                             "server sometimes answers a valid request with such an HTML page (the API's own parameter "
                             "errors are JSON or text): run again in a few minutes; if it persists, check the "
                             "parameters against source.md", kind="bad_request", status=400)
+        if r.status == 400 and not self.key and self.auth.get("env") and self.auth.get("required") == "required":
+            # some APIs answer a request without credentials with 400 naming the missing parameter, not 401
+            envs = [self.auth["env"], *(self.auth.get("extra") or {}).values()]
+            raise DataError(f"{self.name}: credentials required (HTTP 400: {snippet}). Set {' and '.join(envs)} "
+                            "or run the setup script.", kind="key_missing", status=r.status)
         if 400 <= r.status < 500:
             raise DataError(f"{self.name}: HTTP {r.status}: {snippet}", kind="bad_request", status=r.status)
         if r.status in RETRYABLE:
