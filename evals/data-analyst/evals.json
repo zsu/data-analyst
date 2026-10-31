@@ -1232,6 +1232,366 @@
         },
         "added_at": "2026-10-30T00:00:00+00:00"
       }
+    },
+    {
+      "id": "snap-options-bbce-abawd-17th",
+      "prompt": "For a briefing on SNAP state flexibility: according to the latest USDA SNAP State Options Report, how many SNAP state agencies use broad-based categorical eligibility (BBCE), and which ones do not? How many have a statewide ABAWD time limit waiver, how many a partial one, and how many none? Give the as-of date the report describes. This is a scheduled, unattended run: nobody can answer questions, so decide every open choice yourself by agency precedent and record it. Save the work in out/snap-options.",
+      "expected_output": "17th edition (Aug 2025; options in place Oct 1, 2024, FFY 2025): BBCE 44 of 53 state agencies, 9 without (named); ABAWD time limit waiver statewide 9, partial 22, none 22; counts of 53 agencies (50 states, DC, Guam, Virgin Islands); audit passed.",
+      "files": [],
+      "expectations": [
+        "Uses the 17th edition (the latest) and states its as-of date (October 1, 2024 / FFY 2025), not the publication year as the policy year",
+        "Counts out of the 53 SNAP state agencies (50 states, DC, Guam, Virgin Islands) and says so, rather than 50 states",
+        "Gets BBCE 44 with, 9 without, and lists the 9 agencies without BBCE",
+        "Gets the ABAWD time limit waiver split statewide 9, partial 22, none 22",
+        "Fetches through fetch.py's usda-fna pack (no ad-hoc dashboard or PDF scraping) and finishes without asking the user anything, recording open choices in decisions.json"
+      ],
+      "rsi": {
+        "title": "USDA FNA SNAP State Options Report (17th edition): agencies with BBCE and with an ABAWD time limit waiver",
+        "invoke": "explicit",
+        "interaction": "none",
+        "criteria": [
+          {
+            "id": "c1",
+            "text": "Uses the 17th edition (the latest) and states its as-of date (October 1, 2024 / FFY 2025), not the publication year as the policy year",
+            "severity": "critical"
+          },
+          {
+            "id": "c2",
+            "text": "Counts out of the 53 SNAP state agencies (50 states, DC, Guam, Virgin Islands) and says so, rather than 50 states",
+            "severity": "major"
+          },
+          {
+            "id": "c3",
+            "text": "Gets BBCE 44 with, 9 without, and lists the 9 agencies without BBCE",
+            "severity": "major"
+          },
+          {
+            "id": "c4",
+            "text": "Gets the ABAWD time limit waiver split statewide 9, partial 22, none 22",
+            "severity": "major"
+          },
+          {
+            "id": "c5",
+            "text": "Fetches through fetch.py's usda-fna pack (no ad-hoc dashboard or PDF scraping) and finishes without asking the user anything, recording open choices in decisions.json",
+            "severity": "minor"
+          }
+        ],
+        "deterministic_checks": [
+          {
+            "id": "answer-exists",
+            "type": "file_exists",
+            "path": "out/snap-options/answer.md",
+            "severity": "critical"
+          },
+          {
+            "id": "analysis-exists",
+            "type": "file_exists",
+            "path": "out/snap-options/analysis.py",
+            "severity": "major"
+          },
+          {
+            "id": "facts-exists",
+            "type": "file_exists",
+            "path": "out/snap-options/facts.json",
+            "severity": "major"
+          },
+          {
+            "id": "decisions-exists",
+            "type": "file_exists",
+            "path": "out/snap-options/decisions.json",
+            "severity": "major"
+          },
+          {
+            "id": "specs-checked",
+            "type": "file_exists",
+            "path": "out/snap-options/specs/checked.json",
+            "severity": "minor"
+          },
+          {
+            "id": "audit-answer",
+            "type": "command",
+            "cmd": "{python} {skill}/scripts/report/audit_answer.py {sandbox}/out/snap-options --rerun",
+            "expect_exit": 0,
+            "timeout": 600,
+            "severity": "major"
+          },
+          {
+            "id": "handoff",
+            "type": "command",
+            "cmd": "{python} {skill}/scripts/fetch.py --handoff --out {sandbox}/out/snap-options",
+            "expect_exit": 0,
+            "severity": "minor"
+          },
+          {
+            "id": "no-secrets",
+            "type": "command",
+            "cmd": "{python} {skill}/scripts/report/scan_secrets.py {sandbox}/out/snap-options",
+            "expect_exit": 0,
+            "severity": "critical"
+          },
+          {
+            "id": "no-pycache-in-skill",
+            "type": "file_absent",
+            "path": "{skill}/**/__pycache__",
+            "severity": "minor"
+          },
+          {
+            "id": "usda-fna-data",
+            "type": "file_exists",
+            "path": "out/snap-options/data/usda-fna/*.csv",
+            "severity": "critical"
+          },
+          {
+            "id": "bbce-44",
+            "type": "command",
+            "cmd": "{python} -I {case}/verify.py facts {sandbox}/out/snap-options 44 0",
+            "expect_exit": 0,
+            "severity": "major",
+            "desc": "BBCE agencies, 17th edition = 44"
+          },
+          {
+            "id": "abawd-statewide-9",
+            "type": "command",
+            "cmd": "{python} -I {case}/verify.py facts {sandbox}/out/snap-options 9 0",
+            "expect_exit": 0,
+            "severity": "major",
+            "desc": "statewide ABAWD time limit waiver = 9 (also the no-BBCE count)"
+          },
+          {
+            "id": "abawd-partial-22",
+            "type": "command",
+            "cmd": "{python} -I {case}/verify.py facts {sandbox}/out/snap-options 22 0",
+            "expect_exit": 0,
+            "severity": "major",
+            "desc": "partial (and no) ABAWD time limit waiver = 22"
+          },
+          {
+            "id": "edition-named",
+            "type": "regex",
+            "path": "out/snap-options/answer.md",
+            "pattern": "(?i)17th\\s+edition",
+            "severity": "major"
+          },
+          {
+            "id": "as-of-date",
+            "type": "regex",
+            "path": "out/snap-options/answer.md",
+            "pattern": "(?i)(October\\s+1,?\\s+2024|2024-10-01|FFY\\s*2025|fiscal\\s+year\\s+2025)",
+            "severity": "minor"
+          }
+        ],
+        "ground_truth": {
+          "edition": "17th (August 2025), options as of 2024-10-01 (FFY 2025 State Plans)",
+          "bbce": {
+            "BBCE": 44,
+            "No BBCE": 9
+          },
+          "abawd_time_limit_waiver": {
+            "Statewide": 9,
+            "Partial": 22,
+            "None": 22
+          },
+          "source": "FNA State Options dashboard CSV export (OptionsProjectsWaivers view), fetched 2026-10-30 with the usda-fna pack option_states",
+          "source_url": "https://www.fna.usda.gov/data-research/data-visualization/snap/state-options"
+        },
+        "case_files": [
+          "case/snap-options-bbce-abawd-17th/verify.py"
+        ],
+        "coverage_tags": [
+          "single keyless pack (usda-fna)",
+          "nutrition assistance: usda-fna",
+          "dashboard CSV export",
+          "edition vs fiscal year",
+          "53 agencies vs 50 states",
+          "unattended no_user",
+          "live source"
+        ],
+        "why": "Counts from the 17th edition; guards edition naming, the 53-agency base and option_states coverage of waivers",
+        "origin": {
+          "run": "manual",
+          "iteration": 0,
+          "case": "snap-options-bbce-abawd-17th"
+        },
+        "added_at": "2026-10-30T23:00:00+00:00"
+      }
+    },
+    {
+      "id": "snap-admin-costs-fy2023",
+      "prompt": "For a program-integrity memo: from USDA's SNAP State Activity Report for fiscal year 2023, what was the federal share of SNAP state agency administrative costs nationally, and which five state agencies had the largest federal share? Also give the national total administrative cost per case per month. Be clear about the ARPA funding. This is a scheduled, unattended run: nobody can answer questions, so decide every open choice yourself by agency precedent and record it. Save the work in out/snap-admin.",
+      "expected_output": "FY 2023: federal share $5.203B excluding ARPA 100% funding ($526.4M; $5.730B including it, as the report's national summary shows); total admin costs $11.12B; top five California $1,228.3M, New York $473.5M, Pennsylvania $218.6M, New Jersey $183.3M, Michigan $177.5M; U.S. cost per case per month $41.62; audit passed.",
+      "files": [],
+      "expectations": [
+        "Separates the regular federal share ($5.20B) from the ARPA 100% federal funding ($526M) and reconciles them with the report's $5.73B national total federal share",
+        "Gets the top five agencies by federal share: California, New York, Pennsylvania, New Jersey, Michigan, with their amounts",
+        "Gives the national total administrative cost per case per month ($41.62) from the report, not recomputed from a different denominator",
+        "Excludes the printed U.S. total rows when ranking or summing agencies",
+        "Fetches through fetch.py's usda-fna pack (activity_tables) and names the report year and table"
+      ],
+      "rsi": {
+        "title": "USDA FNA SNAP State Activity Report FY 2023: federal share of state administrative costs, top five agencies",
+        "invoke": "explicit",
+        "interaction": "none",
+        "criteria": [
+          {
+            "id": "c1",
+            "text": "Separates the regular federal share ($5.20B) from the ARPA 100% federal funding ($526M) and reconciles them with the report's $5.73B national total federal share",
+            "severity": "critical"
+          },
+          {
+            "id": "c2",
+            "text": "Gets the top five agencies by federal share: California, New York, Pennsylvania, New Jersey, Michigan, with their amounts",
+            "severity": "major"
+          },
+          {
+            "id": "c3",
+            "text": "Gives the national total administrative cost per case per month ($41.62) from the report, not recomputed from a different denominator",
+            "severity": "major"
+          },
+          {
+            "id": "c4",
+            "text": "Excludes the printed U.S. total rows when ranking or summing agencies",
+            "severity": "major"
+          },
+          {
+            "id": "c5",
+            "text": "Fetches through fetch.py's usda-fna pack (activity_tables) and names the report year and table",
+            "severity": "minor"
+          }
+        ],
+        "deterministic_checks": [
+          {
+            "id": "answer-exists",
+            "type": "file_exists",
+            "path": "out/snap-admin/answer.md",
+            "severity": "critical"
+          },
+          {
+            "id": "analysis-exists",
+            "type": "file_exists",
+            "path": "out/snap-admin/analysis.py",
+            "severity": "major"
+          },
+          {
+            "id": "facts-exists",
+            "type": "file_exists",
+            "path": "out/snap-admin/facts.json",
+            "severity": "major"
+          },
+          {
+            "id": "decisions-exists",
+            "type": "file_exists",
+            "path": "out/snap-admin/decisions.json",
+            "severity": "major"
+          },
+          {
+            "id": "specs-checked",
+            "type": "file_exists",
+            "path": "out/snap-admin/specs/checked.json",
+            "severity": "minor"
+          },
+          {
+            "id": "audit-answer",
+            "type": "command",
+            "cmd": "{python} {skill}/scripts/report/audit_answer.py {sandbox}/out/snap-admin --rerun",
+            "expect_exit": 0,
+            "timeout": 600,
+            "severity": "major"
+          },
+          {
+            "id": "handoff",
+            "type": "command",
+            "cmd": "{python} {skill}/scripts/fetch.py --handoff --out {sandbox}/out/snap-admin",
+            "expect_exit": 0,
+            "severity": "minor"
+          },
+          {
+            "id": "no-secrets",
+            "type": "command",
+            "cmd": "{python} {skill}/scripts/report/scan_secrets.py {sandbox}/out/snap-admin",
+            "expect_exit": 0,
+            "severity": "critical"
+          },
+          {
+            "id": "no-pycache-in-skill",
+            "type": "file_absent",
+            "path": "{skill}/**/__pycache__",
+            "severity": "minor"
+          },
+          {
+            "id": "usda-fna-data",
+            "type": "file_exists",
+            "path": "out/snap-admin/data/usda-fna/*.csv",
+            "severity": "critical"
+          },
+          {
+            "id": "federal-share-total",
+            "type": "command",
+            "cmd": "{python} -I {case}/verify.py facts {sandbox}/out/snap-admin 5203372299 0.002 --rel",
+            "expect_exit": 0,
+            "severity": "major",
+            "desc": "FY 2023 federal share of admin costs excluding ARPA = $5,203,372,299"
+          },
+          {
+            "id": "california",
+            "type": "command",
+            "cmd": "{python} -I {case}/verify.py facts {sandbox}/out/snap-admin 1228335184 0.002 --rel",
+            "expect_exit": 0,
+            "severity": "major",
+            "desc": "California federal share = $1,228,335,184"
+          },
+          {
+            "id": "per-case",
+            "type": "command",
+            "cmd": "{python} -I {case}/verify.py facts {sandbox}/out/snap-admin 41.62 0.01",
+            "expect_exit": 0,
+            "severity": "minor",
+            "desc": "U.S. total admin cost per case per month = $41.62"
+          },
+          {
+            "id": "arpa-named",
+            "type": "regex",
+            "path": "out/snap-admin/answer.md",
+            "pattern": "(?i)ARPA|American Rescue Plan",
+            "severity": "major"
+          }
+        ],
+        "ground_truth": {
+          "fiscal_year": 2023,
+          "federal_share_excl_arpa": 5203372299,
+          "arpa_funding": 526404622,
+          "federal_share_incl_arpa_national_summary_millions": 5730,
+          "total_admin_costs": 11122378364,
+          "top5_federal_share": {
+            "California": 1228335184,
+            "New York": 473486666,
+            "Pennsylvania": 218596739,
+            "New Jersey": 183261085,
+            "Michigan": 177526929
+          },
+          "us_admin_cost_per_case_month": 41.62,
+          "source": "SNAP State Activity Report FY 2023 (published May 2025), Table 8 and Table 9, parsed with the usda-fna pack activity_tables on 2026-10-30; agency sum equals the printed U.S. total",
+          "source_url": "https://www.fna.usda.gov/sites/default/files/resource-files/snap-sar-fy23.pdf"
+        },
+        "case_files": [
+          "case/snap-admin-costs-fy2023/verify.py"
+        ],
+        "coverage_tags": [
+          "single keyless pack (usda-fna)",
+          "nutrition assistance: usda-fna",
+          "PDF table parsing",
+          "printed totals vs agency rows",
+          "pandemic funding (ARPA)",
+          "unattended no_user",
+          "live source"
+        ],
+        "why": "PDF-parsed state table with a known national reconciliation; guards ARPA vs regular federal share and total rows",
+        "origin": {
+          "run": "manual",
+          "iteration": 0,
+          "case": "snap-admin-costs-fy2023"
+        },
+        "added_at": "2026-10-30T23:00:00+00:00"
+      }
     }
   ]
 }

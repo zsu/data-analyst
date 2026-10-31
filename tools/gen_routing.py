@@ -47,6 +47,8 @@ PAIRINGS = [
     ("Company financials and filings", "sec", "fred", "EDGAR XBRL facts; SEC asks for a contact User-Agent."),
     ("Housing costs and assistance", "hud", "census, fred", "HUD FMRs and income limits; ACS rents and values."),
     ("Agriculture", "usda-nass", "bls, world-bank", "NASS Quick Stats."),
+    ("SNAP state policy options, waivers and program activity", "usda-fna", "census, usaspending",
+     "State Options Report (editions 16-17 tidy, all 17 as PDF text); State Activity Reports (tidy FY 2019-2023)."),
     ("Transportation", "bts", "nhtsa", "BTS statistics; NHTSA for vehicle safety."),
     ("Environment, air and water quality", "epa", "epa-aqs, usgs, noaa", "EPA envirofacts/ECHO; AQS monitor data; USGS water."),
     ("Weather and climate", "noaa", "nws", "NOAA NCEI history; NWS is forecasts and the last week of observations only."),
