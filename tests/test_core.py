@@ -155,6 +155,21 @@ class TestHttp(unittest.TestCase):
                            auth={"env": "T_KEY", "placement": "query", "param": "api_key"}).get("/x")
                 self.assertEqual(e.exception.kind, "auth")
 
+    def test_400_without_a_required_key_is_a_missing_key(self):
+        # EPA AQS answers a request with no key or email by HTTP 400 naming the missing parameter, not 401
+        with tempfile.TemporaryDirectory() as t:
+            json.dump({"GET https://example.gov/x": {"file": "r.json", "status": 400}}, open(os.path.join(t, "index.json"), "w"))
+            open(os.path.join(t, "r.json"), "wb").write(b'{"error": ["variable is missing or the value is empty: email"]}')
+            auth = {"env": "T_KEY", "required": "required", "placement": "query", "param": "key", "extra": {"email": "T_EMAIL"}}
+            with mock.patch.dict(os.environ, {"DATA_ANALYST_FIXTURES": t}):
+                with self.assertRaises(DataError) as e:
+                    Client("https://example.gov", name="t", retries=0, auth=auth).get("/x")
+                self.assertEqual(e.exception.kind, "key_missing")
+                self.assertIn("T_KEY and T_EMAIL", str(e.exception))
+                with self.assertRaises(DataError) as e:      # with a key, a 400 is a bad request
+                    Client("https://example.gov", name="t", retries=0, key=FAKE, auth=auth).get("/x")
+                self.assertEqual(e.exception.kind, "bad_request")
+
     def test_key_placement_never_in_recorded_url(self):
         with tempfile.TemporaryDirectory() as t:
             json.dump({"GET https://example.gov/x?a=1": "r.json"}, open(os.path.join(t, "index.json"), "w"))
