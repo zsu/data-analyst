@@ -105,6 +105,29 @@ class TestCensus(PackTest):
         self.assertEqual(r["route"], "fix_spec", r)
         self.assertIn("SIPP has no geography below the state", r["message"])
 
+    def test_time_series_links_and_checks(self):
+        spec = {"requests": [
+            {"name": "duty", "endpoint": "query",
+             "params": {"dataset": "trade_imports_hs", "get": "CTY_NAME,CAL_DUT_MO", "CTY_CODE": "5700",
+                        "COMM_LVL": "HS2", "time": "2026-08"}},
+            {"name": "qtax", "endpoint": "query",
+             "params": {"dataset": "eits_qtax", "get": "CELL_VALUE,CATEGORY_CODE", "state": "MD", "time": "2026-Q1"}}]}
+        sp, out = self.write_spec(spec)
+        code, r = self.cli(sp, "--out", out, "--dry-run")
+        self.assertEqual(code, 0, r)
+        urls = {i["request"]: i["url"] for i in r["manual_items"]}
+        self.assertIn("/timeseries/intltrade/imports/hs?get=CTY_NAME,CAL_DUT_MO", urls["duty"])
+        self.assertNotIn("for=", urls["duty"])
+        self.assertIn("for=state:24", urls["qtax"])
+        bad = {"requests": [{"name": "a", "endpoint": "query",
+                             "params": {"dataset": "trade_exports_hs", "get": "ALL_VAL_MO"}},
+                            {"name": "b", "endpoint": "query",
+                             "params": {"dataset": "eits_retail", "get": "cell_value", "for": "us:*"}}]}
+        code, r = self.check(bad)
+        self.assertEqual(r["route"], "fix_spec", r)
+        self.assertIn("international trade needs a time", r["message"])
+        self.assertIn("a time series needs time", r["message"])
+
     def test_latest_and_names_resolve_in_links(self):
         sp, out = self.write_spec(GEO)
         code, r = self.cli(sp, "--out", out, "--dry-run")

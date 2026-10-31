@@ -369,6 +369,14 @@ def check_spec(spec) -> list[str]:
                 probs.append(f"request {name!r}: SIPP has no geography below the state: use state (it filters "
                              "TST_INTV) or no geography for national estimates")
             continue
+        if ds.strip("/").startswith("timeseries/intltrade"):
+            if not p.get("time"):
+                probs.append(f"request {name!r}: international trade needs a time (2026-08, or 'from 2025-01 to "
+                             "2025-12'); it has no for= geography (filter CTY_CODE, COMM_LVL, I_COMMODITY)")
+            continue
+        if ds.strip("/").startswith("timeseries/") and not p.get("time") and not p.get("YEAR"):
+            probs.append(f"request {name!r}: a time series needs time (2026, 2026-Q2, 2026-08, or 'from 2024 to "
+                         "2026'); without it the API returns every period")
         if not any(p.get(k) not in (None, "") for k in ("for", "ucgid", "state", "zcta")):
             probs.append(f"request {name!r}: give a geography: for (state:*, county:*), state, or zcta")
         if (p.get("county") or p.get("place")) and not p.get("state"):
