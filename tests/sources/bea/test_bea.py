@@ -246,7 +246,7 @@ class TestBeaUnits(unittest.TestCase):
         self.assertTrue(slept and slept[0] < 2, slept)
 
     def test_keycheck_verify(self):
-        kc = load("bea_pack_keycheck", os.path.join(PACK, "keycheck.py"))
+        kc = load("bea_pack_keycheck", os.path.join(PACK, "bea_api.py"))
         os.environ["DATA_ANALYST_FIXTURES"] = FX
         try:
             ok, detail = kc.verify(DOC_KEY)

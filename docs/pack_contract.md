@@ -10,7 +10,7 @@ pack must be self-contained: its rules, formats and traps live in the pack, not 
 |---|---|---|
 | `policy.json` | yes | Machine-readable rules: key, limits, routes, cache, redistribution, notices, audit hooks, clarifying questions. `core/policy.py` validates it and enforces it. |
 | `source.md` | yes | What the model reads before using the source (sections below). |
-| `endpoints.json` | standard packs | The API, declaratively (format: docstring of `scripts/core/generic_rest.py`). |
+| `endpoints.json` | standard packs | The API, declaratively (format: docstring of `scripts/core/generic_rest.py`). Published files work too: `"records"` `$csv`, `$xlsx` (with `sheet`, `header_row`) or `$zip:<glob>`. |
 | `adapter.py` | when needed | Python hooks for what `endpoints.json` cannot express. |
 | `fetch.py` | deep packs only | The pack's own command line. `scripts/fetch.py --source <id> ...` runs it with the remaining arguments. |
 | `docs/` | optional (deep packs) | Long references (API guides, variable lists) that `source.md` points to for a specific need ("for GDP-by-industry tables read docs/gdp_by_industry.md"). Read only on that need. |
@@ -163,6 +163,7 @@ Standard packs run through `scripts/fetch.py` → `core.generic_rest`. An adapte
 | `key_only_needs` | `(spec) -> list[str]` | Features of this request that need a key even when a keyless route exists. |
 | `manual_items` | `(spec, pack) -> list[item]` | Manual download links when the generic ones do not fit. |
 | `parse_upload` | `(pack, req, paths) -> rows` | Read uploaded files (e.g. a dataset page's CSV export). A missing optional reader raises `DataError(kind="install_deps")`. |
+| `refused_hosts` | `(spec) -> str \| None` | A host the spec needs that refuses scripts (a bot wall: 403 to every non-browser client): the reason, so `--check` routes the spec to the manual bundle instead of fetching. Never work around such a block. |
 | `keyless_files` | `(spec, pack) -> list[{"request", "url", "filename"}]` | The `keyless_file` downloads that hold every request of the spec; `[]` when one is not covered or the reader is missing. Each also goes in the matching manual item's `alt_filenames`. |
 
 Use `core.combine` (in `scripts/analysis/combine.py`) for state codes; do not copy the table.

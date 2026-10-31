@@ -8,7 +8,8 @@ spending, Part B/D drug spending, inpatient and physician utilization).
   infections, HCAHPS; nursing home ratings, staffing, deficiencies; home health, hospice, dialysis.
 - Medicare totals by place and year: beneficiaries (Original Medicare vs Medicare Advantage), FFS spending
   per capita, drug spending by drug, DRG discharges and payments, opioid prescribing rates.
-- Not here: Medicaid and CHIP (data.medicaid.gov, not covered), industry payments to doctors
+- Not here: Medicaid and CHIP enrollment, spending and drug data (medicaid), Medicare Trustees Report
+  projections and national health expenditures (actuaries), industry payments to doctors
   (open-payments), drug safety and recalls (fda), health insurance coverage rates (census ACS), deaths and
   disease rates (cdc). Medicare claims microdata (LDS/RIF files) need a CMS data use agreement: not covered.
 

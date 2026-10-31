@@ -125,7 +125,7 @@ numbers can carry letters): select with `pick()` or compare strings, not integer
 - **Key** `BEA_API_KEY` (free, https://apps.bea.gov/API/signup/; BEA emails it and it works only after the
   activation link is clicked). Found by core.keys (environment, `BEA_API_KEY_FILE`, keys.json, Claude Code settings.json,
   `~/.bea/api_key`); stored with the skill's setup script (`setup.ps1 -Source bea` / `setup.sh bea`), which
-  checks it with `keycheck.py`. Never ask for the key in chat. BEA puts it in the URL and echoes it in every
+  checks it with `bea_api.py`. Never ask for the key in chat. BEA puts it in the URL and echoes it in every
   reply: the pack scrubs both (core.keys.redact plus the USERID echo); code must not build its own URLs.
 - **Limits** per key: 100 requests, 100 MB and 30 errors a minute; going over blocks the key for a minute to
   an hour (HTTP 429, never retried). The client spaces calls 0.75 s, waits before crossing 100 MB a minute,

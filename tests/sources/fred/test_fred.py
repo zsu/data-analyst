@@ -524,7 +524,7 @@ class TestFredUnits(unittest.TestCase):
         self.assertIn("FRED", p["notices"][0])
 
     def test_37_keycheck(self):
-        kc = load("fred_pack_keycheck", "keycheck.py")
+        kc = load("fred_pack_keycheck", "fred_api.py")
 
         class R:
             def __init__(self, status, body):
