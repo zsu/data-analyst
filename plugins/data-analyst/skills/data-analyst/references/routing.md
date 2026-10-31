@@ -83,6 +83,7 @@ Use `fetch.py --route "<question>"` for a ranked suggestion.
 | noaa | standard | optional (NOAA_API_KEY) | weather, climate, environment | NOAA NCEI climate data (Access Data Service, Climate Data Online) |
 | nrel | standard | optional (DATA_GOV_API_KEY) | energy, transportation, environment | NREL / NLR Developer APIs (alt fuel stations, utility rates, solar resource, PVWatts) |
 | nws | standard | none | weather, emergency management | National Weather Service API (forecasts, alerts, observations) |
+| nyfed | standard | none | monetary policy, interest rates, federal debt financing, financial conditions | New York Fed Markets Data API (reference rates, SOMA, Treasury operations, primary dealers) |
 | open-payments | standard | none | health, health care, industry payments | CMS Open Payments (openpaymentsdata.cms.gov) |
 | opm | deep | none | federal workforce, government employment, public sector pay, personnel | OPM Federal Workforce Data (FWD / EHRI) |
 | regulations | standard | optional (DATA_GOV_API_KEY) | legislation, regulation, rulemaking | Regulations.gov (API v4) |
