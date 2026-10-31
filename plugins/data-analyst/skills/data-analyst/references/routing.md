@@ -74,7 +74,7 @@ Use `fetch.py --route "<question>"` for a ranked suggestion.
 | bls | deep | optional (BLS_API_KEY) | labor, employment, prices, inflation, wages, productivity | Bureau of Labor Statistics Public Data API |
 | bts | standard | none | transportation, freight, travel | Bureau of Transportation Statistics Open Data (data.bts.gov) |
 | cdc | standard | none | health, mortality, public health | CDC Open Data (data.cdc.gov) |
-| census | standard | required (CENSUS_API_KEY) | demographics, population, income, housing, poverty, education | Census Bureau Data API (ACS, decennial census, population estimates) |
+| census | standard | required (CENSUS_API_KEY) | demographics, population, income, housing, poverty, education, program participation, international trade, state and local government finance, economic indicators | Census Bureau Data API (ACS, decennial census, population estimates, SIPP, economic indicators, international trade, government finances) |
 | cfpb | standard | none | finance, consumer protection | CFPB Consumer Complaint Database |
 | clinical-trials | standard | none | health, clinical research | ClinicalTrials.gov (API v2) |
 | cms | standard | none | health, health care, medicare | CMS Provider Data and Medicare data (data.cms.gov) |
