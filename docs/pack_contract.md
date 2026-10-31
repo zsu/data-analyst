@@ -10,7 +10,7 @@ pack must be self-contained: its rules, formats and traps live in the pack, not 
 |---|---|---|
 | `policy.json` | yes | Machine-readable rules: key, limits, routes, cache, redistribution, notices, audit hooks, clarifying questions. `core/policy.py` validates it and enforces it. |
 | `source.md` | yes | What the model reads before using the source (sections below). |
-| `endpoints.json` | standard packs | The API, declaratively (format: docstring of `scripts/core/generic_rest.py`). |
+| `endpoints.json` | standard packs | The API, declaratively (format: docstring of `scripts/core/generic_rest.py`). Published files work too: `"records"` `$csv`, `$xlsx` (with `sheet`, `header_row`) or `$zip:<glob>`. |
 | `adapter.py` | when needed | Python hooks for what `endpoints.json` cannot express. |
 | `fetch.py` | deep packs only | The pack's own command line. `scripts/fetch.py --source <id> ...` runs it with the remaining arguments. |
 | `docs/` | optional (deep packs) | Long references (API guides, variable lists) that `source.md` points to for a specific need ("for GDP-by-industry tables read docs/gdp_by_industry.md"). Read only on that need. |

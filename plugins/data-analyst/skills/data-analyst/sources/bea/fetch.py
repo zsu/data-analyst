@@ -835,43 +835,7 @@ def regional_from_zip(req: dict, src_dir: str, manifest: dict, files: dict | Non
     return out, notes
 
 
-def xlsx_sheets(path: str, only: set[str] | None = None) -> dict[str, list[list]]:
-    """Read sheets of an .xlsx into lists of row values (standard library only)."""
-    import xml.etree.ElementTree as ET
-    ns = {"m": "http://schemas.openxmlformats.org/spreadsheetml/2006/main",
-          "r": "http://schemas.openxmlformats.org/officeDocument/2006/relationships"}
-    z = zipfile.ZipFile(path)
-    shared = []
-    if "xl/sharedStrings.xml" in z.namelist():
-        for si in ET.fromstring(z.read("xl/sharedStrings.xml")).findall("m:si", ns):
-            shared.append("".join(x.text or "" for x in si.iter(f"{{{ns['m']}}}t")))
-    wb = ET.fromstring(z.read("xl/workbook.xml"))
-    target = {r.get("Id"): r.get("Target") for r in ET.fromstring(z.read("xl/_rels/workbook.xml.rels"))}
-    out = {}
-    for s in wb.find("m:sheets", ns):
-        name = s.get("name")
-        if only is not None and name not in only:
-            continue
-        tgt = target[s.get(f"{{{ns['r']}}}id")].lstrip("/")
-        tgt = tgt if tgt.startswith("xl/") else "xl/" + tgt
-        rows = []
-        for row in ET.fromstring(z.read(tgt)).iter(f"{{{ns['m']}}}row"):
-            vals = {}
-            for c in row.findall("m:c", ns):
-                col = 0
-                for ch in re.match(r"[A-Z]+", c.get("r", "A")).group(0):
-                    col = col * 26 + ord(ch) - 64
-                v, typ = c.find("m:v", ns), c.get("t")
-                if typ == "s" and v is not None:
-                    val = shared[int(v.text)]
-                elif typ == "inlineStr":
-                    val = "".join(x.text or "" for x in c.iter(f"{{{ns['m']}}}t"))
-                else:
-                    val = v.text if v is not None else None
-                vals[col - 1] = val
-            rows.append([vals.get(i) for i in range(max(vals) + 1)] if vals else [])
-        out[name] = rows
-    return out
+from core.generic_rest import xlsx_sheets  # noqa: E402,F401  (shared reader; used below)
 
 
 def workbook_unit(text: str) -> str:
