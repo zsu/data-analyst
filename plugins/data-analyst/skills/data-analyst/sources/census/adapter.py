@@ -46,6 +46,8 @@ TOPCODES = {"B25077_001E": {"2000001": "top-coded: $2,000,000 or more"},
                             "4001": "top-coded: $4,000 or more"}}
 MAX_VARS = 50
 _LATEST: dict = {}
+# SIPP microdata: one row per person-month; these come with every request (keys to link months, the weight)
+SIPP_KEEP = ["SSUID", "PNUM", "MONTHCODE", "WPFINWGT"]
 
 
 # ---------------------------------------------------------------------- helpers
@@ -116,6 +118,15 @@ def _ensure_list(v) -> list[str]:
 
 def is_acs(ds: str) -> bool:
     return "/acs/" in f"/{ds.strip('/')}/"
+
+
+def is_sipp(ds: str) -> bool:
+    """SIPP microdata (2024/sipp, latest/sipp): rows are person-months, no geography but the state recode."""
+    return bool(re.search(r"(^|/)sipp$", str(ds).strip().strip("/")))
+
+
+def with_sipp_keys(vars_: list[str]) -> list[str]:
+    return vars_ + [v for v in SIPP_KEEP if v not in vars_]
 
 
 def moe_of(v: str) -> str | None:
@@ -273,6 +284,27 @@ def build_query(client, ds: str, params: dict) -> tuple[dict, list[str]]:
             notes.append(f"margins of error added: {', '.join(added)}")
         vars_ = full
     st, co, pl, z = (p.pop(k, None) for k in ("state", "county", "place", "zcta"))
+    if is_sipp(ds):
+        full = with_sipp_keys(vars_)
+        added = [v for v in full if v not in vars_]
+        if added:
+            notes.append(f"SIPP person-month keys and weight added: {', '.join(added)} (weight every estimate by "
+                         "WPFINWGT)")
+        q = {"get": ",".join(full)}
+        if any(v not in (None, "") for v in (co, pl, z)) or p.get("for") or p.get("in"):
+            raise ValueError("SIPP has no geography below the state (the API has none at all): use state, "
+                             "which filters on TST_INTV, the state of the interview address")
+        if st not in (None, "", "*"):
+            q["TST_INTV"] = _state(st, "fips")
+            notes.append(f"state {st!r} -> TST_INTV={q['TST_INTV']} (state of the interview address; SIPP is "
+                         "designed for national estimates, so state figures from small samples are unreliable)")
+        for k, v in p.items():
+            if v is not None and v != "":
+                q[k] = ",".join(str(x) for x in v) if isinstance(v, (list, tuple)) else v
+        if "MONTHCODE" not in q:
+            notes.append("no MONTHCODE filter: each person appears once per reference month (up to 12 rows); "
+                         "filter MONTHCODE (12 = December) or average over months")
+        return q, notes
     q = {"get": ",".join(vars_)}
     fips = None
     if st not in (None, "") and str(st).strip() != "*":
@@ -326,12 +358,17 @@ def check_spec(spec) -> list[str]:
         vars_ = _ensure_list(p.get("get"))
         if not vars_:
             probs.append(f"request {name!r}: 'get' needs at least one variable (NAME,B19013_001E)")
-        n = len(with_moe(vars_) if is_acs(ds) else vars_)
+        n = len(with_moe(vars_) if is_acs(ds) else with_sipp_keys(vars_) if is_sipp(ds) else vars_)
         if n > MAX_VARS:
-            probs.append(f"request {name!r}: {n} variables (margins of error included); the API takes at most "
-                         f"{MAX_VARS} per call: split the request")
+            probs.append(f"request {name!r}: {n} variables (margins of error or SIPP keys included); the API takes "
+                         f"at most {MAX_VARS} per call: split the request")
         if is_acs(ds) and str(p.get("moe", True)).lower() == "false":
             probs.append(f"request {name!r}: ACS margins of error are never dropped: remove moe: false")
+        if is_sipp(ds):
+            if any(p.get(k) not in (None, "") for k in ("county", "place", "zcta", "for", "in", "ucgid")):
+                probs.append(f"request {name!r}: SIPP has no geography below the state: use state (it filters "
+                             "TST_INTV) or no geography for national estimates")
+            continue
         if not any(p.get(k) not in (None, "") for k in ("for", "ucgid", "state", "zcta")):
             probs.append(f"request {name!r}: give a geography: for (state:*, county:*), state, or zcta")
         if (p.get("county") or p.get("place")) and not p.get("state"):
@@ -439,7 +476,8 @@ def fetch_one(client, pack, r) -> tuple[list[dict], list[str]]:
     if data is None:
         raise DataError(f"request {r['name']!r}: the Census API returned no rows (HTTP 204: no geography matched "
                         f"for={q.get('for')} in={q.get('in', '')}); check the codes", kind="bad_request")
-    rows = normalize(r, ep, _table(data))
+    # SIPP microdata has no geography sentinels: blanks mean "not in universe", values stay as published
+    rows = _table(data) if is_sipp(ds) else normalize(r, ep, _table(data))
     return gr._clean(rows, {"missing": [""], "flatten": False}), notes
 
 

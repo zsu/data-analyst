@@ -60,6 +60,7 @@
     "pep_population_2021": {"id": "2021/pep/population", "kind": "dataset", "name": "Population estimates, vintage 2021", "description": "POP_2020, POP_2021 (July 1), POP_BASE2020, changes and ranks; nation, region, division and state only; newer totals are in pep_charv", "endpoint": "query"},
     "cbp": {"id": "2023/cbp", "kind": "dataset", "name": "County Business Patterns 2023", "description": "establishments, employment, payroll by NAICS and county", "endpoint": "query"},
     "ecnbasic_2022": {"id": "2022/ecnbasic", "kind": "dataset", "name": "Economic Census 2022, basic statistics", "description": "Economic Census establishments, sales, payroll by industry", "endpoint": "query"},
+    "sipp": {"id": "latest/sipp", "kind": "dataset", "name": "Survey of Income and Program Participation (latest)", "description": "SIPP public-use microdata: one row per person-month of the reference year (the file year minus one); weight by WPFINWGT", "endpoint": "query"},
     "B01003_001E": {"id": "B01003_001E", "kind": "variable", "name": "Total population", "description": "ACS total population (table B01003); B01001_001E is the same total from the sex-by-age table"},
     "B01002_001E": {"id": "B01002_001E", "kind": "variable", "name": "Median age", "description": "median age, total population"},
     "B19013_001E": {"id": "B19013_001E", "kind": "variable", "name": "Median household income (inflation-adjusted dollars of the survey year)", "description": "median household income in the past 12 months"},
