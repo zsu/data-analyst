@@ -22,7 +22,12 @@ endpoints.json:
       "body": {...},                         # POST body template (spec params with in=body merge into it)
       "records": "results",                  # dotted path to the list of records; "" = body is the list;
                                              # "$table" = list of lists whose first row is the header (Census);
-                                             # "$csv" = CSV text
+                                             # "$csv" = CSV text; "$xlsx" = an .xlsx workbook (one sheet);
+                                             # "$zip:<glob>" = a zip whose members matching glob (CSV or
+                                             # .xlsx) are read in name order and stacked
+      "sheet": "Table 1",                    # $xlsx / zipped .xlsx: sheet name, or 1-based number (default 1)
+      "header_row": 1,                       # $xlsx / zipped .xlsx: 1-based row holding the column names;
+                                             # rows above it are titles, blank rows below it are dropped
       "total": "meta.count",                 # optional dotted path to the total row count
       "paging": {"type": "offset", "limit_param": "$limit", "offset_param": "$offset", "size": 1000,
                  "manual_size": 50000}       # manual_size: rows per browser download (default size)
@@ -54,12 +59,14 @@ spec.json for a standard pack:
 from __future__ import annotations
 
 import csv
+import fnmatch
 import io
 import json
 import math
 import os
 import re
 import urllib.parse
+import zipfile
 
 from core.http import Client, DataError
 
@@ -277,10 +284,110 @@ def merge_for_each(spec: dict, tables: dict) -> dict:
 
 
 # ---------------------------------------------------------------------- fetching
+def xlsx_sheets(src, only: set[str] | None = None) -> dict[str, list[list]]:
+    """Read sheets of an .xlsx (a path, bytes or a binary file) into lists of row values, in workbook order
+    (standard library only). Values are text as stored: numbers are not formatted, dates are serial numbers."""
+    import xml.etree.ElementTree as ET
+    ns = {"m": "http://schemas.openxmlformats.org/spreadsheetml/2006/main",
+          "r": "http://schemas.openxmlformats.org/officeDocument/2006/relationships"}
+    try:
+        z = zipfile.ZipFile(io.BytesIO(src) if isinstance(src, (bytes, bytearray)) else src)
+    except zipfile.BadZipFile:
+        raise DataError("not an .xlsx workbook (an old .xls, or an HTML page in its place)", kind="api")
+    shared = []
+    if "xl/sharedStrings.xml" in z.namelist():
+        for si in ET.fromstring(z.read("xl/sharedStrings.xml")).findall("m:si", ns):
+            shared.append("".join(x.text or "" for x in si.iter(f"{{{ns['m']}}}t")))
+    wb = ET.fromstring(z.read("xl/workbook.xml"))
+    target = {r.get("Id"): r.get("Target") for r in ET.fromstring(z.read("xl/_rels/workbook.xml.rels"))}
+    out = {}
+    for s in wb.find("m:sheets", ns):
+        name = s.get("name")
+        if only is not None and name not in only:
+            continue
+        tgt = target[s.get(f"{{{ns['r']}}}id")].lstrip("/")
+        tgt = tgt if tgt.startswith("xl/") else "xl/" + tgt
+        rows = []
+        for row in ET.fromstring(z.read(tgt)).iter(f"{{{ns['m']}}}row"):
+            vals = {}
+            for c in row.findall("m:c", ns):
+                col = 0
+                for ch in re.match(r"[A-Z]+", c.get("r", "A")).group(0):
+                    col = col * 26 + ord(ch) - 64
+                v, typ = c.find("m:v", ns), c.get("t")
+                if typ == "s" and v is not None:
+                    val = shared[int(v.text)]
+                elif typ == "inlineStr":
+                    val = "".join(x.text or "" for x in c.iter(f"{{{ns['m']}}}t"))
+                else:
+                    val = v.text if v is not None else None
+                vals[col - 1] = val
+            rows.append([vals.get(i) for i in range(max(vals) + 1)] if vals else [])
+        out[name] = rows
+    return out
+
+
+def sheet_records(ep: dict, src) -> list[dict]:
+    """Rows of one sheet as dicts: ep["sheet"] (name or 1-based number, default 1) and ep["header_row"]
+    (1-based, default 1). Blank and repeated column names get colN names; blank rows are dropped."""
+    sheets = xlsx_sheets(src)
+    want = ep.get("sheet", 1)
+    if isinstance(want, int) or str(want).isdigit():
+        names = list(sheets)
+        if not 1 <= int(want) <= len(names):
+            raise DataError(f"the workbook has {len(names)} sheet(s), not sheet {want}", kind="api")
+        grid = sheets[names[int(want) - 1]]
+    elif want in sheets:
+        grid = sheets[want]
+    else:
+        raise DataError(f"no sheet {want!r} in the workbook (sheets: {', '.join(sheets)})", kind="api")
+    hr = int(ep.get("header_row", 1)) - 1
+    if len(grid) <= hr:
+        return []
+    head, seen = [], set()
+    for i, h in enumerate(grid[hr]):
+        name = " ".join(str(h).split()) if h not in (None, "") else f"col{i + 1}"
+        name = name if name not in seen else f"{name}_col{i + 1}"
+        seen.add(name)
+        head.append(name)
+    out = []
+    for r in grid[hr + 1:]:
+        if not any(v not in (None, "") for v in r):
+            continue
+        out.append({(head[i] if i < len(head) else f"col{i + 1}"): v for i, v in enumerate(r)})
+    return out
+
+
+def _csv_text(data: bytes) -> str:
+    try:
+        return data.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        return data.decode("cp1252", errors="replace")
+
+
 def _records(ep: dict, resp) -> list:
     path = ep.get("records", "")
     if path == "$csv":
         return list(csv.DictReader(io.StringIO(resp.text())))
+    if path == "$xlsx":
+        return sheet_records(ep, resp.body)
+    if path.startswith("$zip:"):
+        try:
+            z = zipfile.ZipFile(io.BytesIO(resp.body))
+        except zipfile.BadZipFile:
+            raise DataError("expected a .zip file, got something else (an HTML page?)", kind="api")
+        glob = path[5:].lower() or "*"
+        members = sorted(n for n in z.namelist() if fnmatch.fnmatch(n.lower(), glob) and not n.endswith("/"))
+        if not members:
+            raise DataError(f"no member matching {path[5:]!r} in the zip ({', '.join(z.namelist()[:10])})",
+                            kind="api")
+        rows = []
+        for n in members:
+            if n.lower().endswith(".xlsx"):
+                rows += sheet_records(ep, z.read(n))
+            else:
+                rows += list(csv.DictReader(io.StringIO(_csv_text(z.read(n)))))
+        return rows
     data = resp.json()
     if path == "$table":
         if not data:
@@ -539,7 +646,8 @@ def manual_items(pack, spec: dict) -> list[dict]:
         size = int(pg.get("manual_size") or pg.get("size") or 1000)
         limit = int(r.get("max_rows") or size)
         pages = 1 if pg.get("type") in ("none", "cursor", "link") else min(25, max(1, math.ceil(limit / size)))
-        ext = "csv" if ep.get("records") == "$csv" else "json"
+        rec = ep.get("records") or ""
+        ext = {"$csv": "csv", "$xlsx": "xlsx"}.get(rec, "zip" if rec.startswith("$zip:") else "json")
         for i in range(pages):
             q = dict(query)
             b = dict(body) if body is not None else None

@@ -723,6 +723,90 @@ class TestUploadFormats(unittest.TestCase):
             self.assertEqual(gr.parse_upload(pack, spec["requests"][1], [found["b#1"]]), [{"v": "b1"}])
 
 
+def xlsx_bytes(sheets: dict) -> bytes:
+    """A minimal .xlsx (inline strings, numbers as values) from {sheet name: [[cells]]}."""
+    import io
+    import zipfile
+    from xml.sax.saxutils import escape
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        m = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+        r = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+        z.writestr("xl/workbook.xml", f'<workbook xmlns="{m}" xmlns:r="{r}"><sheets>' + "".join(
+            f'<sheet name="{escape(n)}" sheetId="{i}" r:id="rId{i}"/>' for i, n in enumerate(sheets, 1))
+            + "</sheets></workbook>")
+        z.writestr("xl/_rels/workbook.xml.rels",
+                   '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' + "".join(
+                       f'<Relationship Id="rId{i}" Target="worksheets/sheet{i}.xml"/>' for i in range(1, len(sheets) + 1))
+                   + "</Relationships>")
+        for i, rows in enumerate(sheets.values(), 1):
+            xml = []
+            for ri, row in enumerate(rows, 1):
+                cells = []
+                for ci, v in enumerate(row):
+                    ref = f"{chr(65 + ci)}{ri}"
+                    if v is None:
+                        continue
+                    if isinstance(v, (int, float)):
+                        cells.append(f'<c r="{ref}"><v>{v}</v></c>')
+                    else:
+                        cells.append(f'<c r="{ref}" t="inlineStr"><is><t>{escape(v)}</t></is></c>')
+                xml.append(f'<row r="{ri}">{"".join(cells)}</row>')
+            z.writestr(f"xl/worksheets/sheet{i}.xml", f'<worksheet xmlns="{m}"><sheetData>{"".join(xml)}</sheetData></worksheet>')
+    return buf.getvalue()
+
+
+class TestSpreadsheetRecords(unittest.TestCase):
+    class R:
+        def __init__(self, body):
+            self.body = body
+
+    def test_xlsx_header_row_blank_rows_and_repeated_names(self):
+        body = xlsx_bytes({"Notes": [["about"]],
+                           "Table 1": [["Table 1. Title"], ["Year", "Total", "Total"], [], [2024, "1,000", 5]]})
+        ep = {"records": "$xlsx", "sheet": "Table 1", "header_row": 2}
+        self.assertEqual(gr._records(ep, self.R(body)), [{"Year": "2024", "Total": "1,000", "Total_col3": "5"}])
+        self.assertEqual(gr._records({"records": "$xlsx", "sheet": 1}, self.R(body)), [])
+        with self.assertRaises(DataError) as e:
+            gr._records({"records": "$xlsx", "sheet": "Table 9"}, self.R(body))
+        self.assertIn("Table 1", str(e.exception))
+
+    def test_zip_members_are_stacked_in_name_order(self):
+        import io
+        import zipfile
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w") as z:
+            z.writestr("b.csv", "k,v\nb,2\n")
+            z.writestr("a.csv", "k,v\na,1\n")
+            z.writestr("readme.txt", "x")
+            z.writestr("t.xlsx", xlsx_bytes({"S": [["k", "v"], ["c", 3]]}))
+        rows = gr._records({"records": "$zip:*.csv"}, self.R(buf.getvalue()))
+        self.assertEqual([r["k"] for r in rows], ["a", "b"])
+        self.assertEqual(gr._records({"records": "$zip:*.xlsx"}, self.R(buf.getvalue())), [{"k": "c", "v": "3"}])
+        with self.assertRaises(DataError):
+            gr._records({"records": "$zip:*.json"}, self.R(buf.getvalue()))
+
+    def test_html_in_place_of_a_file_is_an_error(self):
+        for rec in ("$xlsx", "$zip:*.csv"):
+            with self.assertRaises(DataError):
+                gr._records({"records": rec}, self.R(b"<html>blocked</html>"))
+
+    def test_manual_link_and_upload_of_an_xlsx(self):
+        eps = {"base_url": "https://example.gov", "endpoints": {"t": {
+            "path": "/files/t.xlsx", "params": {}, "records": "$xlsx", "header_row": 2, "paging": {"type": "none"}}}}
+        P = {"id": "t", "title": "T", "auth": {"required": "none", "placement": "none"}, "limits": {},
+             "routes": {"api": {"base": "https://example.gov"}}}
+        pack = Pack("t", "", P, eps, None)
+        req = {"name": "a", "endpoint": "t", "params": {}}
+        item = gr.manual_items(pack, {"requests": [req]})[0]
+        self.assertEqual(item["filename"], "a.xlsx")
+        with tempfile.TemporaryDirectory() as t:
+            p = os.path.join(t, "a.xlsx")
+            with open(p, "wb") as f:
+                f.write(xlsx_bytes({"S": [["title"], ["k"], ["x"]]}))
+            self.assertEqual(gr.parse_upload(pack, req, [p]), [{"k": "x"}])
+
+
 class TestPackage(unittest.TestCase):
     def test_empty_table_gets_a_header(self):
         from core import packs
