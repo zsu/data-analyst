@@ -296,3 +296,20 @@ if __name__ == "__main__":
     c = BlsClient()
     print(f"version {c.version}; key: {c.key_source or 'none'}; queries today: {usage_today(c.version)}")
     print(json.dumps(c.ping()))
+
+
+# ---------------------------------------------------------------------- key check (scripts/setup_key.py)
+def verify(key: str) -> tuple[bool | None, str]:
+    """Key check for setup.ps1 / setup.sh: one small v2 query with the key in the POST body. (True, detail)
+    accepted, (False, detail) rejected (wrong or expired: BLS keys expire after a year), (None, detail) unclear
+    (daily limit, BLS refused for another reason). Network errors raise DataError(kind="network"). The key is
+    never printed: BLS echoes a rejected key in its message, and every detail goes through redact."""
+    p = BlsClient(api_key=key).ping()          # one query of the key's 500 a day
+    if p["kind"] == "network":
+        raise DataError(f"api.bls.gov could not be reached: {p['detail']}", kind="network")
+    if p["auth_ok"]:
+        return True, "BLS accepted the key (API v2)."
+    if p["auth_ok"] is False:
+        return False, redact(f"BLS rejected the key (wrong, or expired: renew at "
+                             f"https://data.bls.gov/registrationEngine/): {p['detail']}")
+    return None, redact(f"BLS did not confirm the key ({p['kind']}): {p['detail']}")

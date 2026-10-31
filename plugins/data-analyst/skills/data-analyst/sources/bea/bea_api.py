@@ -412,3 +412,24 @@ if __name__ == "__main__":
     c = BeaClient()
     ds = c.datasets()
     print(redact(f"key from {c.key_source}: {len(ds)} datasets: {', '.join(d.get('DatasetName', '') for d in ds)}"))
+
+
+# ---------------------------------------------------------------------- key check (scripts/setup_key.py)
+def verify(key) -> tuple[bool | None, str]:
+    """Key check for the skill's setup scripts: one GetDataSetList call with the key. An Error in the reply
+    (codes 1, 3, 4: invalid, unknown or not yet activated) is a rejection; HTTP 429 or another failure is
+    "unclear"; no connection raises a network DataError so setup_key reports a network problem. The key is
+    never printed."""
+    try:
+        p = BeaClient(api_key=str(key).strip(), timeout=30, use_cache=False).ping()
+    except BeaError as e:
+        return None, str(e)
+    if p["kind"] == "ok":
+        return True, "BEA accepted the key (GetDataSetList answered)."
+    if p["kind"] == "network":
+        raise DataError(p["detail"], kind="network")
+    if p["kind"] == "auth":
+        return False, "BEA rejected the key: it is mistyped, or not activated yet (click the link in BEA's email)."
+    if p["kind"] in ("rate_limit", "budget"):
+        return None, "BEA is rate-limiting this key right now (HTTP 429); try again in an hour."
+    return None, p["detail"]
