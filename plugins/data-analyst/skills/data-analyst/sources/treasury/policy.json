@@ -129,5 +129,31 @@
     "json",
     "csv",
     "xml"
+  ],
+  "use_instead": [
+    {
+      "question": "Market yields and the daily par yield curve",
+      "source": "treasury-yields",
+      "terms": [
+        "par yield"
+      ],
+      "why": "Daily Treasury par yield curve rates."
+    },
+    {
+      "question": "Historical budget tables in percent of GDP, the President's budget",
+      "source": "omb",
+      "terms": [
+        "Historical Tables"
+      ],
+      "why": "OMB Historical Tables by budget edition."
+    },
+    {
+      "question": "State and local government finances",
+      "source": "census",
+      "terms": [
+        "QTAX"
+      ],
+      "why": "Census government finance surveys."
+    }
   ]
 }

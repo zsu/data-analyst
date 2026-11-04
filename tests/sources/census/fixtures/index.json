@@ -9,5 +9,8 @@
  "GET https://api.census.gov/data/2024/acs/acs5?get=NAME%2CB19013_001E%2CB19013_001M&for=county%3A%2A&in=state%3A24": "missing_key.html",
  "GET https://api.census.gov/data/2020/dec/pl/variables.json": "variables_2020_dec_pl.json",
  "GET https://api.census.gov/data/2019/acs/acs1?get=NAME%2CB02015_009E%2CB02015_009M&for=state%3A%2A": "doc_acs1_2019_hmong.json",
- "GET https://api.census.gov/data/2024/sipp?get=TAGE%2CRHLTHMTH%2CSSUID%2CPNUM%2CMONTHCODE%2CWPFINWGT&MONTHCODE=12": "handmade_sipp_2024.json"
+ "GET https://api.census.gov/data/2024/sipp?get=TAGE%2CRHLTHMTH%2CSSUID%2CPNUM%2CMONTHCODE%2CWPFINWGT&MONTHCODE=12": "handmade_sipp_2024.json",
+ "GET https://api.census.gov/data/timeseries/hhpulse?get=MEASURE_NAME%2CMEASURE_LABEL%2CRATE%2CRATE_MOE%2CTOTAL%2CUNIVERSE%2CCYCLE%2CPHASE%2CCOL_START_DATE%2CCOL_END_DATE&for=us%3A%2A&time=2024&MEASURE_NAME=EXPENSE": "pulse_expense_2024.json",
+ "GET https://api.census.gov/data/timeseries/hps?get=EXPENSE_RATE%2CEXPENSE_RT_MOE%2CEXPENSE_TOTAL%2CEXPENSE_UNIV%2CWEEK%2CCOL_START_DATE%2CCOL_END_DATE&for=us%3A%2A&time=2023": "pulse_covid_expense_2023.json",
+ "GET https://api.census.gov/data/timeseries/eits/hv?get=cell_value%2Cdata_type_code%2Ccategory_code%2Cseasonally_adj%2Ctime_slot_id%2Cgeo_level_code%2Cerror_data&for=us%3A%2A&time=2025&category_code=RATE": "hv_rates_2025.json"
 }

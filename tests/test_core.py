@@ -93,6 +93,35 @@ class TestPolicy(unittest.TestCase):
         self.assertIn("manual", probs)
         self.assertIn("retrieved", probs)
 
+    def test_use_instead_gate(self):
+        """A pointer to a pack must name a pack that covers it: fhfa once sent HMDA to cfpb (complaints only), and
+        cfpb's own "Not here" line naming a gap must not count as covering it."""
+        from core import packs
+        fhfa = packs.load("fhfa")
+
+        def probs(*entries):
+            ui = [{"question": "q", "source": s, "terms": t, "why": "w"} for s, t in entries]
+            return policy.validate(dict(fhfa.policy, use_instead=ui), fhfa.dir)
+
+        self.assertEqual(probs(("fred", ["USSTHPI"]), ("census", ["QTAX"])), [])   # docs/*.md and source.md count
+        self.assertIn("does not cover ['HMDA']", " ".join(probs(("cfpb", ["HMDA"]))))
+        self.assertIn("does not cover ['CES']", " ".join(probs(("cfpb", ["CES"]))))  # whole words, not "sources"
+        self.assertIn("is not a pack", " ".join(probs(("cfpb-hmda", ["HMDA"]))))
+        self.assertIn("this pack itself", " ".join(probs(("fhfa", ["HPI"]))))
+        self.assertIn("are all required", " ".join(probs(("fred", []))))
+        with tempfile.TemporaryDirectory() as t:                  # a gap named in Not here is not coverage
+            for pid, md in (("a", "# A\n"), ("b", "# B\n## When to use\n- Prices.\n- Not here: widgets (not\n"
+                                                    "  covered).\n\n## Endpoints\n")):
+                d = os.path.join(t, pid)
+                os.makedirs(d)
+                json.dump({"id": pid, "title": pid.upper()}, open(os.path.join(d, "policy.json"), "w"))
+                open(os.path.join(d, "source.md"), "w").write(md)
+            a = os.path.join(t, "a")
+            ok = {"id": "a", "use_instead": [{"question": "q", "source": "b", "terms": ["prices"], "why": "w"}]}
+            gap = {"id": "a", "use_instead": [{"question": "q", "source": "b", "terms": ["widgets"], "why": "w"}]}
+            self.assertEqual(policy._use_instead_problems(ok, a), [])
+            self.assertEqual(len(policy._use_instead_problems(gap, a)), 1)
+
     def test_cache_refused(self):
         p, _ = self.pol()
         with self.assertRaises(policy.PolicyError):

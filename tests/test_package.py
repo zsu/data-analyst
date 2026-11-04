@@ -44,7 +44,7 @@ class TestPackage(unittest.TestCase):
         self.assertLessEqual(len(self.names), MAX_FILES, "the upload zip has too many files for claude.ai")
         self.assertFalse([x for x in self.names if x.endswith("/")], "no folder entries")
         self.assertIn("data-analyst/sources/packs.json", self.names)
-        self.assertFalse([x for x in self.names if x.endswith(("/policy.json", "/endpoints.json"))])
+        self.assertFalse([x for x in self.names if x.endswith(("/policy.json", "/endpoints.json", "/adapter.py"))])
 
     def test_bundle_matches_repo(self):
         with open(os.path.join(self.skill, "sources", "packs.json"), encoding="utf-8") as f:
@@ -52,11 +52,28 @@ class TestPackage(unittest.TestCase):
         ids = sorted(os.listdir(os.path.join(testkit.SKILL, "sources")))
         self.assertEqual(sorted(b), ids)
         for pid in ids:
-            for name in ("policy.json", "endpoints.json"):
+            for name in ("policy.json", "endpoints.json", "adapter.py"):
                 p = os.path.join(testkit.pack_dir(pid), name)
+                self.assertEqual(name in b[pid], os.path.exists(p), f"{pid}/{name}")
                 if os.path.exists(p):
                     with open(p, encoding="utf-8") as f:
-                        self.assertEqual(b[pid][name], json.load(f), f"{pid}/{name}")
+                        want = f.read() if name.endswith(".py") else json.load(f)
+                    self.assertEqual(b[pid][name], want, f"{pid}/{name}")
+
+    def test_adapters_load_from_bundle(self):
+        """Every adapter in the zip is built from packs.json, with __file__ at its usual path (adapters resolve
+        endpoints.json and scripts/ from their own folder) and its lines in tracebacks."""
+        code = ("import sys, linecache; sys.path.insert(0, sys.argv[1]); from core import packs\n"
+                "ps = [p for p in packs.all_packs() if p.adapter is not None]\n"
+                "bad = [p.id for p in ps if p.adapter.__file__.replace('\\\\', '/').split('/')[-2:] != [p.id, 'adapter.py']\n"
+                "       or not linecache.getline(p.adapter.__file__, 1)]\n"
+                "print(len(ps), bad)")
+        p = subprocess.run([sys.executable, "-I", "-c", code, os.path.join(self.skill, "scripts")],
+                           capture_output=True, text=True)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        n = len([d for d in os.listdir(os.path.join(testkit.SKILL, "sources"))
+                 if os.path.exists(os.path.join(testkit.pack_dir(d), "adapter.py"))])
+        self.assertEqual(p.stdout.split(), [str(n), "[]"])
 
     def test_every_pack_loads_from_bundle(self):
         code = ("import sys; sys.path.insert(0, sys.argv[1]); from core import packs, policy\n"

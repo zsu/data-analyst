@@ -95,5 +95,15 @@
   "formats": [
     "csv",
     "xlsx"
+  ],
+  "use_instead": [
+    {
+      "question": "One FHFA house price series for the U.S. or a state, with no index flavor choice",
+      "source": "fred",
+      "terms": [
+        "USSTHPI"
+      ],
+      "why": "FRED carries the all-transactions and purchase-only HPI series under stable IDs."
+    }
   ]
 }

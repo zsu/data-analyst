@@ -111,6 +111,12 @@ def render() -> str:
              "## Usual pairings", "", "| Question | Primary | Cross-check / context | Note |", "|---|---|---|---|"]
     for q, prim, other, note in PAIRINGS:
         lines.append(f"| {q} | {prim} | {other} | {note} |")
+    ui = [(pid, u) for pid, P in sorted(ps.items()) for u in P.get("use_instead") or []]
+    if ui:
+        lines += ["", "## Use instead", "",
+                  "Questions a pack does not answer, and the pack that does (each pack's policy.json `use_instead`).", "",
+                  "| Not in | Question | Use | Why |", "|---|---|---|---|"]
+        lines += [f"| {pid} | {u['question']} | {u['source']} | {u['why']} |" for pid, u in ui]
     lines += ["", "## All sources", "", "| Source | Depth | Key | Domains | Title |", "|---|---|---|---|---|"]
     for pid, P in sorted(ps.items()):
         a = P["auth"]

@@ -25,8 +25,13 @@ Rules for every file:
 - No invented numbers, no sample data presented as real data, no silent fallbacks to another source.
 - Read `policy.json` and `endpoints.json` only through `core.packfiles.read_json(pack_dir, name)` (or the
   loaded `pack.policy` / `pack.endpoints`), never with `open()`. The claude.ai upload zip
-  (`tools/package_skill.py`) puts every pack's two JSON files into one `sources/packs.json`, because
-  claude.ai rejects a zip of more than 200 files. The model reads a policy with `fetch.py --source <id> --policy`.
+  (`tools/package_skill.py`) puts every pack's two JSON files and its `adapter.py` (as source text) into one
+  `sources/packs.json`, because claude.ai rejects a zip of more than 200 files. The model reads a policy with
+  `fetch.py --source <id> --policy`.
+- `adapter.py` is loaded only by `core.packs.load`, which builds it from the bundle in the zip with `__file__` set
+  to its usual path. So an adapter may compute paths from its own folder, but must not import a sibling `.py`
+  module of its pack or read a sibling file other than through `core.packfiles` (put such code in the adapter,
+  or give the pack a `fetch.py` and make it a deep pack). Code the model must read goes in `source.md` or `docs/`.
 
 ## Keeping context small (guidance, not a hard limit)
 The model reads only SKILL.md and the `source.md` of the packs a question needs; everything else is read by
@@ -116,6 +121,12 @@ Field rules (`core/policy.py: validate` enforces the starred ones):
   `forbid_in_package` (`globs`).
 - **`clarify`**: questions that change the numbers and that a request often leaves open. SKILL.md has the
   model ask them (at most four, in one round) or decide them by the stated default.
+- **`use_instead`**\* (optional): `[{"question", "source", "terms", "why"}]`, question shapes this pack does not
+  answer and the pack that does (rendered into routing.md's "Use instead" table). `validate` fails when `source` is
+  not a pack, or when a term (a whole word, case-insensitive) is missing from that pack's coverage: its policy
+  title, domains, keywords and questions, its source.md and docs/*.md, all without their "Not here" bullets. Keep
+  the "Not here" line in source.md as the prose the model reads. Data no pack has stay there as "not covered",
+  never as an entry.
 - **`citation`**\*: must contain `{retrieved}` or `{retrieved_long}`. Placeholders: `{title}` `{dataset}`
   `{retrieved}` `{retrieved_long}` `{vintage}` `{url}`.
 

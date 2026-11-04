@@ -22,7 +22,8 @@ One Agent Skills skill (`plugins/data-analyst/skills/data-analyst/`, shipped as 
   (`$DATA_ANALYST_CONFIG_DIR`); `core.keys` also reads Claude Code's settings.json for keys stored there earlier.
 - Upload plugin zip for claude.ai / Cowork (Customize > Plugins > Upload): `python tools/package_skill.py --plugin`.
 - Upload skill zip for claude.ai (also a plain Agent Skills folder any assistant can load): `python tools/package_skill.py` (excludes tests and fixtures; bundles every
-  policy.json/endpoints.json into `sources/packs.json`, so runtime code reads them via `core.packfiles`).
+  policy.json/endpoints.json and every adapter.py into `sources/packs.json`, so runtime code reads them via
+  `core.packfiles` and loads adapters via `core.packs.load`; in the repo and plugin installs they stay separate files).
   claude.ai rejects a zip of more than 200 files; the packager and tests/test_structure.py enforce it.
 - Hard limits in tests/test_structure.py: SKILL.md description <= 1024 chars (claude.ai rejects longer) and
   body <= 500 lines (Anthropic guidance); fixtures < 200 KB. source.md length is guidance only.

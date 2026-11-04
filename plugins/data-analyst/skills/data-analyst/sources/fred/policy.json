@@ -223,5 +223,31 @@
     "csv",
     "xlsx",
     "zip"
+  ],
+  "use_instead": [
+    {
+      "question": "BLS detail with preliminary flags, footnotes and gaps",
+      "source": "bls",
+      "terms": [
+        "preliminary"
+      ],
+      "why": "The bls pack keeps BLS's own flags."
+    },
+    {
+      "question": "BEA tables with line numbers and vintages",
+      "source": "bea",
+      "terms": [
+        "NIPA"
+      ],
+      "why": "The bea pack reads BEA tables as published."
+    },
+    {
+      "question": "Treasury daily statements and auctions",
+      "source": "treasury",
+      "terms": [
+        "auction"
+      ],
+      "why": "Treasury Fiscal Data."
+    }
   ]
 }

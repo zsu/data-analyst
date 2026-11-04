@@ -1,9 +1,10 @@
-"""Read a pack's JSON files (policy.json, endpoints.json) from its folder or from the upload bundle.
+"""Read a pack's bundled files (policy.json, endpoints.json, adapter.py) from its folder or from the upload bundle.
 
-In the repo each pack keeps sources/<id>/policy.json and endpoints.json. The claude.ai upload zip
+In the repo each pack keeps sources/<id>/policy.json, endpoints.json and adapter.py. The claude.ai upload zip
 (tools/package_skill.py) replaces them with one sources/packs.json, {"<id>": {"policy.json": {...},
-"endpoints.json": {...}}}, to stay under claude.ai's file limit. Runtime code reads them only through
-read_json, so both layouts work. Standard library only.
+"endpoints.json": {...}, "adapter.py": "<source text>"}}, to stay under claude.ai's file limit. Runtime code
+reads them only through read_json / read_text (adapters: core.packs.load), so both layouts work. Standard
+library only.
 """
 from __future__ import annotations
 
@@ -33,6 +34,17 @@ def read_json(pack_dir: str, name: str) -> dict | None:
             return json.load(f)
     d = os.path.normpath(os.path.abspath(pack_dir))
     return (_bundle(os.path.dirname(d)).get(os.path.basename(d)) or {}).get(name)
+
+
+def read_text(pack_dir: str, name: str) -> str | None:
+    """<pack_dir>/<name> as text, else that pack's text entry in the bundle next to it, else None."""
+    path = os.path.join(pack_dir, name)
+    if os.path.exists(path):
+        with open(path, encoding="utf-8") as f:
+            return f.read()
+    d = os.path.normpath(os.path.abspath(pack_dir))
+    v = (_bundle(os.path.dirname(d)).get(os.path.basename(d)) or {}).get(name)
+    return v if isinstance(v, str) else None
 
 
 def has(pack_dir: str, name: str) -> bool:

@@ -139,5 +139,32 @@
     "txt",
     "zip",
     "xlsx"
+  ],
+  "use_instead": [
+    {
+      "question": "CPI, jobs, unemployment, wages by occupation",
+      "source": "bls",
+      "terms": [
+        "CPI",
+        "OEWS"
+      ],
+      "why": "BLS produces these."
+    },
+    {
+      "question": "Budget data by fiscal year",
+      "source": "treasury",
+      "terms": [
+        "Monthly Treasury Statement"
+      ],
+      "why": "Treasury Fiscal Data."
+    },
+    {
+      "question": "Market interest rates",
+      "source": "treasury-yields",
+      "terms": [
+        "par yield"
+      ],
+      "why": "Daily Treasury yields."
+    }
   ]
 }
