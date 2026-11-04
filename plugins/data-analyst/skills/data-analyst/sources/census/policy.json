@@ -13,7 +13,8 @@
     "program participation",
     "international trade",
     "state and local government finance",
-    "economic indicators"
+    "economic indicators",
+    "survey microdata"
   ],
   "keywords": [
     "census",
@@ -57,6 +58,18 @@
     "per resident",
     "demographic profile",
     "state profile",
+    "pums",
+    "acs pums",
+    "public use microdata",
+    "census microdata",
+    "microdata",
+    "replicate weights",
+    "cps microdata",
+    "current population survey",
+    "asec",
+    "march supplement",
+    "cps basic monthly",
+    "custom tabulations",
     "sipp",
     "survey of income and program participation",
     "program participation",
@@ -104,6 +117,8 @@
     "share of adults with a bachelor's degree by state",
     "population for per-capita calculations",
     "month-to-month income and program participation from SIPP",
+    "custom tabulation from ACS PUMS with replicate-weight standard errors (uninsured adults by age and income in a state)",
+    "custom tabulation from one CPS month or one CPS ASEC year (point estimates)",
     "monthly retail sales or housing starts",
     "quarterly state and local tax revenue by state (QTAX)",
     "state and local government revenue, spending and debt by state",
@@ -194,12 +209,14 @@
       "why": "BEA regional accounts."
     },
     {
-      "question": "Custom tabulations from CPS, ACS or NHIS microdata",
+      "question": "Microdata series harmonized across decades, CPS ASEC standard errors, NHIS, MEPS or historical censuses",
       "source": "ipums",
       "terms": [
-        "NHIS"
+        "NHIS",
+        "MEPS",
+        "harmonized"
       ],
-      "why": "IPUMS harmonized microdata, weighted with SEs."
+      "why": "IPUMS codes each variable the same way across years and carries ASEC replicate weights; ACS PUMS and single CPS files come from this pack."
     },
     {
       "question": "International comparisons",

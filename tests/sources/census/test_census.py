@@ -14,9 +14,14 @@ Fixtures (fixtures/index.json):
 - pulse_expense_2024.json, pulse_covid_expense_2023.json, hv_rates_2025.json: recorded live on 2026-11-03
   with a key (DATA_ANALYST_RECORD; the key is not in the recorded URLs) from timeseries/hhpulse, timeseries/hps
   and timeseries/eits/hv. The HVS rows match Table 4 of the Census release (2025 homeownership rates).
+- wy_pums2024_call1/2.json, wy_asec2026_call1.json, wy_cpsbasic2026sep_call1.json and vars_*.json: recorded live
+  on 2026-11-04 with a key (DATA_ANALYST_RECORD) for the MICRO spec: ACS 2024 1-year PUMS for Wyoming ages 90-99
+  with the 80 replicate weights (two calls joined on SERIALNO, SPORDER), CPS ASEC 2026 and CPS basic September 2026
+  for Wyoming ages 80-85, and the per-variable metadata (/variables/<VAR>.json) behind the codebooks.
 - normalize() is unit-tested on hand-written rows that carry the documented special values; those rows
   are test inputs, not fixtures.
 """
+import csv
 import importlib.util
 import json
 import os
@@ -26,7 +31,7 @@ import unittest
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path[:0] = [os.path.join(HERE, "..", ".."),                                      # tests/ (testkit)
                 os.path.join(HERE, "..", "..", "..", "plugins", "data-analyst", "skills", "data-analyst", "scripts")]
-from testkit import PackTest, pack_dir# noqa: E402
+from testkit import PackTest, load_pack_module, pack_dir  # noqa: E402
 
 KEY = {"CENSUS_API_KEY": "test-key-not-real-0000"}
 SPEC = {"description": "Median household income, Maryland counties, latest ACS 5-year",
@@ -41,6 +46,15 @@ GEO = {"description": "names to codes",
                                 "county": "Montgomery"}},
                     {"name": "baltimore_city", "endpoint": "query",
                      "params": {"dataset": "acs5", "get": "NAME,B01003_001E", "state": "24", "place": "Baltimore"}}]}
+MICRO = {"description": "fixtures: ACS PUMS Wyoming ages 90+, replicates; ASEC and CPS basic Wyoming ages 80-85",
+         "requests": [
+             {"name": "wy_pums", "endpoint": "query",
+              "params": {"dataset": "2024/acs/acs1/pums", "get": "AGEP,HICOV,PINCP", "state": "WY", "AGEP": "90:99",
+                         "replicates": True}},
+             {"name": "wy_asec", "endpoint": "query",
+              "params": {"dataset": "2026/cps/asec/mar", "get": "A_AGE,NOW_COV", "state": "WY", "A_AGE": "80:85"}},
+             {"name": "wy_basic", "endpoint": "query",
+              "params": {"dataset": "2026/cps/basic/sep", "get": "PRTAGE,PEMLR", "state": "WY", "PRTAGE": "80:85"}}]}
 
 
 def adapter():
@@ -258,6 +272,138 @@ class TestCensus(PackTest):
             json.dump({"x": 1}, open(b, "w"))
             with self.assertRaises(DataError):          # never an empty table that looks fine
                 a.parse_upload(pack, req, [b])
+
+    # ------------------------------------------------------------------ ACS PUMS and CPS microdata
+    def test_pums_replicates_split_joined_with_codebook(self):
+        code, r, out = self.fetch(MICRO, env=KEY)
+        self.assertEqual(code, 0, r)
+        rows = self.csv(out, "wy_pums")
+        self.assertEqual(len(rows), 53)
+        reps = [f"PWGTP{i}" for i in range(1, 81)]
+        self.assertEqual(list(rows[0]), ["AGEP", "HICOV", "PINCP", "SERIALNO", "SPORDER", "PWGTP", "WGTP", "ADJINC"]
+                         + reps + ["state"])      # asked order; the AGEP the predicate echoes is not repeated
+        self.assertTrue(all(90 <= int(x["AGEP"]) <= 99 for x in rows))
+        # the second call's replicates landed on the same persons: compare with the recorded call itself
+        with open(os.path.join(self.fixtures, "wy_pums2024_call2.json"), encoding="utf-8") as f:
+            head, *call2 = json.load(f)
+        want = {(x[head.index("SERIALNO")], x[head.index("SPORDER")]): x[head.index("PWGTP80")] for x in call2}
+        self.assertEqual({(x["SERIALNO"], x["SPORDER"]): x["PWGTP80"] for x in rows}, want)
+        notes = " | ".join(r["notes"])
+        self.assertIn("added ADJINC", notes)                    # PINCP's label says to use ADJINC
+        self.assertIn("2 calls of at most 50 variables, joined on SERIALNO, SPORDER", notes)
+        book = self.csv(out, "wy_pums_codebook")
+        lab = {(x["variable"], x["value"]): x["value_label"] for x in book}
+        self.assertEqual(lab[("HICOV", "2")], "No health insurance coverage")
+        self.assertIn("N/A (less than 15", lab[("PINCP", "-19999")])
+        with open(os.path.join(out, "data", "census", "data_dictionary.csv"), encoding="utf-8") as f:
+            dd = {(x["table"], x["column"]): x for x in csv.DictReader(f)}
+        self.assertEqual(dd[("wy_pums", "PWGTP80")]["non_missing"], "53")
+        self.assertEqual(dd[("wy_pums", "SERIALNO")]["type"], "text")
+        # the analysis helper: replicate SE of the weighted share uninsured
+        pums = load_pack_module("census", "lib/pums.py")
+        import pandas as pd
+        df = pums.load(os.path.join(out, "data", "census", "wy_pums.csv"))
+        self.assertTrue(df["SERIALNO"].str.startswith("2024").all())         # keys stay text
+        self.assertTrue(pd.api.types.is_numeric_dtype(df["PWGTP"]))
+        est, se = pums.rep_se(df, lambda d, w: pums.wshare(pums.uninsured(d, "acs"), d[w]))
+        self.assertTrue(0 <= est < 1 and se >= 0)
+        with self.assertRaises(ValueError):                     # no replicates in the CPS files
+            pums.rep_se(pd.DataFrame({"PWSSWGT": [1.0]}), lambda d, w: 0.0, weight="PWSSWGT")
+
+    def test_cps_asec_and_basic_keys_and_weights(self):
+        code, r, out = self.fetch(MICRO, env=KEY)
+        self.assertEqual(code, 0, r)
+        a = self.csv(out, "wy_asec")
+        self.assertEqual(list(a[0]), ["A_AGE", "NOW_COV", "H_SEQ", "A_LINENO", "PERIDNUM", "MARSUPWT", "HSUP_WGT",
+                                      "state"])
+        self.assertEqual(len({(x["H_SEQ"], x["A_LINENO"]) for x in a}), len(a))   # the person key is unique
+        b = self.csv(out, "wy_basic")
+        self.assertEqual(list(b[0])[:7], ["PRTAGE", "PEMLR", "HRHHID", "HRHHID2", "PULINENO", "PWSSWGT", "PWCMPWGT"])
+        self.assertTrue(b[0]["HRHHID"].startswith("0") or len(b[0]["HRHHID"]) == 15)   # text, zeros kept
+        pums = load_pack_module("census", "lib/pums.py")
+        import pandas as pd
+        df = pums.load(os.path.join(out, "data", "census", "wy_basic.csv"))
+        self.assertEqual(set(pums.emp_status(df, "basic").dropna()) <= {"employed", "unemployed", "nilf"}, True)
+        with self.assertRaises(ValueError):
+            pums.uninsured(df, "basic")
+
+    def test_micro_spec_checks(self):
+        bad = {"requests": [
+            {"name": "a", "endpoint": "query",
+             "params": {"dataset": "cps_asec", "get": "PTOTVAL", "replicates": True}},
+            {"name": "b", "endpoint": "query",
+             "params": {"dataset": "acs1_pums", "get": "AGEP", "state": "MD", "county": "Montgomery"}},
+            {"name": "c", "endpoint": "query",
+             "params": {"dataset": "acs1_pums", "get": "AGEP", "agep": "25:54"}},
+            {"name": "d", "endpoint": "query",
+             "params": {"dataset": "2026/cps/basic/sep", "get": "PEMLR", "replicates": True}},
+            {"name": "e", "endpoint": "query",
+             "params": {"dataset": "1998/cps/asec/mar", "get": "A_AGE", "state": "MD"}}]}
+        code, r = self.check(bad)
+        self.assertEqual(r["route"], "fix_spec", r)
+        m = r["message"]
+        self.assertIn("ASEC replicate weights are not on the Census API", m)
+        self.assertIn("ipums", m)
+        self.assertIn("smallest area is the PUMA", m)
+        self.assertIn("filters are variable names in upper case", m)
+        self.assertIn("basic monthly files have no replicate weights", m)
+        self.assertIn("ASEC files before 2001 take no state geography", m)
+
+    def test_micro_links_national_by_state_and_chunks(self):
+        spec = {"requests": [{"name": "us", "endpoint": "query",
+                              "params": {"dataset": "2024/acs/acs1/pums", "get": "HICOV,AGEP", "AGEP": "0:18",
+                                         "replicates": True}},
+                             {"name": "cps_us", "endpoint": "query",
+                              "params": {"dataset": "2026/cps/basic/sep", "get": "PEMLR"}},
+                             {"name": "puma", "endpoint": "query",
+                              "params": {"dataset": "2024/acs/acs1/pums", "get": "HICOV", "state": "MD",
+                                         "for": "public use microdata area:*"}}]}
+        sp, out = self.write_spec(spec)
+        code, r = self.cli(sp, "--out", out, "--dry-run")
+        self.assertEqual(code, 0, r)
+        us = [i for i in r["manual_items"] if i["request"] == "us"]
+        self.assertEqual(len(us), 51 * 2)                       # 50 states and DC, two calls each
+        self.assertIn("for=state:01", us[0]["url"])
+        self.assertIn("AGEP=0:18", us[1]["url"])                # every call repeats the filter
+        self.assertIn("SERIALNO,SPORDER", us[1]["url"])         # and carries the join keys
+        self.assertIn("for=state:56", us[-1]["url"])
+        cps = [i for i in r["manual_items"] if i["request"] == "cps_us"]
+        self.assertEqual(len(cps), 1)
+        self.assertNotIn("for=", cps[0]["url"])                 # the nation: no geography (old ASEC fails with one)
+        puma = [i for i in r["manual_items"] if i["request"] == "puma"]
+        self.assertEqual(len(puma), 1)
+        self.assertIn("for=public use microdata area:*&in=state:24".replace(" ", "+"), puma[0]["url"])
+
+    def test_merge_chunks_out_of_order_and_missing(self):
+        from core.http import DataError
+        a = adapter()
+        p1 = (["X", "K", "state"], iter([["1", "a", "56"], ["2", "b", "56"], ["3", "c", "56"]]))
+        p2 = (["R1", "K"], iter([["r-a", "a"], ["r-c", "c"], ["r-b", "b"]]))
+        cols, rows = a._merge_chunks([p1, p2], ["K"])
+        self.assertEqual(cols, ["X", "K", "state", "R1"])
+        self.assertEqual(list(rows), [["1", "a", "56", "r-a"], ["2", "b", "56", "r-b"], ["3", "c", "56", "r-c"]])
+        p1 = (["X", "K"], iter([["1", "a"], ["2", "b"]]))
+        p2 = (["R1", "K"], iter([["r-b", "b"], ["r-z", "z"]]))
+        cols, rows = a._merge_chunks([p1, p2], ["K"])
+        with self.assertRaises(DataError):                      # never a blank replicate for a missing person
+            list(rows)
+        body = b'[["A","B"],\n["1",null],\n["2","x"]]'
+        self.assertEqual(list(a._iter_rows(body)), [["A", "B"], ["1", None], ["2", "x"]])
+
+    def test_micro_upload_joins_the_manual_files(self):
+        import tempfile
+        from core import packs
+        a, pack = adapter(), packs.load("census")
+        req = {"name": "wy_pums", "params": MICRO["requests"][0]["params"]}
+        with tempfile.TemporaryDirectory() as t:
+            for i, f in enumerate(("wy_pums2024_call1.json", "wy_pums2024_call2.json"), start=1):
+                with open(os.path.join(self.fixtures, f), "rb") as src, \
+                        open(os.path.join(t, f"wy_pums_{i:03d}.json"), "wb") as dst:
+                    dst.write(src.read())
+            rows = a.parse_upload(pack, req, [os.path.join(t, f) for f in sorted(os.listdir(t))])
+        self.assertEqual(len(rows), 53)
+        self.assertIn("PWGTP80", rows[0])
+        self.assertIn("PWGTP1", rows[0])
 
     def test_moe_names(self):
         a = adapter()

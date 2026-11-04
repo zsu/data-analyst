@@ -67,9 +67,21 @@
     "share of workers without health insurance by state",
     "veterans labor force participation",
     "workers earning near the minimum wage",
-    "custom tabulations from ACS or CPS microdata",
+    "custom tabulations from ACS or CPS microdata harmonized across years (codes, CPI99, attached spouse or parent traits)",
     "uninsured adults by income and age (NHIS)",
     "out-of-pocket medical spending by age and insurance type (MEPS)"
+  ],
+  "use_instead": [
+    {
+      "question": "A tabulation from one or a few recent ACS PUMS years, one CPS month or one CPS ASEC year without standard errors",
+      "source": "census",
+      "terms": [
+        "PUMS",
+        "replicate weights",
+        "ASEC"
+      ],
+      "why": "The Census Data API serves the same files with the census key, in seconds, public domain (shareable); ACS PUMS replicate weights included."
+    }
   ],
   "homepage": "https://www.ipums.org/",
   "terms_url": "https://www.ipums.org/about/terms",

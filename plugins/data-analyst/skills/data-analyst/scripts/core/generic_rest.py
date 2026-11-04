@@ -282,6 +282,10 @@ def merge_for_each(spec: dict, tables: dict) -> dict:
         asked = dict(r["_key"])
         out.setdefault(g, [])
         out[g] += [{**{k: v for k, v in asked.items() if k not in row}, **row} for row in rows]
+    named = {r["name"] for r in spec.get("requests") or []}
+    for name, rows in tables.items():          # tables an adapter adds beside its requests' (a codebook)
+        if name not in named and name not in out:
+            out[name] = rows
     return out
 
 

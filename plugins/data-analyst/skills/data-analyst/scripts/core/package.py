@@ -100,7 +100,33 @@ def _infer(vals: list[str]) -> str:
     return "text"
 
 
+class FileTable:
+    """A table already written to a CSV file (header row first), for microdata too large to hold as dicts: an
+    adapter streams the rows to `path` (a temporary file outside the skill folder) and returns this in place of
+    a list of rows; write() moves the file into data/<source>/ and builds the dictionary from `sample` (types,
+    examples) and `non_missing` (counts over every row, kept by the adapter while it streams)."""
+
+    def __init__(self, path: str, columns: list[str], rows: int, sample: list[dict] | None = None,
+                 non_missing: dict[str, int] | None = None):
+        self.path, self.columns, self.rows, self.sample = path, list(columns), int(rows), list(sample or [])
+        self.non_missing = dict(non_missing or {})
+
+    def __len__(self):
+        return self.rows
+
+    def __bool__(self):
+        return self.rows > 0
+
+    def discard(self) -> None:
+        try:
+            os.remove(self.path)
+        except OSError:
+            pass
+
+
 def _rows(table) -> tuple[list[dict], list[str]]:
+    if isinstance(table, FileTable):
+        return table.sample, table.columns
     if hasattr(table, "to_dict") and hasattr(table, "columns"):          # a pandas DataFrame
         cols = [str(c) for c in table.columns]
         return [{str(k): ("" if v is None or v != v else v) for k, v in r.items()}
@@ -149,13 +175,19 @@ def write(out: str, pack, tables: dict, spec: dict, route: str, acquired: str = 
         if not cols:            # an allowed empty result: same header as its endpoint's other tables, so it reads
             cols = shape.get(endpoint.get(name)) or ["no_rows"]
         fname = f"{name}.csv"
-        write_csv(os.path.join(d, fname), rows, cols)
+        if isinstance(table, FileTable):          # streamed to disk by the adapter: move it into place
+            import shutil
+            shutil.move(table.path, os.path.join(d, fname))
+        else:
+            write_csv(os.path.join(d, fname), rows, cols)
         for c in cols:
             vals = [r.get(c) for r in rows]
             nonmiss = [v for v in vals if v not in ("", None)]
             dictionary.append({"table": name, "column": c, "type": _infer(nonmiss[:500]),
-                               "non_missing": len(nonmiss), "example": str(nonmiss[0])[:80] if nonmiss else ""})
-        meta_tables.append({"name": name, "file": fname, "rows": len(rows), "columns": cols,
+                               "non_missing": table.non_missing.get(c, len(nonmiss)) if isinstance(table, FileTable)
+                               else len(nonmiss), "example": str(nonmiss[0])[:80] if nonmiss else ""})
+        meta_tables.append({"name": name, "file": fname, "rows": len(table) if isinstance(table, FileTable)
+                            else len(rows), "columns": cols,
                             "sha256": sha256(os.path.join(d, fname))})
     earlier = earlier_fetches(d, {t["file"] for t in meta_tables})
     kept = {t["name"] for e in earlier for t in e["tables"]}
