@@ -25,7 +25,7 @@ Use `fetch.py --route "<question>"` for a ranked suggestion.
 | Medicaid and CHIP enrollment, spending, drug use | medicaid | cms, census | data.medicaid.gov; preliminary vs updated rows; recent CMS-64 expenditure reports are manual downloads. |
 | Income tax returns, AGI and migration by state, county, ZIP code | irs-soi | census, bea | SOI amounts in thousands; tax year vs filing year; small cells suppressed. |
 | State and local government taxes, finances, pensions | census | pbgc, bea | Census QTAX (quarterly) and annual government finances; fiscal years differ by government. |
-| Imports, exports, tariffs and customs duty | census | treasury, world-bank | Census international trade by HS code with calculated duty; Treasury MTS customs duties for receipts. |
+| Imports, exports, tariffs and customs duty | census | usitc, treasury, world-bank | Census international trade by HS code with calculated duty; USITC HTS for statutory rates by line; Treasury MTS customs duties for receipts. |
 | Economic forecasts and forecast benchmarks | philfed | fred, usda-outlook | SPF and Greenbook (5-year lag) forecasts; USDA WASDE and baseline for agriculture. |
 | Household balance sheets, consumer credit, bank lending surveys | fed-board | fred, nyfed | Fed Board Z.1, G.19, SLOOS, SCF; FRED for single-series histories. |
 | Farm income, crop supply and demand outlook | usda-outlook | usda-nass | WASDE projections, ERS farm income forecasts, USDA baseline; NASS for survey estimates. |
@@ -99,6 +99,8 @@ Questions a pack does not answer, and the pack that does (each pack's policy.jso
 | treasury | Market yields and the daily par yield curve | treasury-yields | Daily Treasury par yield curve rates. |
 | treasury | Historical budget tables in percent of GDP, the President's budget | omb | OMB Historical Tables by budget edition. |
 | treasury | State and local government finances | census | Census government finance surveys. |
+| usitc | Duties actually collected, import values and quantities by HS code and country | census | Census international trade reports import values and calculated duty; the HTS gives the statutory rates only. |
+| usitc | Total customs duties received by the Treasury, monthly or by fiscal year | treasury | The Monthly Treasury Statement reports customs duty receipts. |
 
 ## All sources
 
@@ -162,6 +164,7 @@ Questions a pack does not answer, and the pack that does (each pack's policy.jso
 | usda-nass | standard | required (USDA_NASS_API_KEY) | agriculture, food | USDA NASS Quick Stats |
 | usda-outlook | standard | none | agriculture, food, economy | USDA forecasts and projections (WASDE, ERS farm income forecasts, USDA Agricultural Baseline) |
 | usgs | standard | optional (DATA_GOV_API_KEY) | natural hazards, earthquakes, water, environment | USGS earthquakes (ComCat) and Water Data (streamflow, groundwater) |
+| usitc | standard | none | trade, tariffs, customs duties | USITC Harmonized Tariff Schedule (HTS REST API: duty rates by HTS line) |
 | uspto | standard | required (USPTO_API_KEY) | patents, innovation, intellectual property, research | USPTO Open Data Portal (patent applications, PTAB, petitions, bulk datasets) |
 | va | standard | none | veterans, federal spending, population projections, disability benefits | VA Open Data (data.va.gov) and NCVAS Veteran Statistics |
 | world-bank | standard | none | international, economy, development, population, health, education | World Bank Indicators API (World Development Indicators and other databases) |
