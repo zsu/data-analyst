@@ -61,18 +61,29 @@ def wtotal(mask, w) -> float:
     return float(np.sum(np.asarray(w, dtype=float) * pd.Series(mask).fillna(False).astype(float).to_numpy()))
 
 
+REPLICATES = {"PWGTP": ("PWGTP", 80), "WGTP": ("WGTP", 80),          # ACS PUMS
+              "MARSUPWT": ("PWWGT", 160), "HSUP_WGT": ("PWWGT", 160)}  # CPS ASEC (households: reference persons)
+
+
 def rep_se(df: pd.DataFrame, estimator: Callable, weight: str = "PWGTP") -> tuple[float, float]:
     """(estimate, standard error) by Census's successive difference replication: the estimate with the full
-    weight and with each of its 80 replicates (PWGTP1-80 for PWGTP, WGTP1-80 for WGTP), SE = sqrt(4/80 *
-    sum((x_r - x)^2)). estimator(df, weight_column) -> float. ACS PUMS only: fetch with replicates: true
-    (person) or "household". 90 percent margin of error = 1.645 * SE."""
-    reps = [c for c in df.columns if re.fullmatch(rf"{weight}\d+", c)]
-    if len(reps) != 80:
-        raise ValueError(f"rep_se(): {len(reps)} {weight}1-80 columns in the data, 80 needed: fetch the request with "
-                         "replicates: true (person weights) or \"household\" (WGTP); CPS files on the API have none")
+    weight and with each replicate, SE = sqrt(4/R * sum((x_r - x)^2)). estimator(df, weight_column) -> float.
+    ACS PUMS: PWGTP with PWGTP1-80 (replicates: true), WGTP with WGTP1-80 ("household"); R = 80.
+    CPS ASEC: MARSUPWT with PWWGT1-160 (replicates: true, joined from Census's replicate weight file); household
+    estimates on the reference persons (householders(df, "asec")) with HSUP_WGT and the same PWWGT; R = 160.
+    CPS basic monthly files have none. 90 percent margin of error = 1.645 * SE."""
+    if weight not in REPLICATES:
+        raise ValueError(f"rep_se(): no replicate weights for {weight!r}; use one of {', '.join(REPLICATES)}")
+    prefix, r = REPLICATES[weight]
+    reps = [f"{prefix}{i}" for i in range(1, r + 1)]
+    have = [c for c in reps if c in df.columns]
+    if len(have) != r:
+        raise ValueError(f"rep_se(): {len(have)} of the {r} {prefix}1-{r} columns are in the data: fetch the request "
+                         "with replicates: true (ACS person or ASEC weights) or \"household\" (ACS WGTP); CPS basic "
+                         "monthly files have none")
     x = estimator(df, weight)
-    xr = np.array([estimator(df, r) for r in reps])
-    return float(x), float(np.sqrt(4.0 / 80 * np.sum((xr - x) ** 2)))
+    xr = np.array([estimator(df, c) for c in reps])
+    return float(x), float(np.sqrt(4.0 / r * np.sum((xr - x) ** 2)))
 
 
 def adjusted(df: pd.DataFrame, col: str, factor: str = "ADJINC") -> pd.Series:

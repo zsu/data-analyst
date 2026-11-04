@@ -18,6 +18,12 @@ Fixtures (fixtures/index.json):
   on 2026-11-04 with a key (DATA_ANALYST_RECORD) for the MICRO spec: ACS 2024 1-year PUMS for Wyoming ages 90-99
   with the 80 replicate weights (two calls joined on SERIALNO, SPORDER), CPS ASEC 2026 and CPS basic September 2026
   for Wyoming ages 80-85, and the per-variable metadata (/variables/<VAR>.json) behind the codebooks.
+- ASEC replicate weights (2026-11-04, with a key): wy_asec2026_rw_call1.json (the API call with PH_SEQ and PPPOS),
+  vars_asec2026_PH_SEQ/PPPOS.json and asec2026_march_listing.html (the www2 folder listing) are recorded.
+  trimmed_asec2026_repwgt.dat.gz and .sas are TRIMMED from the real CPS_ASEC_ASCII_REPWGT_2026 files: only the
+  78 records of the fixture's persons are kept, and the SAS weight totals are recomputed over those 78 records
+  (the full file is about 70 MB). Live on the full file, 2025 poverty from the API rows and these replicates
+  was 34,505 thousand +/- 909 (90 percent), P60-290 Table 1: 34,510 +/- 909.
 - normalize() is unit-tested on hand-written rows that carry the documented special values; those rows
   are test inputs, not fixtures.
 """
@@ -330,7 +336,7 @@ class TestCensus(PackTest):
     def test_micro_spec_checks(self):
         bad = {"requests": [
             {"name": "a", "endpoint": "query",
-             "params": {"dataset": "cps_asec", "get": "PTOTVAL", "replicates": True}},
+             "params": {"dataset": "2004/cps/asec/mar", "get": "PTOTVAL", "replicates": True}},
             {"name": "b", "endpoint": "query",
              "params": {"dataset": "acs1_pums", "get": "AGEP", "state": "MD", "county": "Montgomery"}},
             {"name": "c", "endpoint": "query",
@@ -342,7 +348,7 @@ class TestCensus(PackTest):
         code, r = self.check(bad)
         self.assertEqual(r["route"], "fix_spec", r)
         m = r["message"]
-        self.assertIn("ASEC replicate weights are not on the Census API", m)
+        self.assertIn("ASEC replicate weight files start with 2005", m)
         self.assertIn("ipums", m)
         self.assertIn("smallest area is the PUMA", m)
         self.assertIn("filters are variable names in upper case", m)
@@ -373,6 +379,77 @@ class TestCensus(PackTest):
         puma = [i for i in r["manual_items"] if i["request"] == "puma"]
         self.assertEqual(len(puma), 1)
         self.assertIn("for=public use microdata area:*&in=state:24".replace(" ", "+"), puma[0]["url"])
+
+    def test_asec_replicates_joined_from_census_file(self):
+        spec = {"requests": [{"name": "wy_asec_rw", "endpoint": "query",
+                              "params": {"dataset": "2026/cps/asec/mar", "get": "A_AGE,NOW_COV", "state": "WY",
+                                         "A_AGE": "80:85", "replicates": True}}]}
+        code, r, out = self.fetch(spec, env=KEY)
+        self.assertEqual(code, 0, r)
+        rows = self.csv(out, "wy_asec_rw")
+        self.assertEqual(len(rows), 78)
+        cols = list(rows[0])
+        self.assertEqual(cols[:9], ["A_AGE", "NOW_COV", "H_SEQ", "A_LINENO", "PERIDNUM", "PH_SEQ", "PPPOS", "MARSUPWT",
+                                    "HSUP_WGT"])
+        self.assertEqual(cols[-160:], [f"PWWGT{i}" for i in range(1, 161)])
+        self.assertTrue(any("sums match the totals" in n and "PWWGT0 equals MARSUPWT" in n for n in r["notes"]), r)
+        pums = load_pack_module("census", "lib/pums.py")
+        df = pums.load(os.path.join(out, "data", "census", "wy_asec_rw.csv"))
+        est, se = pums.rep_se(df, lambda d, w: pums.wshare(pums.uninsured(d, "asec"), d[w]), weight="MARSUPWT")
+        self.assertTrue(0 <= est < 1 and se >= 0)
+        # links for the manual route: the two Census files, no key
+        sp, o2 = self.write_spec(spec, "rw.json")
+        code, r = self.cli(sp, "--out", o2, "--dry-run")
+        rw = [i for i in r["manual_items"] if i["filename"].startswith("wy_asec_rw_repwgt")]
+        self.assertEqual(sorted(i["url"].rsplit("/", 1)[-1] for i in rw),
+                         ["CPS_ASEC_ASCII_REPWGT_2026.DAT.GZ", "CPS_ASEC_ASCII_REPWGT_2026.SAS"])
+        self.assertFalse(any(i["needs_key"] for i in rw))
+
+    def test_asec_replicate_gates(self):
+        import gzip
+        from core.http import DataError
+        a = adapter()
+        with open(os.path.join(self.fixtures, "trimmed_asec2026_repwgt.dat.gz"), "rb") as f:
+            blob = gzip.decompress(f.read())
+        with open(os.path.join(self.fixtures, "trimmed_asec2026_repwgt.sas"), encoding="latin-1") as f:
+            sas = f.read()
+        idx = a.asec_rw_index(blob, sas)
+        self.assertEqual(idx["records"], 78)
+        key = next(iter(idx["offsets"]))
+        w0, reps = a.asec_rw_values(blob, idx, key)
+        self.assertEqual(len(reps), 160)
+        self.assertRegex(reps[0], r"^-?\d+\.\d{4}$")
+        import re as _re
+        bad = _re.sub(r"(PWWGT0\s*=\s*)([\d.]+)", lambda m: m.group(1) + str(float(m.group(2)) + 5), sas, count=1)
+        with self.assertRaises(DataError):                  # a file that does not add up to its stated totals
+            a.asec_rw_index(blob, bad)
+        with self.assertRaises(DataError):                  # a cut download
+            a.asec_rw_index(blob[:len(blob) // 2], sas)
+        import tempfile
+        with tempfile.TemporaryDirectory() as t:            # a person whose PWWGT0 is not their MARSUPWT
+            src, dst = os.path.join(t, "a.csv"), os.path.join(t, "b.csv")
+            with open(src, "w", encoding="utf-8") as f:
+                f.write("PH_SEQ,PPPOS,MARSUPWT\n" + f"{key[0]},{key[1]},{w0 + 1:.4f}\n")
+            with self.assertRaises(DataError):
+                a.asec_join(src, dst, ["PH_SEQ", "PPPOS", "MARSUPWT"], blob, idx)
+            with open(src, "w", encoding="utf-8") as f:
+                f.write("PH_SEQ,PPPOS,MARSUPWT\n" + f"{key[0]},{key[1]},{w0:.4f}\n")
+            cols, n, _ = a.asec_join(src, dst, ["PH_SEQ", "PPPOS", "MARSUPWT"], blob, idx)
+            self.assertEqual((n, len(cols)), (1, 163))
+
+    def test_key_never_sent_to_www2(self):
+        a = adapter()
+        seen = []
+
+        class Fake:
+            base = "https://api.census.gov/data"
+
+            def request(self, method, path, params=None, **kw):
+                seen.append((path, kw.get("use_key")))
+                return None
+        a._get(Fake(), "https://www2.census.gov/programs-surveys/cps/datasets/2026/march/")
+        a._get(Fake(), "/2024/acs/acs1/pums", {"get": "AGEP"})
+        self.assertEqual([k for _, k in seen], [False, True])
 
     def test_merge_chunks_out_of_order_and_missing(self):
         from core.http import DataError

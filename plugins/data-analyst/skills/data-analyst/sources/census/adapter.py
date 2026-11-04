@@ -97,8 +97,10 @@ def check_error(status, body: bytes):
 
 def _get(client, path, params=None, allow_404=False):
     from core.http import DataError
+    # the key goes to the Data API only, never to www2.census.gov files (geography lists, replicate weights)
+    use_key = not path.startswith(("http://", "https://")) or path.startswith(client.base)
     try:
-        r = client.request("GET", path, params, ok_statuses=(200, 204), allow_404=allow_404)
+        r = client.request("GET", path, params, ok_statuses=(200, 204), allow_404=allow_404, use_key=use_key)
     except DataError as e:
         m = str(e)
         if e.kind == "api" and "missing_key" in m:
@@ -169,12 +171,13 @@ def _replicate_sets(kind: str, value) -> list[str]:
         return []
     sets = MICRO[kind].get("replicates") or {}
     v = "person" if value is True or str(value).lower() == "true" else str(value).lower()
+    if kind == "cps_asec":                 # not API columns: joined from Census's replicate weight file
+        if v not in ("person", "household", "both"):
+            raise ValueError(f"replicates must be true for the ASEC, not {value!r}")
+        return []
     if not sets:
-        raise ValueError({"cps_asec": "CPS ASEC replicate weights are not on the Census API (Census posts them "
-                                      "as a separate file per year on census.gov): use the ipums pack (REPWTP, "
-                                      "160 replicates) for ASEC standard errors, or drop replicates",
-                          "cps_basic": "the CPS basic monthly files have no replicate weights: drop replicates "
-                                       "and give an approximate standard error, saying so"}[kind])
+        raise ValueError("the CPS basic monthly files have no replicate weights: drop replicates and give an "
+                         "approximate standard error, saying so")
     if v not in ("person", "household", "both"):
         raise ValueError(f"replicates must be true, \"person\", \"household\" or \"both\", not {value!r}")
     return (sets["person"] if v in ("person", "both") else []) + (sets["household"] if v in ("household", "both") else [])
@@ -236,7 +239,13 @@ def micro_plan(ds: str, params: dict, meta: dict | None = None, absent: set | fr
         notes.append(f"added {', '.join(adj)}: the dollar variables say to multiply by it (value * {adj[0]} / "
                      "1,000,000 gives the survey year's dollars)")
     reps = _replicate_sets(kind, p.get("replicates"))
-    added = [v for v in spec["keys"] + spec["weights"] + adj if v not in user and v not in absent]
+    asec_reps = kind == "cps_asec" and p.get("replicates") not in (None, False, "", "false", "False", "none")
+    year = dataset_year(str(ds).strip("/"))
+    if asec_reps and year and year < ASEC_RW_FIRST:
+        raise ValueError(f"Census's ASEC replicate weight files start with {ASEC_RW_FIRST}: use the ipums pack "
+                         f"(REPWTP) for {year}, or drop replicates")
+    keys = spec["keys"] + (["PH_SEQ", "PPPOS"] if asec_reps else [])
+    added = [v for v in keys + spec["weights"] + adj if v not in user and v not in absent]
     if absent:
         notes.append(f"not in this file, so not added: {', '.join(sorted(absent))} (older years lack some keys "
                      "and weights)")
@@ -244,9 +253,14 @@ def micro_plan(ds: str, params: dict, meta: dict | None = None, absent: set | fr
     if reps:
         notes.append(f"{len(reps)} replicate weights added ({reps[0]}-{reps[-1]}): SE = sqrt(4/80 * sum over r of "
                      "(estimate_r - estimate)^2), Census's method for ACS PUMS")
+    if asec_reps:
+        notes.append(f"160 replicate weights PWWGT1-PWWGT160 joined from Census's ASEC replicate weight file "
+                     f"(CPS_ASEC_ASCII_REPWGT_<year>) on PH_SEQ and PPPOS: SE = sqrt(4/160 * sum over r of "
+                     f"(estimate_r - estimate)^2); household estimates: the reference person's row (A_EXPRRP 1-2) "
+                     f"with HSUP_WGT and the same replicates")
     cols = user + added + [r for r in reps if r not in user]
     join = [k for k in (spec.get("join") or spec["keys"]) if k not in absent]
-    first = [c for c in cols if c in spec["keys"] or c in spec["weights"]]
+    first = [c for c in cols if c in keys or c in spec["weights"]]
     rest = [c for c in cols if c not in first]
     room = MAX_VARS - len(first)
     chunks = [rest[:room] + first]
@@ -266,7 +280,7 @@ def micro_plan(ds: str, params: dict, meta: dict | None = None, absent: set | fr
                              "(AGEP: \"25:54\", HICOV: 2)")
     geos, gnotes = micro_geos(ds, kind, p)
     return {"kind": kind, "cols": cols, "chunks": chunks, "join": join, "geos": geos, "preds": preds,
-            "notes": notes + gnotes}
+            "asec_reps": asec_reps, "notes": notes + gnotes}
 
 
 def _iter_rows(body: bytes):
@@ -344,6 +358,105 @@ def _merge_chunks(parts: list[tuple[list, object]], join: list[str]) -> tuple[li
     return cols, gen()
 
 
+ASEC_RW_DIR = "https://www2.census.gov/programs-surveys/cps/datasets/{year}/march/"
+ASEC_RW_FIRST = 2005
+ASEC_REPS = [f"PWWGT{i}" for i in range(1, 161)]
+
+
+def asec_rw_candidates(client, year: int) -> list[tuple[str, str]]:
+    """[(data url, SAS layout url)] of the year's replicate weight files, from the folder listing: the main file
+    first, then variants (2020: ..._2020BASE, weights controlled to the 2020 Census)."""
+    from core.http import DataError
+    base = ASEC_RW_DIR.format(year=year)
+    hrefs = re.findall(r'href="([^"?/][^"]*)"', _get(client, base).text())
+    dats = [h for h in hrefs if re.fullmatch(rf"CPS_ASEC_ASCII_REPWGT_{year}(_\w+)?\.(dat\.gz|gz)", h, re.I)]
+    out = []
+    for d in sorted(dats, key=lambda h: (len(h), h)):
+        stem = re.sub(r"(\.dat)?\.gz$", "", d, flags=re.I)
+        sas = [h for h in hrefs if h.lower() == f"{stem.lower()}.sas"]
+        if sas:
+            out.append((base + d, base + sas[0]))
+    if not out:
+        raise DataError(f"census: no ASEC replicate weight file (CPS_ASEC_ASCII_REPWGT_{year}) in {base}",
+                        kind="not_found")
+    return out
+
+
+def asec_rw_index(blob: bytes, sas: str) -> dict:
+    """{layout, offsets {(h_seq, pppos): start of line}} of a replicate weight file (fixed width, layout and weight
+    totals from the year's SAS file). Gate: the sums of PWWGT0, PWWGT1 and PWWGT160 over every record must equal
+    the totals the SAS file states, so a misread layout or a cut download never reaches an estimate."""
+    from core.http import DataError
+    lay = {m.group(2).upper(): (int(m.group(1)) - 1, int(m.group(4)), int(m.group(5) or 0))
+           for m in re.finditer(r"@\s*(\d+)\s+(\w+)\s+(\$char|f)?(\d+)\.(\d*)", sas, re.I)}
+    totals = {k.upper(): float(v) for k, v in re.findall(r"(PWWGT\d+)\s*=\s*(-?[\d.]+)", sas, re.I)}
+    need = ["PWWGT0"] + ASEC_REPS + ["H_SEQ", "PPPOS"]
+    if any(k not in lay for k in need) or not {"PWWGT0", "PWWGT1", "PWWGT160"} <= set(totals):
+        raise DataError("census: the ASEC replicate weight SAS file has no layout or totals for PWWGT0-160, H_SEQ, "
+                        "PPPOS: the file format changed; use the ipums pack for ASEC standard errors", kind="api")
+    check = {k: lay[k] for k in ("PWWGT0", "PWWGT1", "PWWGT160")}
+    sums = dict.fromkeys(check, 0.0)
+    (hs, hw, _), (ps, pw, _) = lay["H_SEQ"], lay["PPPOS"]
+    offsets, pos, n = {}, 0, len(blob)
+    while pos < n:
+        end = blob.find(b"\n", pos)
+        end = n if end < 0 else end
+        line = blob[pos:end].rstrip(b"\r")
+        if line.strip():
+            for k, (st, w, dec) in check.items():
+                sums[k] += int(line[st:st + w]) / 10 ** dec
+            offsets[(int(line[hs:hs + hw]), int(line[ps:ps + pw]))] = pos
+        pos = end + 1
+    off = {k: round(sums[k] - totals[k], 2) for k in check if abs(sums[k] - totals[k]) > 0.05}
+    if off:
+        raise DataError(f"census: the ASEC replicate weight file does not add up to its stated totals (difference "
+                        f"{off}): a cut download or a changed layout; fetch again", kind="api")
+    return {"layout": lay, "offsets": offsets, "records": len(offsets)}
+
+
+def asec_rw_values(blob: bytes, idx: dict, key) -> tuple[float, list[str]] | None:
+    """(PWWGT0, [PWWGT1..160 as text with 4 decimals]) of one person, or None when the person is not in the file."""
+    pos = idx["offsets"].get(key)
+    if pos is None:
+        return None
+    lay = idx["layout"]
+    def val(k):
+        st, w, dec = lay[k]
+        return int(blob[pos + st:pos + st + w]) / 10 ** dec
+    return val("PWWGT0"), [f"{val(k):.4f}" for k in ASEC_REPS]
+
+
+def asec_join(src: str, dst: str, cols: list[str], blob: bytes, idx: dict) -> tuple[list[str], int, list[dict]]:
+    """Copy the streamed CSV `src` to `dst` with PWWGT1-160 appended. Gate: every person must be in the file and its
+    full-sample weight PWWGT0 must equal the API's MARSUPWT (the check Census's instructions give); otherwise
+    DataError (the caller tries the next candidate file). Returns (columns, rows, first 500 rows)."""
+    import csv
+    from core.http import DataError
+    i_h, i_p, i_w = cols.index("PH_SEQ"), cols.index("PPPOS"), cols.index("MARSUPWT")
+    out_cols = cols + ASEC_REPS
+    n, missing, off, sample = 0, 0, 0, []
+    with open(src, newline="", encoding="utf-8") as f, open(dst, "w", newline="", encoding="utf-8") as g:
+        rd, w = csv.reader(f), csv.writer(g)
+        next(rd)
+        w.writerow(out_cols)
+        for row in rd:
+            got = asec_rw_values(blob, idx, (int(row[i_h]), int(row[i_p])))
+            if got is None:
+                missing += 1
+                continue
+            if abs(got[0] - float(row[i_w] or 0)) > 0.01:
+                off += 1
+            row = row + got[1]
+            w.writerow(row)
+            n += 1
+            if len(sample) < 500:
+                sample.append(dict(zip(out_cols, row)))
+    if missing or off:
+        raise DataError(f"census: {missing} persons not in the ASEC replicate weight file and {off} whose PWWGT0 "
+                        f"differs from MARSUPWT", kind="api")
+    return out_cols, n, sample
+
+
 def micro_meta(client, pack, ds: str, vars_: list[str], strict: bool = True) -> dict:
     """{variable: metadata} from /variables/<VAR>.json (cached 30 days); an unknown name is a spec error (strict),
     else left out of the result."""
@@ -392,6 +505,43 @@ def micro_codebook(meta: dict) -> list[dict]:
         if not items and not rng:
             rows.append({**base, "value": "", "value_label": ""})
     return rows
+
+
+def _with_asec_reps(client, ds, tmp, cols, n, nonmiss):
+    """Join PWWGT1-160 to the streamed ASEC CSV; tries each candidate file of the year until one passes the gates."""
+    import tempfile
+    from core.http import DataError
+    year = dataset_year(ds)
+    errors = []
+    for dat, sas_url in asec_rw_candidates(client, year):
+        old = client.timeout
+        client.timeout = max(old, 300)          # about 70 MB
+        try:
+            import gzip
+            blob = gzip.decompress(_get(client, dat).body)
+            sas = _get(client, sas_url).text()
+        finally:
+            client.timeout = old
+        try:
+            idx = asec_rw_index(blob, sas)
+            fd, out = tempfile.mkstemp(prefix="census_asec_rw_", suffix=".csv")
+            os.close(fd)
+            try:
+                out_cols, m, sample = asec_join(tmp, out, cols, blob, idx)
+            except BaseException:
+                os.remove(out)
+                raise
+        except DataError as e:
+            errors.append(f"{dat.rsplit('/', 1)[-1]}: {e}")
+            continue
+        os.remove(tmp)
+        nm = {**nonmiss, **{c: m for c in ASEC_REPS}}
+        return out, out_cols, m, sample, nm, (
+            f"replicate weights from {dat} ({idx['records']:,} records; their sums match the totals in "
+            f"{sas_url.rsplit('/', 1)[-1]}, and every person's PWWGT0 equals MARSUPWT)")
+    os.remove(tmp)
+    raise DataError("census: no ASEC replicate weight file of " + str(year) + " matched the API's records: "
+                    + "; ".join(errors) + ". Use the ipums pack (REPWTP) for ASEC standard errors", kind="api")
 
 
 def fetch_micro(client, pack, r, ds: str, params: dict) -> tuple[dict, list[str]]:
@@ -456,6 +606,9 @@ def fetch_micro(client, pack, r, ds: str, params: dict) -> tuple[dict, list[str]
         os.remove(tmp)
         raise
     notes = [f"{name}: {x}" for x in plan["notes"]]
+    if plan.get("asec_reps") and cols is not None:
+        tmp, cols, n, sample, nonmiss, rw_note = _with_asec_reps(client, ds, tmp, cols, n, nonmiss)
+        notes.append(f"{name}: {rw_note}")
     if empty_geos:
         notes.append(f"{name}: {empty_geos} of {len(plan['geos'])} geographies had no matching persons")
     if cols is None:
@@ -900,6 +1053,15 @@ def manual_items(spec, pack):
                               "method": "GET", "body": None,
                               "note": "; ".join(note + ([f"call {i} of {len(calls)}; --ingest joins the files on "
                                                          f"{', '.join(plan['join'])}"] if len(calls) > 1 else []))})
+            y = dataset_year(ds)
+            if plan.get("asec_reps") and y:          # Census's replicate weight file and its layout, no key
+                stem = ASEC_RW_DIR.format(year=y) + f"CPS_ASEC_ASCII_REPWGT_{y}"
+                for ext, fname in ((".DAT.GZ" if y >= 2020 else ".dat.gz", f"{r['name']}_repwgt.dat.gz"),
+                                   (".SAS", f"{r['name']}_repwgt.sas")):
+                    items.append({"name": f"{r['name']}#{fname}", "request": r["name"], "url": stem + ext,
+                                  "filename": fname, "also_ext": [], "needs_key": False, "method": "GET",
+                                  "body": None, "note": "ASEC replicate weights (about 70 MB) and the layout with "
+                                  "their totals; --ingest joins them on PH_SEQ and PPPOS"})
             continue
         else:
             try:
@@ -960,6 +1122,34 @@ def _upload_vintage(resp: dict, req: dict, path: str) -> dict:
     return {"vintage": year, "census_dataset": product, "table_id": str(resp.get("objectId") or "")}
 
 
+def _upload_asec_reps(paths, rows: list[dict]) -> list[dict]:
+    """The uploaded ASEC rows with PWWGT1-160 from the uploaded replicate weight file (.dat.gz or .dat) and its
+    .sas layout, through the same gates as the API route (file totals; PWWGT0 = MARSUPWT for every person)."""
+    import gzip
+    from core.http import DataError
+    dat = [p for p in paths if re.search(r"\.(dat\.gz|gz|dat)$", p, re.I)]
+    sas = [p for p in paths if p.lower().endswith(".sas")]
+    if len(dat) != 1 or len(sas) != 1:
+        raise DataError("replicates: true needs the year's replicate weight file (CPS_ASEC_ASCII_REPWGT_<year>"
+                        ".DAT.GZ) and its .SAS layout among the uploads, one of each", kind="bad_request")
+    with open(dat[0], "rb") as f:
+        blob = f.read()
+    blob = gzip.decompress(blob) if blob[:2] == bytes([0x1F, 0x8B]) else blob     # gzip magic
+    with open(sas[0], encoding="latin-1") as f:
+        idx = asec_rw_index(blob, f.read())
+    out, bad = [], 0
+    for r in rows:
+        got = asec_rw_values(blob, idx, (int(r["PH_SEQ"]), int(r["PPPOS"])))
+        if got is None or abs(got[0] - float(r.get("MARSUPWT") or 0)) > 0.01:
+            bad += 1
+            continue
+        out.append({**r, **dict(zip(ASEC_REPS, got[1]))})
+    if bad:
+        raise DataError(f"{bad} persons are missing from the replicate weight file or have a PWWGT0 other than their "
+                        "MARSUPWT: upload the file of the same year (2020: try the _2020BASE file)", kind="bad_request")
+    return out
+
+
 def parse_upload(pack, req, paths):
     from core import generic_rest as gr
     from core.http import DataError
@@ -984,6 +1174,8 @@ def parse_upload(pack, req, paths):
                 parts.append((data[0], iter(data[1:])))
             cols, it = _merge_chunks(parts, plan["join"])
             rows += [dict(zip(cols, r)) for r in it]
+        if plan.get("asec_reps"):
+            rows = _upload_asec_reps(paths, rows)
         return rows
     rows = []
     for p in sorted(paths):

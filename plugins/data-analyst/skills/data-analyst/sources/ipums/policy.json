@@ -73,14 +73,14 @@
   ],
   "use_instead": [
     {
-      "question": "A tabulation from one or a few recent ACS PUMS years, one CPS month or one CPS ASEC year without standard errors",
+      "question": "A tabulation from one or a few recent ACS PUMS years, one CPS month or one CPS ASEC year (standard errors from 2005 on)",
       "source": "census",
       "terms": [
         "PUMS",
         "replicate weights",
         "ASEC"
       ],
-      "why": "The Census Data API serves the same files with the census key, in seconds, public domain (shareable); ACS PUMS replicate weights included."
+      "why": "The census pack serves the same Census files with the census key, in seconds, public domain (shareable), with ACS PUMS replicate weights and the ASEC's from Census's replicate weight file."
     }
   ],
   "homepage": "https://www.ipums.org/",
