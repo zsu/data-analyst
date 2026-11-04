@@ -28,6 +28,11 @@ One Agent Skills skill (`plugins/data-analyst/skills/data-analyst/`, shipped as 
 - Hard limits in tests/test_structure.py: SKILL.md description <= 1024 chars (claude.ai rejects longer) and
   body <= 500 lines (Anthropic guidance); fixtures < 200 KB. source.md length is guidance only.
 - Never write inside the skill folder at run time; never print or store keys; never invent data.
+- Key guard: `plugins/data-analyst/hooks/` (hooks.json, `guard_keys.py` and its sh/ps1 wrappers) is a PreToolUse hook
+  for Claude Code and Codex that refuses tool calls that would show a key (key files, key variables, environment
+  dumps, inline `core.keys` lookups). A guardrail, not a sandbox: it fails open and a path built at run time gets
+  past it. It allows edits inside a checkout of this repo. Tests: tests/test_hook.py. A new key file or lookup
+  in `core.keys` needs a matching rule there.
 - Prefer a gate to a sentence: when a script can check the substance of a SKILL.md rule (not just that a field
   is filled), enforce it in `scripts/report/` with a FAIL that says what to do, and add a test that the gate
   fails on the real mistake. Evidence a tool writes (`specs/checked.json`, `references/opened.json`, facts

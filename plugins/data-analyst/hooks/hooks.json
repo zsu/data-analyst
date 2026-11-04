@@ -1,0 +1,17 @@
+{
+  "description": "data-analyst key guard: refuses tool calls that would show an API key the skill stores",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|PowerShell|Read|Grep|NotebookRead|Write|Edit|MultiEdit|NotebookEdit|apply_patch",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/guard_keys.sh\"",
+            "commandWindows": "powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand JABQAHIAbwBnAHIAZQBzAHMAUAByAGUAZgBlAHIAZQBuAGMAZQAgAD0AIAAnAFMAaQBsAGUAbgB0AGwAeQBDAG8AbgB0AGkAbgB1AGUAJwA7ACAAJAByACAAPQAgAGkAZgAgACgAJABlAG4AdgA6AFAATABVAEcASQBOAF8AUgBPAE8AVAApACAAewAgACQAZQBuAHYAOgBQAEwAVQBHAEkATgBfAFIATwBPAFQAIAB9ACAAZQBsAHMAZQAgAHsAIAAkAGUAbgB2ADoAQwBMAEEAVQBEAEUAXwBQAEwAVQBHAEkATgBfAFIATwBPAFQAIAB9ADsAIAAmACAAKABKAG8AaQBuAC0AUABhAHQAaAAgACQAcgAgACcAaABvAG8AawBzAFwAZwB1AGEAcgBkAF8AawBlAHkAcwAuAHAAcwAxACcAKQA7ACAAZQB4AGkAdAAgACQATABBAFMAVABFAFgASQBUAEMATwBEAEUA"
+          }
+        ]
+      }
+    ]
+  }
+}
