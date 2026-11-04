@@ -12,7 +12,8 @@ plan shows; the default is a conservative guess, not a documented limit) or when
 breaks the skill rules (name <= 64 chars of a-z, 0-9 and hyphens; description <= 1024 chars).
 
 With --plugin the zip is the plugin for claude.ai / Cowork (Customize > Plugins > Upload plugin): the same
-skill files under `skills/data-analyst/` plus `.claude-plugin/plugin.json` at the zip root.
+skill files under `skills/data-analyst/` plus `.claude-plugin/plugin.json` and the key-guard hook (`hooks/`)
+at the zip root.
 """
 import argparse
 import json
@@ -90,6 +91,10 @@ def build(out: str, plugin: bool = False) -> int:
         if plugin:
             z.write(os.path.join(PLUGIN, ".claude-plugin", "plugin.json"), ".claude-plugin/plugin.json")
             n += 1
+            for f in sorted(os.listdir(os.path.join(PLUGIN, "hooks"))):   # the key guard (hooks/hooks.json)
+                if os.path.splitext(f)[1] in (".json", ".py", ".sh", ".ps1"):
+                    z.write(os.path.join(PLUGIN, "hooks", f), "hooks/" + f)
+                    n += 1
         for f in files():
             z.write(f, top + "/" + os.path.relpath(f, SKILL).replace(os.sep, "/"))
             n += 1
