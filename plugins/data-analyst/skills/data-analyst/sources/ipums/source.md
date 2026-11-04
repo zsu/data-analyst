@@ -14,10 +14,10 @@ ATUS, NHIS, MEPS) as filtered extracts, for weighted estimates with standard err
   (`cpsYYYY_MMs`) for monthly labor force and hourly/weekly earnings; NHIS (`ihYYYY`) for insurance at the
   interview, access to care, conditions and health status; MEPS (`mpYYYY`) for health care spending
   (total, out-of-pocket, by payer) and insurance over a whole year (`docs/variables.md` sections 8-9).
-- Recent ACS PUMS years, one CPS month or one ASEC year without standard errors: the census pack serves the
-  same Census files directly (census key, seconds, public domain, PWGTP1-80 replicates for ACS). Use this pack
+- Recent ACS PUMS years, one CPS month or one ASEC year: the census pack serves the same Census files directly
+  (census key, seconds, public domain; replicate weights for ACS and for the ASEC from 2005). Use this pack
   for what only IPUMS adds: codes harmonized across years (EDUC, OCC1990), CPI99, attached spouse or parent
-  traits, CPS panels (CPSIDP), ASEC replicate weights, years before 2004 (ACS) or 1989 (CPS), NHIS, MEPS, ATUS,
+  traits, CPS panels (CPSIDP), ASEC standard errors before 2005, years before 2004 (ACS) or 1989 (CPS), NHIS, MEPS, ATUS,
   historical censuses and international samples.
 - Not here: published ACS tables by geography (census pack), official BLS rates and CPS-based series
   (bls, fred), federal workforce administrative records (opm), published health statistics (cdc) and

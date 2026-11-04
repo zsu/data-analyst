@@ -29,8 +29,8 @@ PAIRINGS = [
     ("Demographics, poverty, income by place", "census", "ipums, bea",
      "ACS tables with margins of error; ACS PUMS (census) or IPUMS microdata for custom tabulations; BEA regional income."),
     ("Custom tabulations from recent ACS or CPS microdata", "census", "ipums, bls",
-     "ACS PUMS (2004 on, PWGTP1-80 replicate SEs), CPS basic monthly (1989 on) and ASEC (1992 on) on the Census API, "
-     "public domain; IPUMS for harmonized codes across years, CPI99, CPS panels, ASEC replicate SEs, earlier years."),
+     "ACS PUMS (2004 on, PWGTP1-80 replicate SEs), CPS basic monthly (1989 on) and ASEC (1992 on; 160 replicate SEs "
+     "from 2005) from Census, public domain; IPUMS for harmonized codes across years, CPI99, CPS panels, earlier years."),
     ("Custom tabulations from survey microdata: long series, NHIS, MEPS, ATUS, historical censuses", "ipums", "census, bls",
      "IPUMS CPS/ACS/decennial, NHIS, MEPS; weighted estimates with SEs; microdata never redistributed. SIPP through census."),
     ("Income and program participation month to month (SNAP, SSI, Medicaid, coverage spells)", "census", "ipums, medicaid",

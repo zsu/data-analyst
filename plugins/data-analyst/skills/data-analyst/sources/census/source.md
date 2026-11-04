@@ -14,7 +14,8 @@ Survey (2020-2024).
 - Custom tabulations the published tables do not give, from recent person microdata (Census codes, weighted
   by the pack's added weights): ACS PUMS (`acs1_pums`, `acs5_pums`; 2004 on, states and PUMAs, standard errors
   from PWGTP1-80), one CPS basic month (`<YYYY>/cps/basic/<mon>`, 1989 on: labor force, hours, weekly earnings)
-  or one CPS ASEC year (`cps_asec`, 1992 on: income, poverty, insurance of the previous year; point estimates).
+  or one CPS ASEC year (`cps_asec`, 1992 on: income, poverty, insurance of the previous year; standard errors
+  from 2005 on, with Census's 160 replicate weights).
 - Month-to-month income, program participation (SNAP, SSI, Medicaid, unemployment benefits), health
   coverage spells, assets and debts of the same people over time: SIPP microdata (`sipp`), national
   estimates weighted by the pack.
@@ -27,8 +28,8 @@ Survey (2020-2024).
   household expenses, food scarcity, unable to pay an energy bill, likelihood of eviction or foreclosure, price
   worries (`pulse` for 2024, `pulse_covid` for 2020-2023), for the nation, states and metros.
 - Not here: monthly unemployment and jobs (bls), GDP and personal income by state (bea); microdata with codes
-  harmonized across years, CPI99, spouse or parent traits, CPS panels, ASEC standard errors (replicate
-  weights), years before 2004 (ACS) or 1989 (CPS), NHIS, MEPS, ATUS and historical censuses (ipums); international comparisons (world-bank), federal spending
+  harmonized across years, CPI99, spouse or parent traits, CPS panels, ASEC standard errors before 2005,
+  years before 2004 (ACS) or 1989 (CPS), NHIS, MEPS, ATUS and historical censuses (ipums); international comparisons (world-bank), federal spending
   by state (usaspending, which ships stale population figures: use this pack for the denominator).
   Household Pulse from 2025 on (HTOPS: census.gov tables and public-use files only, not on the API) and HVS
   rates by region, state or metro (census.gov/housing/hvs/data/rates.html): published tables, not covered.
@@ -190,8 +191,11 @@ Find others: `fetch.py --source census --search "median household income"` (late
   is weighted, never a row count. Filters are upper-case variable predicates (`"AGEP": "25:54"`, `"HICOV": 2`),
   repeated on every call; geography: `state`, or `for: "public use microdata area:*"` with a state (ACS);
   no state = the nation (ACS fetched state by state, 51 calls, about 2 minutes for the 3.4 million persons).
-  `replicates: true` (ACS only) adds PWGTP1-80 (`"household"`: WGTP1-80, `"both"`); columns past 50 come in
-  further calls joined on the keys. Standard error: `pums.rep_se` (lib/pums.py), sqrt(4/80 * sum of squared
+  `replicates: true` adds PWGTP1-80 for ACS (`"household"`: WGTP1-80, `"both"`); columns past 50 come in
+  further calls joined on the keys. For the ASEC (2005 on) it adds PH_SEQ and PPPOS and joins PWWGT1-160 from
+  Census's replicate weight file (CPS_ASEC_ASCII_REPWGT_<year> on www2.census.gov, about 70 MB, no key), after
+  two gates: the file's weight sums equal the totals its SAS layout states, and every person's PWWGT0 equals
+  MARSUPWT (2020: the 2020-based file is tried when the main one does not match). Standard error: `pums.rep_se` (lib/pums.py), sqrt(4/80 * sum of squared
   replicate differences), MOE = 1.645 * SE. Checked 2026-11-04: Maryland's 2024 uninsured rate in the civilian
   noninstitutionalized population from PUMS was 6.26 +/- 0.32 percent, published S2701 6.3 +/- 0.3; the nation
   8.19 vs 8.2.
@@ -203,8 +207,14 @@ Find others: `fetch.py --source census --search "median household income"` (late
     subsample of the full ACS: a PUMS figure differs slightly from the published table (inside its MOE);
     publish your figure as your own calculation and benchmark it against the table.
   - CPS: ASEC income, poverty (PERLIS) and full-year insurance (COV) refer to the previous calendar year; NOW_COV
-    is coverage at the interview. The API has no ASEC replicate weights (Census posts them as a separate file per
-    year): give point estimates, or use the ipums pack (REPWTP, 160) when a comparison needs a standard error.
+    is coverage at the interview. Standard errors: `pums.rep_se(df, f, weight="MARSUPWT")` (PWWGT1-160,
+    SE = sqrt(4/160 * sum of squared differences)); household estimates on `pums.householders(df, "asec")` with
+    `weight="HSUP_WGT"` and the same replicates. Checked 2026-11-04: 2025 official poverty from the 2026 ASEC was
+    34,505 thousand +/- 909 and 10.2 +/- 0.3 percent (PERLIS 1 among PERLIS != -1), P60-290 Table 1 34,510 +/- 909
+    and 10.2 +/- 0.3. Before 2005 there is no replicate file: use the ipums pack.
+    The API's 2020 and 2021 ASEC weights are the 2010-Census-based ones (their PWWGT0 matched the main replicate
+    file, checked 2026-11-04); Census advises its 2020-based weights to compare those years with 2022 on, and
+    they are not on the API: say which weights a 2020-2021 comparison uses.
     ASEC files before 2001 take no state geography on the API (HTTP 500): fetch the nation and filter on the
     file's state variable, or use ipums. Older files lack some keys and weights (HRHHID2 before 2004, PERIDNUM
     in early ASECs): the pack leaves them out and says so. CPS basic monthly has no replicate weights at all; month-to-month person links need HRHHID, HRHHID2 and
