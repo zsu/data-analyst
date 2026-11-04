@@ -97,5 +97,40 @@
   "formats": [
     "csv",
     "xlsx"
+  ],
+  "use_instead": [
+    {
+      "question": "One Board series' long history or its past vintages",
+      "source": "fred",
+      "terms": [
+        "ALFRED"
+      ],
+      "why": "FRED mirrors most Board series; ALFRED keeps vintages."
+    },
+    {
+      "question": "SOFR, EFFR, SOMA holdings, primary dealer positions",
+      "source": "nyfed",
+      "terms": [
+        "SOFR",
+        "SOMA"
+      ],
+      "why": "The New York Fed publishes these."
+    },
+    {
+      "question": "Forecasts of these series",
+      "source": "philfed",
+      "terms": [
+        "Greenbook"
+      ],
+      "why": "SPF and Greenbook forecasts."
+    },
+    {
+      "question": "Bank-level balance sheets and income",
+      "source": "fdic",
+      "terms": [
+        "call report"
+      ],
+      "why": "FDIC institution financials."
+    }
   ]
 }

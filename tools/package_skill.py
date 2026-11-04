@@ -5,8 +5,8 @@ is a plain Agent Skills folder, so any assistant that reads SKILL.md can use it 
     python tools/package_skill.py --plugin [--out dist/data-analyst-plugin.zip]
 
 The zip holds the skill folder `data-analyst/` without tests, fixtures, caches, out/ folders or
-bytecode. Every pack's policy.json and endpoints.json go into one sources/packs.json (read by
-core.packfiles), since claude.ai rejects a zip of more than 200 files. It prints the file count and size and
+bytecode. Every pack's policy.json, endpoints.json and adapter.py go into one sources/packs.json (read by
+core.packfiles and core.packs), since claude.ai rejects a zip of more than 200 files. It prints the file count and size and
 fails when the count passes --max-files, when the size passes --max-mb (set it to the limit your claude.ai
 plan shows; the default is a conservative guess, not a documented limit) or when SKILL.md's frontmatter
 breaks the skill rules (name <= 64 chars of a-z, 0-9 and hyphens; description <= 1024 chars).
@@ -28,7 +28,8 @@ PLUGIN = os.path.join(ROOT, "plugins", "data-analyst")
 SKILL = os.path.join(PLUGIN, "skills", "data-analyst")
 SKIP_DIRS = {"tests", "__pycache__", "out", ".pytest_cache", "fixtures"}
 SKIP_EXT = {".pyc", ".pyo"}
-BUNDLED = ("policy.json", "endpoints.json")       # sources/<id>/<name> -> sources/packs.json
+BUNDLED = ("policy.json", "endpoints.json")       # sources/<id>/<name> -> sources/packs.json, parsed
+BUNDLED_TEXT = ("adapter.py",)                    # ... as source text (code reads these; the model never does)
 
 
 def frontmatter_problems() -> list[str]:
@@ -49,7 +50,7 @@ def frontmatter_problems() -> list[str]:
 
 def _bundled(path: str) -> bool:
     rel = os.path.relpath(path, SKILL).split(os.sep)
-    return len(rel) == 3 and rel[0] == "sources" and rel[2] in BUNDLED
+    return len(rel) == 3 and rel[0] == "sources" and rel[2] in BUNDLED + BUNDLED_TEXT
 
 
 def files():
@@ -62,7 +63,8 @@ def files():
 
 
 def bundle() -> dict:
-    """{"<id>": {"policy.json": {...}, "endpoints.json": {...}}} for every pack (core/packfiles.py reads it)."""
+    """{"<id>": {"policy.json": {...}, "endpoints.json": {...}, "adapter.py": "<text>"}} for every pack
+    (core/packfiles.py reads it)."""
     out = {}
     src = os.path.join(SKILL, "sources")
     for pid in sorted(os.listdir(src)):
@@ -71,6 +73,11 @@ def bundle() -> dict:
             if os.path.exists(p):
                 with open(p, encoding="utf-8") as f:
                     out.setdefault(pid, {})[name] = json.load(f)
+        for name in BUNDLED_TEXT:
+            p = os.path.join(src, pid, name)
+            if os.path.exists(p):
+                with open(p, encoding="utf-8") as f:
+                    out.setdefault(pid, {})[name] = f.read()
     return out
 
 

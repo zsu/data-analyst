@@ -89,5 +89,31 @@
   "formats": [
     "json",
     "csv"
+  ],
+  "use_instead": [
+    {
+      "question": "Bank financial condition or failures",
+      "source": "fdic",
+      "terms": [
+        "failures"
+      ],
+      "why": "FDIC BankFind holds call-report financials and the failed-bank list."
+    },
+    {
+      "question": "Company financial statements",
+      "source": "sec",
+      "terms": [
+        "XBRL"
+      ],
+      "why": "EDGAR XBRL company facts."
+    },
+    {
+      "question": "Auto safety complaints",
+      "source": "nhtsa",
+      "terms": [
+        "complaints"
+      ],
+      "why": "NHTSA vehicle safety complaints, not consumer-finance complaints."
+    }
   ]
 }

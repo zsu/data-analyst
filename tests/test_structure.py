@@ -121,6 +121,23 @@ class TestPacks(unittest.TestCase):
             text = open(f, encoding="utf-8").read()
             self.assertNotIn('if __name__ == "__main__"', text, f"{f}: core modules must not be run as scripts")
 
+    def test_adapters_are_self_contained(self):
+        """The upload zip carries adapter.py only as text in sources/packs.json (core.packs.load builds it from
+        there), so an adapter must not import a module of its own pack folder: that module would be in the zip,
+        but the adapter's import of it is untested there. Move such code into adapter.py, or make the pack deep."""
+        for pid in packs.pack_ids():
+            d = os.path.join(SKILL, "sources", pid)
+            ad = os.path.join(d, "adapter.py")
+            if not os.path.exists(ad):
+                continue
+            src = open(ad, encoding="utf-8").read()
+            for f in os.listdir(d):
+                name = f[:-3]
+                if f.endswith(".py") and f != "adapter.py" and re.search(
+                        rf"^\s*(from\s+{re.escape(name)}\b|import\s+{re.escape(name)}\b)", src, re.M):
+                    self.fail(f"sources/{pid}/adapter.py imports its sibling {f}; put that code in adapter.py "
+                              "(the upload zip bundles adapter.py into sources/packs.json)")
+
     def test_routing_up_to_date(self):
         r = subprocess.run([sys.executable, os.path.join(ROOT, "tools", "gen_routing.py"), "--check"])
         self.assertEqual(r.returncode, 0, "references/routing.md is stale: run python tools/gen_routing.py")

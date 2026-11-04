@@ -84,7 +84,17 @@
     "hs code",
     "customs duty",
     "tariff revenue",
-    "trade deficit"
+    "trade deficit",
+    "household pulse",
+    "pulse survey",
+    "household hardship",
+    "difficulty paying expenses",
+    "food scarcity",
+    "unable to pay energy bill",
+    "homeownership rate",
+    "vacancy rate",
+    "rental vacancy rate",
+    "homeowner vacancy rate"
   ],
   "questions": [
     "median household income by county in a state",
@@ -97,7 +107,9 @@
     "monthly retail sales or housing starts",
     "quarterly state and local tax revenue by state (QTAX)",
     "state and local government revenue, spending and debt by state",
-    "imports from a country by HS chapter and the duty calculated on them"
+    "imports from a country by HS chapter and the duty calculated on them",
+    "share of adults with difficulty paying usual household expenses (Household Pulse)",
+    "quarterly homeownership rate and rental vacancy rate"
   ],
   "homepage": "https://www.census.gov/data/developers.html",
   "terms_url": "https://www.census.gov/data/developers/about/terms-of-service.html",
@@ -162,5 +174,48 @@
   ],
   "formats": [
     "json"
+  ],
+  "use_instead": [
+    {
+      "question": "Monthly unemployment and payroll jobs",
+      "source": "bls",
+      "terms": [
+        "unemployment",
+        "CES"
+      ],
+      "why": "BLS produces both."
+    },
+    {
+      "question": "GDP and personal income by state",
+      "source": "bea",
+      "terms": [
+        "personal income"
+      ],
+      "why": "BEA regional accounts."
+    },
+    {
+      "question": "Custom tabulations from CPS, ACS or NHIS microdata",
+      "source": "ipums",
+      "terms": [
+        "NHIS"
+      ],
+      "why": "IPUMS harmonized microdata, weighted with SEs."
+    },
+    {
+      "question": "International comparisons",
+      "source": "world-bank",
+      "terms": [
+        "World Development Indicators"
+      ],
+      "why": "World Bank indicators across countries."
+    },
+    {
+      "question": "Federal spending by state",
+      "source": "usaspending",
+      "terms": [
+        "obligations"
+      ],
+      "why": "USAspending awards by place of performance."
+    }
   ]
 }

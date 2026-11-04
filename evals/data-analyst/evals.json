@@ -1961,6 +1961,364 @@
         },
         "added_at": "2026-10-31T00:00:00+00:00"
       }
+    },
+    {
+      "id": "pulse-expense-difficulty-2024",
+      "prompt": "For a cost-of-living brief: what share of adults found it somewhat or very difficult to pay usual household expenses, nationally and in Maryland, in the Census Household Pulse Survey's last 2024 collection period, and how does the national figure compare with the last COVID-era Pulse week in October 2023? Use the Census Bureau's data. This is a scheduled, unattended run: nobody can answer questions, so decide every open choice yourself by agency precedent and record it. Save the work in out/pulse-expense.",
+      "expected_output": "Household Pulse Phase 4.2 cycle 09 (Aug 20 - Sep 16, 2024): 37.1% of adults nationally (MOE 0.7) and 34.3% in Maryland (MOE 3.4), the difference not statistically significant; week 63 (Oct 18-30, 2023): 40.8% (MOE 0.6), a different survey phase whose question set and contact frame changed, so not a clean trend. Experimental data product; weighted response rate under 5%. No 2025 figure on the API (HTOPS). Audit passed.",
+      "files": [],
+      "expectations": [
+        "Gets the national 2024 cycle 09 rate (37.1%) and Maryland's (34.3%) from timeseries/hhpulse with MEASURE_NAME EXPENSE, and week 63's 40.8% from timeseries/hps",
+        "Reports each rate with its margin of error (0.7, 3.4, 0.6 points) and does not call Maryland different from the nation: the 2.8-point gap is within the combined margins",
+        "Says the 2023 and 2024 figures come from different survey phases (COVID-era HPS weeks vs Phase 4 cycles; Phase 4.2 changed the contact frame), so the change is not presented as a clean trend",
+        "Calls the Household Pulse Survey an experimental data product with low response rates (4.7% weighted in cycle 09)",
+        "Fetches through fetch.py's census pack (aliases pulse / pulse_covid or the timeseries paths) rather than hand-typed numbers, and does not present a later HTOPS table as API data"
+      ],
+      "rsi": {
+        "title": "Census Household Pulse: difficulty paying household expenses, U.S. and Maryland, 2024 vs October 2023",
+        "invoke": "explicit",
+        "interaction": "none",
+        "criteria": [
+          {
+            "id": "c1",
+            "text": "Gets the national 2024 cycle 09 rate (37.1%) and Maryland's (34.3%) from timeseries/hhpulse with MEASURE_NAME EXPENSE, and week 63's 40.8% from timeseries/hps",
+            "severity": "critical"
+          },
+          {
+            "id": "c2",
+            "text": "Reports each rate with its margin of error (0.7, 3.4, 0.6 points) and does not call Maryland different from the nation: the 2.8-point gap is within the combined margins",
+            "severity": "critical"
+          },
+          {
+            "id": "c3",
+            "text": "Says the 2023 and 2024 figures come from different survey phases (COVID-era HPS weeks vs Phase 4 cycles; Phase 4.2 changed the contact frame), so the change is not presented as a clean trend",
+            "severity": "major"
+          },
+          {
+            "id": "c4",
+            "text": "Calls the Household Pulse Survey an experimental data product with low response rates (4.7% weighted in cycle 09)",
+            "severity": "major"
+          },
+          {
+            "id": "c5",
+            "text": "Fetches through fetch.py's census pack (aliases pulse / pulse_covid or the timeseries paths) rather than hand-typed numbers, and does not present a later HTOPS table as API data",
+            "severity": "minor"
+          }
+        ],
+        "deterministic_checks": [
+          {
+            "id": "answer-exists",
+            "type": "file_exists",
+            "path": "out/pulse-expense/answer.md",
+            "severity": "critical"
+          },
+          {
+            "id": "analysis-exists",
+            "type": "file_exists",
+            "path": "out/pulse-expense/analysis.py",
+            "severity": "major"
+          },
+          {
+            "id": "facts-exists",
+            "type": "file_exists",
+            "path": "out/pulse-expense/facts.json",
+            "severity": "major"
+          },
+          {
+            "id": "decisions-exists",
+            "type": "file_exists",
+            "path": "out/pulse-expense/decisions.json",
+            "severity": "major"
+          },
+          {
+            "id": "specs-checked",
+            "type": "file_exists",
+            "path": "out/pulse-expense/specs/checked.json",
+            "severity": "minor"
+          },
+          {
+            "id": "audit-answer",
+            "type": "command",
+            "cmd": "{python} {skill}/scripts/report/audit_answer.py {sandbox}/out/pulse-expense --rerun",
+            "expect_exit": 0,
+            "timeout": 600,
+            "severity": "major"
+          },
+          {
+            "id": "handoff",
+            "type": "command",
+            "cmd": "{python} {skill}/scripts/fetch.py --handoff --out {sandbox}/out/pulse-expense",
+            "expect_exit": 0,
+            "severity": "minor"
+          },
+          {
+            "id": "no-secrets",
+            "type": "command",
+            "cmd": "{python} {skill}/scripts/report/scan_secrets.py {sandbox}/out/pulse-expense",
+            "expect_exit": 0,
+            "severity": "critical"
+          },
+          {
+            "id": "no-pycache-in-skill",
+            "type": "file_absent",
+            "path": "{skill}/**/__pycache__",
+            "severity": "minor"
+          },
+          {
+            "id": "census-data",
+            "type": "file_exists",
+            "path": "out/pulse-expense/data/census/*.csv",
+            "severity": "critical"
+          },
+          {
+            "id": "us-2024",
+            "type": "command",
+            "cmd": "{python} -I {case}/verify.py facts {sandbox}/out/pulse-expense 37.1 0.05",
+            "expect_exit": 0,
+            "severity": "critical",
+            "desc": "U.S. EXPENSE rate, 2024 cycle 09 = 37.1%"
+          },
+          {
+            "id": "md-2024",
+            "type": "command",
+            "cmd": "{python} -I {case}/verify.py facts {sandbox}/out/pulse-expense 34.3 0.05",
+            "expect_exit": 0,
+            "severity": "major",
+            "desc": "Maryland EXPENSE rate, 2024 cycle 09 = 34.3%"
+          },
+          {
+            "id": "us-2023",
+            "type": "command",
+            "cmd": "{python} -I {case}/verify.py facts {sandbox}/out/pulse-expense 40.8 0.05",
+            "expect_exit": 0,
+            "severity": "major",
+            "desc": "U.S. EXPENSE_RATE, week 63 (October 2023) = 40.8%"
+          },
+          {
+            "id": "moe-named",
+            "type": "regex",
+            "path": "out/pulse-expense/answer.md",
+            "pattern": "(?i)margin|±|\\+/-",
+            "severity": "major"
+          },
+          {
+            "id": "experimental-named",
+            "type": "regex",
+            "path": "out/pulse-expense/answer.md",
+            "pattern": "(?i)experimental",
+            "severity": "minor"
+          }
+        ],
+        "ground_truth": {
+          "measure": "EXPENSE: adults in households where it has been somewhat or very difficult to pay usual household expenses",
+          "us_2024_cycle09": {
+            "rate": 37.1,
+            "moe": 0.7,
+            "total": 87697083,
+            "universe": 236337862
+          },
+          "md_2024_cycle09": {
+            "rate": 34.3,
+            "moe": 3.4
+          },
+          "us_2023_week63": {
+            "rate": 40.8,
+            "moe": 0.6,
+            "total": 93735294,
+            "universe": 229700051
+          },
+          "source": "Census Data API timeseries/hhpulse and timeseries/hps, queried 2026-11-03 with a key",
+          "source_url": "https://api.census.gov/data/timeseries/hhpulse"
+        },
+        "case_files": [
+          "case/pulse-expense-difficulty-2024/verify.py"
+        ],
+        "coverage_tags": [
+          "single keyed pack (census)",
+          "experimental survey with margins of error",
+          "series break across survey phases",
+          "state vs nation significance",
+          "unattended no_user",
+          "live source"
+        ],
+        "why": "Household Pulse: long vs wide API layouts, the margin of error on a state rate, and no splicing of COVID-era weeks into Phase 4 cycles",
+        "origin": {
+          "run": "manual",
+          "iteration": 0,
+          "case": "pulse-expense-difficulty-2024"
+        },
+        "added_at": "2026-11-03T00:00:00+00:00"
+      }
+    },
+    {
+      "id": "hvs-homeownership-2025",
+      "prompt": "What was the U.S. homeownership rate in each quarter of 2025, and the rental vacancy rate in the fourth quarter? Use the Census Bureau's Housing Vacancies and Homeownership survey. This is a scheduled, unattended run: nobody can answer questions, so decide every open choice yourself by agency precedent and record it. Save the work in out/hvs-homeownership.",
+      "expected_output": "HVS homeownership rate, not seasonally adjusted (the headline series in Census's release): 65.1, 65.0, 65.3, 65.7 percent in Q1-Q4 2025, each +/- 0.5 points (90% margin of error); seasonally adjusted 65.2, 65.2, 65.2, 65.5. Q4 2025 rests on November and December only (October not collected during the lapse in federal funding). Rental vacancy rate for Q4 2025 with its margin from the same data. Audit passed.",
+      "files": [],
+      "expectations": [
+        "Gets the 2025 quarterly homeownership rates 65.1, 65.0, 65.3, 65.7 (data_type_code HOR, not seasonally adjusted), matching Table 4 of Census's release, and names the series (HOR vs SAHOR) without mixing them",
+        "Says the fourth quarter 2025 estimate rests on November and December only, because October 2025 was not collected during the lapse in federal funding",
+        "Gives the 90% margin of error (0.5 points, E_HOR) and does not call quarter-to-quarter moves within it changes",
+        "Reports the Q4 2025 rental vacancy rate from data_type_code RVR with its margin (E_RVR)",
+        "Fetches through fetch.py's census pack (eits_homeownership / timeseries/eits/hv) rather than hand-typed numbers"
+      ],
+      "rsi": {
+        "title": "Census HVS: U.S. homeownership rate by quarter, 2025, and Q4 rental vacancy rate",
+        "invoke": "explicit",
+        "interaction": "none",
+        "criteria": [
+          {
+            "id": "c1",
+            "text": "Gets the 2025 quarterly homeownership rates 65.1, 65.0, 65.3, 65.7 (data_type_code HOR, not seasonally adjusted), matching Table 4 of Census's release, and names the series (HOR vs SAHOR) without mixing them",
+            "severity": "critical"
+          },
+          {
+            "id": "c2",
+            "text": "Says the fourth quarter 2025 estimate rests on November and December only, because October 2025 was not collected during the lapse in federal funding",
+            "severity": "major"
+          },
+          {
+            "id": "c3",
+            "text": "Gives the 90% margin of error (0.5 points, E_HOR) and does not call quarter-to-quarter moves within it changes",
+            "severity": "major"
+          },
+          {
+            "id": "c4",
+            "text": "Reports the Q4 2025 rental vacancy rate from data_type_code RVR with its margin (E_RVR)",
+            "severity": "major"
+          },
+          {
+            "id": "c5",
+            "text": "Fetches through fetch.py's census pack (eits_homeownership / timeseries/eits/hv) rather than hand-typed numbers",
+            "severity": "minor"
+          }
+        ],
+        "deterministic_checks": [
+          {
+            "id": "answer-exists",
+            "type": "file_exists",
+            "path": "out/hvs-homeownership/answer.md",
+            "severity": "critical"
+          },
+          {
+            "id": "analysis-exists",
+            "type": "file_exists",
+            "path": "out/hvs-homeownership/analysis.py",
+            "severity": "major"
+          },
+          {
+            "id": "facts-exists",
+            "type": "file_exists",
+            "path": "out/hvs-homeownership/facts.json",
+            "severity": "major"
+          },
+          {
+            "id": "decisions-exists",
+            "type": "file_exists",
+            "path": "out/hvs-homeownership/decisions.json",
+            "severity": "major"
+          },
+          {
+            "id": "specs-checked",
+            "type": "file_exists",
+            "path": "out/hvs-homeownership/specs/checked.json",
+            "severity": "minor"
+          },
+          {
+            "id": "audit-answer",
+            "type": "command",
+            "cmd": "{python} {skill}/scripts/report/audit_answer.py {sandbox}/out/hvs-homeownership --rerun",
+            "expect_exit": 0,
+            "timeout": 600,
+            "severity": "major"
+          },
+          {
+            "id": "handoff",
+            "type": "command",
+            "cmd": "{python} {skill}/scripts/fetch.py --handoff --out {sandbox}/out/hvs-homeownership",
+            "expect_exit": 0,
+            "severity": "minor"
+          },
+          {
+            "id": "no-secrets",
+            "type": "command",
+            "cmd": "{python} {skill}/scripts/report/scan_secrets.py {sandbox}/out/hvs-homeownership",
+            "expect_exit": 0,
+            "severity": "critical"
+          },
+          {
+            "id": "no-pycache-in-skill",
+            "type": "file_absent",
+            "path": "{skill}/**/__pycache__",
+            "severity": "minor"
+          },
+          {
+            "id": "census-data",
+            "type": "file_exists",
+            "path": "out/hvs-homeownership/data/census/*.csv",
+            "severity": "critical"
+          },
+          {
+            "id": "hor-q4",
+            "type": "command",
+            "cmd": "{python} -I {case}/verify.py facts {sandbox}/out/hvs-homeownership 65.7 0.05",
+            "expect_exit": 0,
+            "severity": "critical",
+            "desc": "Homeownership rate Q4 2025, not seasonally adjusted = 65.7%"
+          },
+          {
+            "id": "hor-q2",
+            "type": "command",
+            "cmd": "{python} -I {case}/verify.py facts {sandbox}/out/hvs-homeownership 65.0 0.05",
+            "expect_exit": 0,
+            "severity": "major",
+            "desc": "Homeownership rate Q2 2025, not seasonally adjusted = 65.0%"
+          },
+          {
+            "id": "lapse-named",
+            "type": "regex",
+            "path": "out/hvs-homeownership/answer.md",
+            "pattern": "(?i)november and december|lapse|shutdown|october 2025",
+            "severity": "major"
+          }
+        ],
+        "ground_truth": {
+          "hor_nsa_2025": {
+            "Q1": 65.1,
+            "Q2": 65.0,
+            "Q3": 65.3,
+            "Q4": 65.7
+          },
+          "sahor_2025": {
+            "Q1": 65.2,
+            "Q2": 65.2,
+            "Q3": 65.2,
+            "Q4": 65.5
+          },
+          "e_hor": 0.5,
+          "note": "Q4 2025 based on November and December 2025 only (lapse in federal funding)",
+          "source": "Census Data API timeseries/eits/hv queried 2026-11-03; HOR equals Table 4 of the HVS release",
+          "source_url": "https://www.census.gov/housing/hvs/files/currenthvspress.pdf"
+        },
+        "case_files": [
+          "case/hvs-homeownership-2025/verify.py"
+        ],
+        "coverage_tags": [
+          "single keyed pack (census)",
+          "economic indicator time series codes",
+          "seasonal adjustment choice",
+          "data collection gap",
+          "unattended no_user",
+          "live source"
+        ],
+        "why": "HVS on the EITS API: HOR vs SAHOR codes, 90% margins in error_data rows, and the Q4 2025 collection gap",
+        "origin": {
+          "run": "manual",
+          "iteration": 0,
+          "case": "hvs-homeownership-2025"
+        },
+        "added_at": "2026-11-03T00:00:00+00:00"
+      }
     }
   ]
 }

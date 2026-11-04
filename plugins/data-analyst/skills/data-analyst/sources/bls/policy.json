@@ -208,5 +208,31 @@
   ],
   "formats": [
     "json"
+  ],
+  "use_instead": [
+    {
+      "question": "PCE prices, GDP, personal income",
+      "source": "bea",
+      "terms": [
+        "PCE"
+      ],
+      "why": "BEA produces the national accounts."
+    },
+    {
+      "question": "Worker microdata for custom groups",
+      "source": "ipums",
+      "terms": [
+        "CPS"
+      ],
+      "why": "IPUMS CPS with weights and SEs."
+    },
+    {
+      "question": "Federal civilian employees",
+      "source": "opm",
+      "terms": [
+        "FedScope"
+      ],
+      "why": "OPM's Federal Workforce Data."
+    }
   ]
 }

@@ -3,7 +3,8 @@ Depth: standard. Key: required (CENSUS_API_KEY). American Community Survey 1-yea
 2020 and 2010 decennial census counts, population estimates, County Business Patterns and the Economic
 Census, for the nation, states, counties, places, tracts and ZIP code areas; SIPP person-month microdata;
 time series of monthly economic indicators, imports and exports by commodity, and state and local government
-taxes, finances and pensions.
+taxes, finances and pensions; quarterly homeownership and vacancy rates (HVS); the experimental Household Pulse
+Survey (2020-2024).
 
 ## When to use
 - Population, age, race and Hispanic origin, household income, per capita income, poverty, home values,
@@ -16,9 +17,15 @@ taxes, finances and pensions.
   (QTAX) and public pension assets; annual state and local government revenue, spending, debt, state tax
   collections and pension systems; monthly imports and exports by HS commodity and country, with the duty
   calculated on imports (tariff revenue by product or country).
+- Homeownership rate and rental and homeowner vacancy rates, quarterly, for the nation (`eits_homeownership`).
+- Household hardship from the Household Pulse Survey, April 2020 to September 2024: difficulty paying usual
+  household expenses, food scarcity, unable to pay an energy bill, likelihood of eviction or foreclosure, price
+  worries (`pulse` for 2024, `pulse_covid` for 2020-2023), for the nation, states and metros.
 - Not here: monthly unemployment and jobs (bls), GDP and personal income by state (bea), CPS, ACS and
   NHIS microdata for custom tabulations (ipums), international comparisons (world-bank), federal spending
   by state (usaspending, which ships stale population figures: use this pack for the denominator).
+  Household Pulse from 2025 on (HTOPS: census.gov tables and public-use files only, not on the API) and HVS
+  rates by region, state or metro (census.gov/housing/hvs/data/rates.html): published tables, not covered.
 
 ## Endpoints and datasets
 | Endpoint | Returns | Key parameters |
@@ -41,11 +48,13 @@ returns the national cross-section for one date, to filter by state FIPS),
 `ecnbasic_2022`, `sipp` latest/sipp (SIPP microdata; 2022-2025 on the API, one per calendar year).
 Time series (no vintage in the path; select periods with `time`): `eits_retail` timeseries/eits/marts,
 `eits_housing_starts` timeseries/eits/resconst, `eits_construction` timeseries/eits/vip, `eits_qtax`
-timeseries/eits/qtax, `eits_pensions` timeseries/eits/qpr (other indicators: timeseries/eits/m3, mtis,
+timeseries/eits/qtax, `eits_pensions` timeseries/eits/qpr, `eits_homeownership` timeseries/eits/hv (other indicators: timeseries/eits/m3, mtis,
 mrts, ftd, bfs, qfr, qss), `trade_imports_hs` / `trade_exports_hs` timeseries/intltrade/imports|exports/hs
 (also .../naics, .../statehs, .../porths, .../enduse), `govs_finances` timeseries/govslocalfin (2017-2024),
 `govs_state_finances` timeseries/govsstatefin (1967-2024), `govs_state_tax` timeseries/govsstatetax
 (2016-2025), `govs_pensions` timeseries/govspension (2012-2025); every dataset: https://api.census.gov/data/timeseries.json.
+Household Pulse (experimental): `pulse` timeseries/hhpulse (Phase 4, 2024 cycles 01-09, one row per
+`MEASURE_NAME`), `pulse_covid` timeseries/hps (2020-2023 weeks 01-63, one column set per measure).
 Any path works (`2019/acs/acs1`, `2023/acs/acs5/subject`).
 Common variables: B01003_001E population, B01002_001E median age, B19013_001E median household income,
 B19301_001E per capita income, B17001_002E below poverty (universe B17001_001E), S1701_C03_001E poverty
@@ -94,6 +103,16 @@ Find others: `fetch.py --source census --search "median household income"` (late
 {"description": "State and local government finances by state, 2024",
  "requests": [{"name": "govfin_2024", "endpoint": "query",
    "params": {"dataset": "govs_finances", "get": "AGG_DESC,GOVTYPE,AMOUNT,AMOUNT_CV", "for": "state:*", "time": "2024"}}]}
+```
+
+```json
+{"description": "Adults with difficulty paying usual household expenses, nation, every 2024 Pulse cycle; homeownership rate 2025",
+ "requests": [{"name": "pulse_expense_2024", "endpoint": "query",
+   "params": {"dataset": "pulse", "get": "MEASURE_NAME,MEASURE_LABEL,RATE,RATE_MOE,TOTAL,UNIVERSE,CYCLE,PHASE,COL_START_DATE,COL_END_DATE",
+              "for": "us:*", "time": "2024", "MEASURE_NAME": "EXPENSE"}},
+  {"name": "homeownership_2025", "endpoint": "query",
+   "params": {"dataset": "eits_homeownership", "get": "cell_value,data_type_code,category_code,seasonally_adj,time_slot_id,geo_level_code,error_data",
+              "for": "us:*", "time": "2025", "category_code": "RATE"}}]}
 ```
 
 ## Data format and traps
@@ -157,6 +176,34 @@ Find others: `fetch.py --source census --search "median household income"` (late
   consumption (an estimate of duty owed, not Treasury's customs receipts); `COMM_LVL` HS2/HS4/HS6/HS10 must be
   fixed or totals double-count; `CTY_CODE` country codes (5700 China, 2010 Mexico, 1220 Canada); it takes no
   for= geography; `SUMMARY_LVL` CGP rows are country groups, not countries (drop them before summing).
+- Household Pulse (`pulse`, `pulse_covid`) is an experimental data product: an online survey of adults 18+ in
+  housing units, contacted by e-mail and text, with weighted response rates of 4.7 to 7.3 percent at the end
+  (7.3 percent in week 63, October 2023; 4.7 percent in Phase 4.2 cycle 09, September 2024; each period's Source
+  and Accuracy statement, census.gov/programs-surveys/household-pulse-survey/technical-documentation.html). Say so
+  with every figure. `pulse` (timeseries/hhpulse) is long: one row per `MEASURE_NAME` (13 measures: EXPENSE,
+  FOODSCARCE, ENERGYBILL, EVICTFOR, PRICEINCR, PRICEWORRY, LONELY, ...), `CYCLE` and geography; filter
+  `MEASURE_NAME` and `CYCLE`. It holds `time=2024` only (Phase 4.0 cycles 01-03, 4.1 04-07, 4.2 08-09, January 9 to
+  September 16, 2024); `time=2025` returns no rows. `pulse_covid` (timeseries/hps) is wide: `<M>_RATE`,
+  `<M>_RT_MOE`, `<M>_TOTAL`, `<M>_MOE`, `<M>_UNIV` per collection `WEEK` (01-63, April 2020 to October 2023; from
+  Phase 2 a "week" is a two-week collection period). Questions came and went, so a measure is empty in weeks
+  that did not ask it (EXPENSE is empty in weeks 01-12, first asked in week 13, August 2020). The survey ended on 2024-09-16 and continued from 2025 inside HTOPS,
+  whose tables are not on the API.
+  `RATE` is the percent of `UNIVERSE` (`TOTAL` / `UNIVERSE`; EXPENSE, 2024 cycle 09: 87,697,083 / 236,337,862 =
+  37.1), not of `UNITS_TOTAL` (all adults). Report `RATE_MOE` (`<M>_RT_MOE`) with every rate; Census uses
+  90 percent confidence intervals for Pulse, but the API does not state the level of its margins. State margins
+  are several times the national one (cycle 09 EXPENSE: Maryland 34.3 +/- 3.4, nation 37.1 +/- 0.7): test a
+  difference against both margins before calling it one. Do not splice `pulse_covid` and `pulse` into one series
+  or compare across phases without saying the question set and contact frame changed (Phase 4.2 added prepaid
+  wireless numbers, "potentially impacting comparability with previous cycles", Phase 4.2 User Notes).
+- HVS (`eits_homeownership`, timeseries/eits/hv) is quarterly (`time=2025-Q3`), from the CPS: `category_code`
+  RATE has `data_type_code` HOR (homeownership rate, not seasonally adjusted), SAHOR (seasonally adjusted,
+  `seasonally_adj` yes), RVR (rental vacancy rate), HVR (homeowner vacancy rate), and E_HOR, E_RVR, E_HVR
+  (`error_data` yes: the 90 percent margin of error in percentage points, e.g. 0.5 for HOR); category ESTIMATE
+  holds the housing inventory in thousands (TOTAL, OCC, OWNOCC, RNTOCC, VACANT, RENT, SALE, SEASON, ...). Never
+  mix HOR and SAHOR in one series. The API has the nation only; the release's Table 4 is the benchmark (2025
+  HOR 65.1, 65.0, 65.3, 65.7 matched the API on 2026-11-03). Fourth quarter 2025 rests on November and December
+  only: October 2025 was not collected during the lapse in federal funding (release footnote); say so when it
+  is used.
 - Key: since 2026-05-12 every data query needs a key; the API redirects keyless queries to a "Missing
   Key" page, which the pack reports as a key error. Metadata (variables, discovery) still answer
   without a key.

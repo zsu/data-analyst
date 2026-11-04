@@ -4,12 +4,15 @@ A pack is a folder with policy.json (required), source.md (required), and either
   fetch.py      a deep pack's own command line; scripts/fetch.py hands
                 it the arguments unchanged, or
   endpoints.json and/or adapter.py   a standard pack run by core (generic_rest + routes + package).
+In the upload zip adapter.py lives in sources/packs.json (tools/package_skill.py); load() builds it from there.
 """
 from __future__ import annotations
 
 import importlib.util
+import linecache
 import os
 import math
+import types
 import re
 import sys
 from dataclasses import dataclass
@@ -57,6 +60,17 @@ def _load_module(name: str, path: str):
     return mod
 
 
+def _load_source(name: str, path: str, src: str):
+    """A module built from source text (an adapter from the upload bundle), with __file__ = its usual path, so
+    an adapter's paths relative to its own folder still resolve, and tracebacks still show its lines."""
+    mod = types.ModuleType(name)
+    mod.__file__ = path
+    sys.modules[name] = mod
+    linecache.cache[path] = (len(src), None, src.splitlines(True), path)
+    exec(compile(src, path, "exec"), mod.__dict__)
+    return mod
+
+
 def load(pid: str) -> Pack:
     d = os.path.join(SOURCES_DIR, pid)
     if not packfiles.is_pack(d):
@@ -66,11 +80,13 @@ def load(pid: str) -> Pack:
     eps = packfiles.read_json(d, "endpoints.json")
     adapter = None
     ad_path = os.path.join(d, "adapter.py")
-    if os.path.exists(ad_path):
+    src = None if os.path.exists(ad_path) else packfiles.read_text(d, "adapter.py")
+    if os.path.exists(ad_path) or src is not None:
         if d not in sys.path:
             sys.path.insert(0, d)
         safe = re.sub(r"\W", "_", pid)
-        adapter = _load_module(f"pack_{safe}_adapter", ad_path)
+        name = f"pack_{safe}_adapter"
+        adapter = _load_module(name, ad_path) if src is None else _load_source(name, ad_path, src)
     return Pack(pid, d, p, eps, adapter)
 
 

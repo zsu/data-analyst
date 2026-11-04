@@ -11,6 +11,9 @@ Fixtures (fixtures/index.json):
 - handmade_sipp_2024.json: NOT a recorded response either. Hand-written rows in the API's table shape (one
   header row, text values) for the SIPP request the pack builds; it tests the query (keys and weight added,
   no geography) and that SIPP values skip the ACS special-value handling. The SIPP API needs a key.
+- pulse_expense_2024.json, pulse_covid_expense_2023.json, hv_rates_2025.json: recorded live on 2026-11-03
+  with a key (DATA_ANALYST_RECORD; the key is not in the recorded URLs) from timeseries/hhpulse, timeseries/hps
+  and timeseries/eits/hv. The HVS rows match Table 4 of the Census release (2025 homeownership rates).
 - normalize() is unit-tested on hand-written rows that carry the documented special values; those rows
   are test inputs, not fixtures.
 """
@@ -127,6 +130,36 @@ class TestCensus(PackTest):
         self.assertEqual(r["route"], "fix_spec", r)
         self.assertIn("international trade needs a time", r["message"])
         self.assertIn("a time series needs time", r["message"])
+
+    def test_pulse_and_homeownership_aliases(self):
+        """Household Pulse (2024 long, 2020-2023 wide) and HVS rates through their aliases, from recorded rows."""
+        spec = {"requests": [
+            {"name": "pulse_expense_2024", "endpoint": "query",
+             "params": {"dataset": "pulse", "get": "MEASURE_NAME,MEASURE_LABEL,RATE,RATE_MOE,TOTAL,UNIVERSE,CYCLE,PHASE,"
+                                                  "COL_START_DATE,COL_END_DATE",
+                        "for": "us:*", "time": "2024", "MEASURE_NAME": "EXPENSE"}},
+            {"name": "pulse_covid_expense_2023", "endpoint": "query",
+             "params": {"dataset": "pulse_covid", "get": "EXPENSE_RATE,EXPENSE_RT_MOE,EXPENSE_TOTAL,EXPENSE_UNIV,WEEK,"
+                                                        "COL_START_DATE,COL_END_DATE", "for": "us:*", "time": "2023"}},
+            {"name": "homeownership_2025", "endpoint": "query",
+             "params": {"dataset": "eits_homeownership", "get": "cell_value,data_type_code,category_code,seasonally_adj,"
+                                                               "time_slot_id,geo_level_code,error_data",
+                        "for": "us:*", "time": "2025", "category_code": "RATE"}}]}
+        code, r, out = self.fetch(spec, env=KEY)
+        self.assertEqual(code, 0, r)
+        p = {x["CYCLE"]: x for x in self.csv(out, "pulse_expense_2024")}
+        self.assertEqual(sorted(p), [f"{i:02d}" for i in range(1, 10)])          # Phase 4.0-4.2, cycles 01-09
+        c9 = p["09"]
+        self.assertEqual((c9["PHASE"], c9["RATE"], c9["RATE_MOE"]), ("4.2", "37.1", "0.7"))
+        self.assertAlmostEqual(100 * int(c9["TOTAL"]) / int(c9["UNIVERSE"]), float(c9["RATE"]), places=1)
+        w = {x["WEEK"]: x for x in self.csv(out, "pulse_covid_expense_2023")}
+        self.assertEqual((w["63"]["EXPENSE_RATE"], w["63"]["EXPENSE_RT_MOE"]), ("40.8", "0.6"))
+        hv = self.csv(out, "homeownership_2025")
+        hor = {x["time"]: x["cell_value"] for x in hv if x["data_type_code"] == "HOR"}       # NSA, release Table 4
+        self.assertEqual(hor, {"2025-Q1": "65.1", "2025-Q2": "65.0", "2025-Q3": "65.3", "2025-Q4": "65.7"})
+        moe = {x["cell_value"] for x in hv if x["data_type_code"] == "E_HOR"}
+        self.assertEqual((moe, {x["error_data"] for x in hv if x["data_type_code"] == "E_HOR"}), ({"0.5"}, {"yes"}))
+        self.assertEqual({x["seasonally_adj"] for x in hv if x["data_type_code"] == "SAHOR"}, {"yes"})
 
     def test_latest_and_names_resolve_in_links(self):
         sp, out = self.write_spec(GEO)

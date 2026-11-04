@@ -66,6 +66,38 @@ Use `fetch.py --route "<question>"` for a ranked suggestion.
 | International comparisons | world-bank | bea, fred | World Bank indicators: check currency and base year. |
 | Long histories, many indicators at once, data vintages | fred | the producing agency's pack | FRED re-publishes; cite the original source too; ALFRED for as-of vintages. |
 
+## Use instead
+
+Questions a pack does not answer, and the pack that does (each pack's policy.json `use_instead`).
+
+| Not in | Question | Use | Why |
+|---|---|---|---|
+| bea | CPI, jobs, unemployment, wages by occupation | bls | BLS produces these. |
+| bea | Budget data by fiscal year | treasury | Treasury Fiscal Data. |
+| bea | Market interest rates | treasury-yields | Daily Treasury yields. |
+| bls | PCE prices, GDP, personal income | bea | BEA produces the national accounts. |
+| bls | Worker microdata for custom groups | ipums | IPUMS CPS with weights and SEs. |
+| bls | Federal civilian employees | opm | OPM's Federal Workforce Data. |
+| census | Monthly unemployment and payroll jobs | bls | BLS produces both. |
+| census | GDP and personal income by state | bea | BEA regional accounts. |
+| census | Custom tabulations from CPS, ACS or NHIS microdata | ipums | IPUMS harmonized microdata, weighted with SEs. |
+| census | International comparisons | world-bank | World Bank indicators across countries. |
+| census | Federal spending by state | usaspending | USAspending awards by place of performance. |
+| cfpb | Bank financial condition or failures | fdic | FDIC BankFind holds call-report financials and the failed-bank list. |
+| cfpb | Company financial statements | sec | EDGAR XBRL company facts. |
+| cfpb | Auto safety complaints | nhtsa | NHTSA vehicle safety complaints, not consumer-finance complaints. |
+| fed-board | One Board series' long history or its past vintages | fred | FRED mirrors most Board series; ALFRED keeps vintages. |
+| fed-board | SOFR, EFFR, SOMA holdings, primary dealer positions | nyfed | The New York Fed publishes these. |
+| fed-board | Forecasts of these series | philfed | SPF and Greenbook forecasts. |
+| fed-board | Bank-level balance sheets and income | fdic | FDIC institution financials. |
+| fhfa | One FHFA house price series for the U.S. or a state, with no index flavor choice | fred | FRED carries the all-transactions and purchase-only HPI series under stable IDs. |
+| fred | BLS detail with preliminary flags, footnotes and gaps | bls | The bls pack keeps BLS's own flags. |
+| fred | BEA tables with line numbers and vintages | bea | The bea pack reads BEA tables as published. |
+| fred | Treasury daily statements and auctions | treasury | Treasury Fiscal Data. |
+| treasury | Market yields and the daily par yield curve | treasury-yields | Daily Treasury par yield curve rates. |
+| treasury | Historical budget tables in percent of GDP, the President's budget | omb | OMB Historical Tables by budget edition. |
+| treasury | State and local government finances | census | Census government finance surveys. |
+
 ## All sources
 
 | Source | Depth | Key | Domains | Title |

@@ -124,6 +124,65 @@ def validate(p: dict, pack_dir: str | None = None) -> list[str]:
     kc = (r.get("manual") or {}).get("keyless_citation")
     if kc is not None and "{retrieved" not in str(kc):
         bad.append("routes.manual.keyless_citation must contain {retrieved} or {retrieved_long}")
+    bad += _use_instead_problems(p, pack_dir)
+    return bad
+
+
+_NOT_HERE = re.compile(r"^- Not here\b.*?(?=^- |^#|^\s*$|\Z)", re.M | re.S)
+
+
+def coverage_text(pack_dir: str) -> str | None:
+    """What a pack says it covers, lower case: its policy title, domains, keywords and questions, its source.md and
+    docs/*.md without the "Not here" bullets (a pack naming what it lacks must not count as covering it). None: no
+    such pack."""
+    tp = packfiles.read_json(pack_dir, "policy.json")
+    if tp is None:
+        return None
+    parts = [str(tp.get("title", ""))] + [str(x) for k in ("domains", "keywords", "questions") for x in tp.get(k) or []]
+    docs = os.path.join(pack_dir, "docs")
+    mds = [os.path.join(pack_dir, "source.md")] + (
+        sorted(os.path.join(docs, f) for f in os.listdir(docs) if f.endswith(".md")) if os.path.isdir(docs) else [])
+    for md in mds:
+        if os.path.exists(md):
+            with open(md, encoding="utf-8") as f:
+                parts.append(_NOT_HERE.sub("", f.read()))
+    return "\n".join(parts).lower()
+
+
+def _use_instead_problems(p: dict, pack_dir: str | None) -> list[str]:
+    """use_instead: [{"question", "source", "terms", "why"}], a question shape this pack does not answer and the pack
+    that does. Each source must be a pack whose coverage (coverage_text) names every term."""
+    ui = p.get("use_instead")
+    if ui is None:
+        return []
+    if not isinstance(ui, list):
+        return ["use_instead must be a list of {question, source, terms, why}"]
+    bad = []
+    for i, u in enumerate(ui):
+        tag = f"use_instead[{i}]"
+        if not isinstance(u, dict) or not all(u.get(k) for k in ("question", "source", "terms", "why")):
+            bad.append(f"{tag}: question, source, terms (a list of words) and why are all required")
+            continue
+        if not isinstance(u["terms"], list) or not all(isinstance(t, str) and t.strip() for t in u["terms"]):
+            bad.append(f"{tag}: terms must be a list of non-empty words the target pack must cover")
+            continue
+        if u["source"] == p.get("id"):
+            bad.append(f"{tag}: source is this pack itself; name the pack that answers {u['question']!r}")
+            continue
+        if not pack_dir:
+            continue
+        target = os.path.join(os.path.dirname(os.path.normpath(os.path.abspath(pack_dir))), u["source"])
+        text = coverage_text(target)
+        if text is None:
+            bad.append(f"{tag}: source {u['source']!r} is not a pack. Point at the pack that has the data, or drop "
+                       "the entry and say \"not covered\" in source.md's Not here line")
+            continue
+        missing = [t for t in u["terms"]                # whole words: "CES" must not match "sources"
+                   if not re.search(rf"(?<![a-z0-9]){re.escape(t.lower().strip())}(?![a-z0-9])", text)]
+        if missing:
+            bad.append(f"{tag}: pack {u['source']!r} does not cover {missing} (not in its policy title, domains, "
+                       "keywords or questions, nor in its source.md outside Not here). Point at the pack that does, "
+                       "or say \"not covered\" in source.md instead")
     return bad
 
 
