@@ -1,7 +1,8 @@
-# Census Bureau Data API (ACS, decennial census, population estimates, SIPP, economic indicators, trade, government finances)
+# Census Bureau Data API (ACS, decennial census, population estimates, ACS PUMS, CPS and SIPP microdata, economic indicators, trade, government finances)
 Depth: standard. Key: required (CENSUS_API_KEY). American Community Survey 1-year and 5-year estimates,
 2020 and 2010 decennial census counts, population estimates, County Business Patterns and the Economic
-Census, for the nation, states, counties, places, tracts and ZIP code areas; SIPP person-month microdata;
+Census, for the nation, states, counties, places, tracts and ZIP code areas; person microdata: ACS PUMS (with
+replicate weights), CPS basic monthly and ASEC, SIPP person-months;
 time series of monthly economic indicators, imports and exports by commodity, and state and local government
 taxes, finances and pensions; quarterly homeownership and vacancy rates (HVS); the experimental Household Pulse
 Survey (2020-2024).
@@ -10,6 +11,10 @@ Survey (2020-2024).
 - Population, age, race and Hispanic origin, household income, per capita income, poverty, home values,
   rents, tenure, education, health insurance, commuting, language, for any U.S. geography; state or
   county profiles; population denominators for per-capita figures (federal spending, deaths, energy use).
+- Custom tabulations the published tables do not give, from recent person microdata (Census codes, weighted
+  by the pack's added weights): ACS PUMS (`acs1_pums`, `acs5_pums`; 2004 on, states and PUMAs, standard errors
+  from PWGTP1-80), one CPS basic month (`<YYYY>/cps/basic/<mon>`, 1989 on: labor force, hours, weekly earnings)
+  or one CPS ASEC year (`cps_asec`, 1992 on: income, poverty, insurance of the previous year; point estimates).
 - Month-to-month income, program participation (SNAP, SSI, Medicaid, unemployment benefits), health
   coverage spells, assets and debts of the same people over time: SIPP microdata (`sipp`), national
   estimates weighted by the pack.
@@ -21,8 +26,9 @@ Survey (2020-2024).
 - Household hardship from the Household Pulse Survey, April 2020 to September 2024: difficulty paying usual
   household expenses, food scarcity, unable to pay an energy bill, likelihood of eviction or foreclosure, price
   worries (`pulse` for 2024, `pulse_covid` for 2020-2023), for the nation, states and metros.
-- Not here: monthly unemployment and jobs (bls), GDP and personal income by state (bea), CPS, ACS and
-  NHIS microdata for custom tabulations (ipums), international comparisons (world-bank), federal spending
+- Not here: monthly unemployment and jobs (bls), GDP and personal income by state (bea); microdata with codes
+  harmonized across years, CPI99, spouse or parent traits, CPS panels, ASEC standard errors (replicate
+  weights), years before 2004 (ACS) or 1989 (CPS), NHIS, MEPS, ATUS and historical censuses (ipums); international comparisons (world-bank), federal spending
   by state (usaspending, which ships stale population figures: use this pack for the denominator).
   Household Pulse from 2025 on (HTOPS: census.gov tables and public-use files only, not on the API) and HVS
   rates by region, state or metro (census.gov/housing/hvs/data/rates.html): published tables, not covered.
@@ -46,6 +52,10 @@ returns the national cross-section for one date, to filter by state FIPS),
 `pep_population_2021` 2021/pep/population (POP_2020, POP_2021; states and above only),
 `pep_population_2019` (2010-2019, down to places), `cbp` 2023/cbp,
 `ecnbasic_2022`, `sipp` latest/sipp (SIPP microdata; 2022-2025 on the API, one per calendar year).
+Microdata (one row per person; see the PUMS and CPS trap below): `acs1_pums` latest/acs/acs1/pums (2004-2024),
+`acs5_pums` latest/acs/acs5/pums (2009-2024), `acs1_pumspr` (Puerto Rico), `cps_asec` latest/cps/asec/mar
+(1992-2026, survey year: income is for the year before), CPS basic monthly `<YYYY>/cps/basic/<jan..dec>`
+(1989-2026).
 Time series (no vintage in the path; select periods with `time`): `eits_retail` timeseries/eits/marts,
 `eits_housing_starts` timeseries/eits/resconst, `eits_construction` timeseries/eits/vip, `eits_qtax`
 timeseries/eits/qtax, `eits_pensions` timeseries/eits/qpr, `eits_homeownership` timeseries/eits/hv (other indicators: timeseries/eits/m3, mtis,
@@ -88,6 +98,15 @@ Find others: `fetch.py --source census --search "median household income"` (late
 {"description": "Share of people without health coverage in December, SIPP 2024 (weighted by WPFINWGT)",
  "requests": [{"name": "sipp_coverage_dec", "endpoint": "query",
    "params": {"dataset": "2024/sipp", "get": "TAGE,RHLTHMTH,TPTOTINC", "MONTHCODE": "12"}}]}
+```
+
+```json
+{"description": "Uninsured rate, Maryland, ACS 2024 1-year PUMS with replicate weights; CPS September 2026",
+ "requests": [{"name": "md_pums", "endpoint": "query",
+   "params": {"dataset": "2024/acs/acs1/pums", "get": "AGEP,HICOV,RELSHIPP,ESR,PINCP", "state": "MD",
+              "replicates": true}},
+  {"name": "cps_sep", "endpoint": "query",
+   "params": {"dataset": "2026/cps/basic/sep", "get": "PRTAGE,PEMLR,PRCITSHP", "PRTAGE": "25:54"}}]}
 ```
 
 ```json
@@ -162,6 +181,38 @@ Find others: `fetch.py --source census --search "median household income"` (late
   give the point estimate and say no standard error was computed. Variable names and codes:
   `--search "<YYYY>/sipp: health insurance"` or the dataset's variables.json. The bulk primary file
   (`pu<YYYY>_csv.zip`, about 100 MB) has every variable, for a manual download.
+- ACS PUMS and CPS microdata (`acs1_pums`, `acs5_pums`, `cps_asec`, `<YYYY>/cps/basic/<mon>`): one row per
+  person, values and codes exactly as published, with `<request>_codebook.csv` (every code's label, the
+  variable's suggested weight). The pack adds the keys and weights: ACS SERIALNO, SPORDER, PWGTP (persons), WGTP
+  (households: SPORDER 1 with RELSHIPP 20); ASEC H_SEQ, A_LINENO, PERIDNUM, MARSUPWT, HSUP_WGT; basic HRHHID,
+  HRHHID2, PULINENO, PWSSWGT (final weight), PWCMPWGT (composite: employment levels that match BLS). For hourly
+  and weekly earnings in a basic month, request PWORWGT (outgoing rotation groups, HRMIS 4 and 8). Every estimate
+  is weighted, never a row count. Filters are upper-case variable predicates (`"AGEP": "25:54"`, `"HICOV": 2`),
+  repeated on every call; geography: `state`, or `for: "public use microdata area:*"` with a state (ACS);
+  no state = the nation (ACS fetched state by state, 51 calls, about 2 minutes for the 3.4 million persons).
+  `replicates: true` (ACS only) adds PWGTP1-80 (`"household"`: WGTP1-80, `"both"`); columns past 50 come in
+  further calls joined on the keys. Standard error: `pums.rep_se` (lib/pums.py), sqrt(4/80 * sum of squared
+  replicate differences), MOE = 1.645 * SE. Checked 2026-11-04: Maryland's 2024 uninsured rate in the civilian
+  noninstitutionalized population from PUMS was 6.26 +/- 0.32 percent, published S2701 6.3 +/- 0.3; the nation
+  8.19 vs 8.2.
+  - Universe: published insurance and labor tables use the civilian noninstitutionalized population
+    (`pums.civilian_noninst`: RELSHIPP 37 is the institutionalized group quarters population, ESR 4-5 armed
+    forces). Codes below zero or 0 often mean N/A (PINCP -19999 under 15, ESR 0 under 16): read the codebook.
+  - Dollars: ACS amounts need ADJINC (ADJHSG for housing costs), which the pack adds when a dollar variable asks
+    for it: value * ADJINC / 1,000,000 is in the survey year's dollars, as the published tables are. PUMS is a
+    subsample of the full ACS: a PUMS figure differs slightly from the published table (inside its MOE);
+    publish your figure as your own calculation and benchmark it against the table.
+  - CPS: ASEC income, poverty (PERLIS) and full-year insurance (COV) refer to the previous calendar year; NOW_COV
+    is coverage at the interview. The API has no ASEC replicate weights (Census posts them as a separate file per
+    year): give point estimates, or use the ipums pack (REPWTP, 160) when a comparison needs a standard error.
+    ASEC files before 2001 take no state geography on the API (HTTP 500): fetch the nation and filter on the
+    file's state variable, or use ipums. Older files lack some keys and weights (HRHHID2 before 2004, PERIDNUM
+    in early ASECs): the pack leaves them out and says so. CPS basic monthly has no replicate weights at all; month-to-month person links need HRHHID, HRHHID2 and
+    PULINENO with care (ipums CPSIDP links them). CPS codes differ from ACS codes (PEMLR, PRCITSHP, A_HGA /
+    PEEDUCA): `lib/pums.py` recodes take the survey (`"acs"`, `"asec"`, `"basic"`).
+  - Analysis helpers: `pums = pack_lib("census", "pums", OUT, SKILL)` (`load`, `rep_se`, `wshare`, `wmean`,
+    `wtotal`, `adjusted`, `civilian_noninst`, `uninsured`, `emp_status`, `foreign_born`, `educ_group`,
+    `householders`); grouped tables, binned medians and regressions from `pack_lib("ipums", "stats", ...)`.
 - Time series (`timeseries/...`): give `time` (`2026`, `2026-08`, `2026-Q2`, or `from 2024-01 to 2026-08`).
   Economic indicators (eits) return one row per code combination: `category_code` (industry or tax type),
   `data_type_code` (level, percent change, ...), `seasonally_adj` (yes/no), `time_slot_id`, `error_data` (yes =
@@ -235,6 +286,8 @@ FRED key.) A Census estimates file (popest tables) that is still needed is a pub
 
 ## Citation and terms
 "U.S. Census Bureau, <dataset, e.g. 2020-2024 American Community Survey 5-year estimates, table
-B19013; or 2024 Survey of Income and Program Participation, public-use file>, Census Data API, retrieved <date>." Public domain. Required notice (Terms of Service): "This
+B19013; 2024 American Community Survey 1-year Public Use Microdata Sample; or 2024 Survey of Income and Program
+Participation, public-use file>, Census Data API, retrieved <date>." Microdata estimates are your own: "Analyst
+calculations using the 2024 ACS 1-year PUMS." Public domain. Required notice (Terms of Service): "This
 product uses the Census Bureau Data API but is not endorsed or certified by the Census Bureau."
 Redistribution allowed. Metadata (variables lists) is cached on disk for 30 days; data are not.

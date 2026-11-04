@@ -2319,6 +2319,196 @@
         },
         "added_at": "2026-11-03T00:00:00+00:00"
       }
+    },
+    {
+      "id": "fhfa-hmda-maryland-2023",
+      "prompt": "For a housing affordability memo on Maryland: by FHFA's annual state house price index, how much did Maryland home prices rise in 2023, and what was the 2023 denial rate on home-purchase mortgage applications in Maryland (denied applications as a share of those that got a decision: originated, approved but not accepted, or denied)? Use official federal data. This is a scheduled, unattended run: nobody can answer questions, so decide every open choice yourself by agency precedent and record it. Save the work in out/md-housing.",
+      "expected_output": "FHFA all-transactions HPI, annual state file: Maryland +5.72% in 2023 (fhfa pack, hpi_annual). HMDA 2023, Maryland, home-purchase applications (any lien, occupancy and property type): 63,141 originated, 1,875 approved not accepted, 8,334 denied, so a denial rate of 11.4% of decided applications; 15,698 withdrawn and 2,104 incomplete are excluded. HMDA comes from the FFIEC/CFPB HMDA Data Browser (no pack serves it; the cfpb pack is complaints only), recorded with its source URL and access date. Audit passed.",
+      "files": [],
+      "expectations": [
+        "Gets Maryland's 2023 house price change of 5.72% from the fhfa pack's annual state file (hpi_annual, all-transactions)",
+        "Gets the 2023 Maryland home-purchase denial rate of 11.4% (8,334 denied of 73,350 decided applications) from HMDA data published by the FFIEC/CFPB, recorded with source URL and access date",
+        "Does not use the cfpb pack's consumer complaints as mortgage-application data and does not claim a pack serves HMDA",
+        "States the HMDA universe: all home-purchase applications reported under HMDA in Maryland, with withdrawn and incomplete applications left out of the denominator",
+        "Names the HPI flavor (annual all-transactions, a developmental series) and does not mix it with the purchase-only or Q4-over-Q4 measures",
+        "Says the 11.4% covers all home-purchase applications and is not comparable with CFPB's published denial rates, which use a narrower universe (closed-end, first-lien, site-built 1-4 family, principal residence; 9.4% nationally in 2023 against about 15.0% for all home-purchase applications)"
+      ],
+      "rsi": {
+        "title": "FHFA HPI and HMDA denial rate, Maryland 2023",
+        "invoke": "explicit",
+        "interaction": "none",
+        "criteria": [
+          {
+            "id": "c1",
+            "text": "Gets Maryland's 2023 house price change of 5.72% from the fhfa pack's annual state file (hpi_annual, all-transactions)",
+            "severity": "critical"
+          },
+          {
+            "id": "c2",
+            "text": "Gets the 2023 Maryland home-purchase denial rate of 11.4% (8,334 denied of 73,350 decided applications) from HMDA data published by the FFIEC/CFPB, recorded with source URL and access date",
+            "severity": "critical"
+          },
+          {
+            "id": "c3",
+            "text": "Does not use the cfpb pack's consumer complaints as mortgage-application data and does not claim a pack serves HMDA",
+            "severity": "major"
+          },
+          {
+            "id": "c4",
+            "text": "States the HMDA universe: all home-purchase applications reported under HMDA in Maryland, with withdrawn and incomplete applications left out of the denominator",
+            "severity": "major"
+          },
+          {
+            "id": "c5",
+            "text": "Names the HPI flavor (annual all-transactions, a developmental series) and does not mix it with the purchase-only or Q4-over-Q4 measures",
+            "severity": "minor"
+          },
+          {
+            "id": "c6",
+            "text": "Says the 11.4% covers all home-purchase applications and is not comparable with CFPB's published denial rates, which use a narrower universe (closed-end, first-lien, site-built 1-4 family, principal residence; 9.4% nationally in 2023 against about 15.0% for all home-purchase applications)",
+            "severity": "major"
+          }
+        ],
+        "deterministic_checks": [
+          {
+            "id": "answer-exists",
+            "type": "file_exists",
+            "path": "out/md-housing/answer.md",
+            "severity": "critical"
+          },
+          {
+            "id": "analysis-exists",
+            "type": "file_exists",
+            "path": "out/md-housing/analysis.py",
+            "severity": "major"
+          },
+          {
+            "id": "facts-exists",
+            "type": "file_exists",
+            "path": "out/md-housing/facts.json",
+            "severity": "major"
+          },
+          {
+            "id": "decisions-exists",
+            "type": "file_exists",
+            "path": "out/md-housing/decisions.json",
+            "severity": "major"
+          },
+          {
+            "id": "specs-checked",
+            "type": "file_exists",
+            "path": "out/md-housing/specs/checked.json",
+            "severity": "minor"
+          },
+          {
+            "id": "audit-answer",
+            "type": "command",
+            "cmd": "{python} {skill}/scripts/report/audit_answer.py {sandbox}/out/md-housing --rerun",
+            "expect_exit": 0,
+            "timeout": 600,
+            "severity": "major"
+          },
+          {
+            "id": "handoff",
+            "type": "command",
+            "cmd": "{python} {skill}/scripts/fetch.py --handoff --out {sandbox}/out/md-housing",
+            "expect_exit": 0,
+            "severity": "minor"
+          },
+          {
+            "id": "no-secrets",
+            "type": "command",
+            "cmd": "{python} {skill}/scripts/report/scan_secrets.py {sandbox}/out/md-housing",
+            "expect_exit": 0,
+            "severity": "critical"
+          },
+          {
+            "id": "no-pycache-in-skill",
+            "type": "file_absent",
+            "path": "{skill}/**/__pycache__",
+            "severity": "minor"
+          },
+          {
+            "id": "fhfa-data",
+            "type": "file_exists",
+            "path": "out/md-housing/data/fhfa/*.csv",
+            "severity": "critical"
+          },
+          {
+            "id": "hmda-denial-rate",
+            "type": "command",
+            "cmd": "{python} -I {case}/verify.py facts {sandbox}/out/md-housing 11.36 0.05",
+            "expect_exit": 0,
+            "severity": "critical",
+            "desc": "Maryland 2023 home-purchase denial rate, denied / (originated + approved not accepted + denied) = 11.36%"
+          },
+          {
+            "id": "hpi-2023",
+            "type": "command",
+            "cmd": "{python} -I {case}/verify.py facts {sandbox}/out/md-housing 5.72 0.05",
+            "expect_exit": 0,
+            "severity": "major",
+            "desc": "Maryland FHFA annual all-transactions HPI change, 2023 = 5.72%"
+          },
+          {
+            "id": "hmda-denied-count",
+            "type": "command",
+            "cmd": "{python} -I {case}/verify.py facts {sandbox}/out/md-housing 8334 0.5",
+            "expect_exit": 0,
+            "severity": "minor",
+            "desc": "Denied home-purchase applications, Maryland 2023 = 8,334"
+          },
+          {
+            "id": "no-complaints-as-hmda",
+            "type": "file_absent",
+            "path": "out/md-housing/data/cfpb/*",
+            "severity": "major",
+            "desc": "the cfpb pack holds consumer complaints, not mortgage applications"
+          },
+          {
+            "id": "hmda-named",
+            "type": "regex",
+            "path": "out/md-housing/answer.md",
+            "pattern": "(?i)HMDA|Home Mortgage Disclosure",
+            "severity": "major"
+          }
+        ],
+        "ground_truth": {
+          "hpi_md_2023_annual_change": 5.72,
+          "hpi_md_q4_over_q4_2023_all_transactions": 5.08,
+          "hmda_md_2023_home_purchase": {
+            "originated": 63141,
+            "approved_not_accepted": 1875,
+            "denied": 8334,
+            "withdrawn": 15698,
+            "incomplete": 2104,
+            "denial_rate_decided": 11.36,
+            "denial_rate_all": 9.14
+          },
+          "source": "fhfa pack hpi_annual (state) and hpi_state, fetched 2026-11-04; HMDA Data Browser API aggregations?years=2023&states=MD&actions_taken=1,2,3,4,5&loan_purposes=1, queried 2026-11-04",
+          "source_url": "https://ffiec.cfpb.gov/data-browser/",
+          "hmda_us_2023_home_purchase_all_applications_denial_rate": 15.0,
+          "cfpb_published_2023_denial_rate_narrow_universe": 9.4
+        },
+        "case_files": [
+          "case/fhfa-hmda-maryland-2023/verify.py"
+        ],
+        "coverage_tags": [
+          "pack plus uncovered source",
+          "routing pointer not here",
+          "published agency data",
+          "fhfa",
+          "unattended no_user",
+          "live source"
+        ],
+        "why": "Regression for the fhfa source.md pointer that sent HMDA to the cfpb pack (complaints only): the skill should fetch FHFA through its pack and take HMDA from the agency's own data browser",
+        "origin": {
+          "run": "manual",
+          "iteration": 0,
+          "case": "fhfa-hmda-maryland-2023"
+        },
+        "added_at": "2026-11-04T00:00:00+00:00"
+      }
     }
   ]
 }

@@ -16,8 +16,9 @@ Use `fetch.py --route "<question>"` for a ranked suggestion.
 | Consumer prices, inflation, real dollars | bls | bea, fred | CPI-U from BLS; PCE price index from BEA; name the deflator. |
 | Wages and earnings | bls | ipums, opm | BLS ECI, CES, OEWS; IPUMS CPS/ACS for distributions by group (weighted, with SEs). |
 | Federal workforce: headcount, hires, separations, pay | opm | bls, ipums, usaspending | OPM FWD (coverage gaps: USPS, intelligence agencies; pay withheld for ~45% of records); BLS ECI or IPUMS for private comparisons. |
-| Demographics, poverty, income by place | census | ipums, bea | ACS tables with margins of error; IPUMS microdata for custom tabulations; BEA regional income. |
-| Custom tabulations from survey microdata | ipums | census, bls | IPUMS CPS/ACS/decennial, NHIS, MEPS; weighted estimates with SEs; microdata never redistributed. SIPP through census. |
+| Demographics, poverty, income by place | census | ipums, bea | ACS tables with margins of error; ACS PUMS (census) or IPUMS microdata for custom tabulations; BEA regional income. |
+| Custom tabulations from recent ACS or CPS microdata | census | ipums, bls | ACS PUMS (2004 on, PWGTP1-80 replicate SEs), CPS basic monthly (1989 on) and ASEC (1992 on) on the Census API, public domain; IPUMS for harmonized codes across years, CPI99, CPS panels, ASEC replicate SEs, earlier years. |
+| Custom tabulations from survey microdata: long series, NHIS, MEPS, ATUS, historical censuses | ipums | census, bls | IPUMS CPS/ACS/decennial, NHIS, MEPS; weighted estimates with SEs; microdata never redistributed. SIPP through census. |
 | Income and program participation month to month (SNAP, SSI, Medicaid, coverage spells) | census | ipums, medicaid | SIPP microdata (person-months; weight by WPFINWGT; reference year = file year - 1). |
 | Federal budget by account or function, historical tables, credit subsidy rates | omb | treasury, usaspending | OMB Historical Tables and Public Budget Database by budget edition (each revises history); Treasury MTS for actual monthly totals. |
 | Social Security and Medicare trust funds, national health spending projections | actuaries | treasury, cms, medicaid | Trustees Reports (intermediate assumptions) and CMS NHE; SSA tables by manual download. |
@@ -80,7 +81,7 @@ Questions a pack does not answer, and the pack that does (each pack's policy.jso
 | bls | Federal civilian employees | opm | OPM's Federal Workforce Data. |
 | census | Monthly unemployment and payroll jobs | bls | BLS produces both. |
 | census | GDP and personal income by state | bea | BEA regional accounts. |
-| census | Custom tabulations from CPS, ACS or NHIS microdata | ipums | IPUMS harmonized microdata, weighted with SEs. |
+| census | Microdata series harmonized across decades, CPS ASEC standard errors, NHIS, MEPS or historical censuses | ipums | IPUMS codes each variable the same way across years and carries ASEC replicate weights; ACS PUMS and single CPS files come from this pack. |
 | census | International comparisons | world-bank | World Bank indicators across countries. |
 | census | Federal spending by state | usaspending | USAspending awards by place of performance. |
 | cfpb | Bank financial condition or failures | fdic | FDIC BankFind holds call-report financials and the failed-bank list. |
@@ -94,6 +95,7 @@ Questions a pack does not answer, and the pack that does (each pack's policy.jso
 | fred | BLS detail with preliminary flags, footnotes and gaps | bls | The bls pack keeps BLS's own flags. |
 | fred | BEA tables with line numbers and vintages | bea | The bea pack reads BEA tables as published. |
 | fred | Treasury daily statements and auctions | treasury | Treasury Fiscal Data. |
+| ipums | A tabulation from one or a few recent ACS PUMS years, one CPS month or one CPS ASEC year without standard errors | census | The Census Data API serves the same files with the census key, in seconds, public domain (shareable); ACS PUMS replicate weights included. |
 | treasury | Market yields and the daily par yield curve | treasury-yields | Daily Treasury par yield curve rates. |
 | treasury | Historical budget tables in percent of GDP, the President's budget | omb | OMB Historical Tables by budget edition. |
 | treasury | State and local government finances | census | Census government finance surveys. |
@@ -108,7 +110,7 @@ Questions a pack does not answer, and the pack that does (each pack's policy.jso
 | bls | deep | optional (BLS_API_KEY) | labor, employment, prices, inflation, wages, productivity | Bureau of Labor Statistics Public Data API |
 | bts | standard | none | transportation, freight, travel | Bureau of Transportation Statistics Open Data (data.bts.gov) |
 | cdc | standard | none | health, mortality, public health | CDC Open Data (data.cdc.gov) |
-| census | standard | required (CENSUS_API_KEY) | demographics, population, income, housing, poverty, education, program participation, international trade, state and local government finance, economic indicators | Census Bureau Data API (ACS, decennial census, population estimates, SIPP, economic indicators, international trade, government finances) |
+| census | standard | required (CENSUS_API_KEY) | demographics, population, income, housing, poverty, education, program participation, international trade, state and local government finance, economic indicators, survey microdata | Census Bureau Data API (ACS, decennial census, population estimates, SIPP, economic indicators, international trade, government finances) |
 | cfpb | standard | none | finance, consumer protection | CFPB Consumer Complaint Database |
 | clinical-trials | standard | none | health, clinical research | ClinicalTrials.gov (API v2) |
 | cms | standard | none | health, health care, medicare | CMS Provider Data and Medicare data (data.cms.gov) |
