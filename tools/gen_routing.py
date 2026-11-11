@@ -37,6 +37,8 @@ PAIRINGS = [
      "SIPP microdata (person-months; weight by WPFINWGT; reference year = file year - 1)."),
     ("Federal budget by account or function, historical tables, credit subsidy rates", "omb", "treasury, usaspending",
      "OMB Historical Tables and Public Budget Database by budget edition (each revises history); Treasury MTS for actual monthly totals."),
+    ("Federal loan guarantees: SBA 7(a) and 504 volume and loan losses by cohort", "sba", "omb, usaspending",
+     "SBA FOIA loan files (status of active loans withheld); OMB Federal Credit Supplement for subsidy rates and reestimates."),
     ("Social Security and Medicare trust funds, national health spending projections", "actuaries", "treasury, cms, medicaid",
      "Trustees Reports (intermediate assumptions) and CMS NHE; SSA tables by manual download."),
     ("Medicaid and CHIP enrollment, spending, drug use", "medicaid", "cms, census",

@@ -21,6 +21,7 @@ Use `fetch.py --route "<question>"` for a ranked suggestion.
 | Custom tabulations from survey microdata: long series, NHIS, MEPS, ATUS, historical censuses | ipums | census, bls | IPUMS CPS/ACS/decennial, NHIS, MEPS; weighted estimates with SEs; microdata never redistributed. SIPP through census. |
 | Income and program participation month to month (SNAP, SSI, Medicaid, coverage spells) | census | ipums, medicaid | SIPP microdata (person-months; weight by WPFINWGT; reference year = file year - 1). |
 | Federal budget by account or function, historical tables, credit subsidy rates | omb | treasury, usaspending | OMB Historical Tables and Public Budget Database by budget edition (each revises history); Treasury MTS for actual monthly totals. |
+| Federal loan guarantees: SBA 7(a) and 504 volume and loan losses by cohort | sba | omb, usaspending | SBA FOIA loan files (status of active loans withheld); OMB Federal Credit Supplement for subsidy rates and reestimates. |
 | Social Security and Medicare trust funds, national health spending projections | actuaries | treasury, cms, medicaid | Trustees Reports (intermediate assumptions) and CMS NHE; SSA tables by manual download. |
 | Medicaid and CHIP enrollment, spending, drug use | medicaid | cms, census | data.medicaid.gov; preliminary vs updated rows; recent CMS-64 expenditure reports are manual downloads. |
 | Income tax returns, AGI and migration by state, county, ZIP code | irs-soi | census, bea | SOI amounts in thousands; tax year vs filing year; small cells suppressed. |
@@ -96,6 +97,8 @@ Questions a pack does not answer, and the pack that does (each pack's policy.jso
 | fred | BEA tables with line numbers and vintages | bea | The bea pack reads BEA tables as published. |
 | fred | Treasury daily statements and auctions | treasury | Treasury Fiscal Data. |
 | ipums | A tabulation from one or a few recent ACS PUMS years, one CPS month or one CPS ASEC year (standard errors from 2005 on) | census | The census pack serves the same Census files with the census key, in seconds, public domain (shareable), with ACS PUMS replicate weights and the ASEC's from Census's replicate weight file. |
+| sba | Credit subsidy rates, default assumptions and reestimates of SBA loan programs by cohort | omb | The Federal Credit Supplement of the President's Budget publishes them; the SBA files give realized loan outcomes. |
+| sba | Federal loan and loan guarantee obligations and subsidy cost by agency or recipient | usaspending | USAspending reports face value and original subsidy cost of federal loans and guarantees; the SBA files give loan outcomes (paid in full, charged off) but no subsidy cost. |
 | treasury | Market yields and the daily par yield curve | treasury-yields | Daily Treasury par yield curve rates. |
 | treasury | Historical budget tables in percent of GDP, the President's budget | omb | OMB Historical Tables by budget edition. |
 | treasury | State and local government finances | census | Census government finance surveys. |
@@ -153,6 +156,7 @@ Questions a pack does not answer, and the pack that does (each pack's policy.jso
 | pbgc | standard | none | pensions, retirement, social insurance | PBGC Pension Insurance Data Tables (single-employer and multiemployer programs) |
 | philfed | standard | none | macroeconomic forecasts, economic outlook, inflation expectations, real-time data | Philadelphia Fed Real-Time Data Research Center (Survey of Professional Forecasters, Greenbook/Tealbook, Livingston Survey, Real-Time Data Set) |
 | regulations | standard | optional (DATA_GOV_API_KEY) | legislation, regulation, rulemaking | Regulations.gov (API v4) |
+| sba | standard | none | federal credit programs, small business lending, loan guarantees | SBA 7(a) and 504 loan-level data (FOIA files, data.sba.gov): approvals, guarantees, paid-in-full and charge-offs |
 | sec | standard | none | finance, corporations, securities | SEC EDGAR (XBRL financial data, filings, full-text search) |
 | senate-lobbying | standard | optional (LDA_API_KEY) | legislation, lobbying, influence | Lobbying Disclosure (LDA.gov API) |
 | snapqc | standard | none | nutrition assistance, social safety net, household microdata, program administration | SNAP Quality Control (QC) public-use microdata: characteristics of SNAP households (snapqcdata.net) |
