@@ -1,0 +1,56 @@
+{
+  "base_url": "https://data.sba.gov",
+  "timeout": 120,
+  "index_page": "/dataset/7a-504-foia",
+  "files_verified": {
+    "checked": "2026-11-11",
+    "as_of": "260930",
+    "7a": ["FOIA_7a_FY1991_FY1999_asof_260930.csv", "FOIA_7a_FY2000_FY2009_asof_260930.csv",
+           "FOIA_7a_FY2010_FY2019_asof_260930.csv", "FOIA_7a_FY2020_Present_asof_260930.csv"],
+    "504": ["FOIA_504_FY1991_FY2009_asof_260930.csv", "FOIA_504_FY2010_Present_asof_260930.csv"]
+  },
+  "endpoints": {
+    "loans": {
+      "path": "/sites/default/files/uploaded_resources/{file}",
+      "method": "GET",
+      "description": "One row per SBA 7(a) or 504 loan approved in the asked fiscal years (FY1991 on), columns as published (borrower, lender or CDC, GrossApproval, SBAGuaranteedApproval (7(a) only), ApprovalFY, ProcessingMethod, NaicsCode, ProjectState, LoanStatus, PaidInFullDate, ChargeOffDate, GrossChargeOffAmount ...) plus loan_status_code. The files are found on the dataset page (their names carry the quarter-end as-of date), streamed to a temporary file and filtered while reading.",
+      "params": {
+        "program": {"in": "spec", "required": true, "desc": "7a or 504"},
+        "approval_fy": {"in": "spec", "desc": "approval fiscal year(s): one year or a list"},
+        "start_fy": {"in": "spec", "desc": "first approval fiscal year of a range (with end_fy; default end: the latest)"},
+        "end_fy": {"in": "spec", "desc": "last approval fiscal year of a range"},
+        "state": {"in": "spec", "desc": "borrower state(s) (BorrState): USPS code, FIPS code or name"},
+        "project_state": {"in": "spec", "desc": "project state(s) (ProjectState): USPS code, FIPS code or name"},
+        "naics": {"in": "spec", "desc": "NAICS code prefix(es), e.g. \"72\" or [\"722511\", \"722513\"]"},
+        "loan_status": {"in": "spec", "desc": "loan_status_code(s) to keep: PIF, CHGOFF, CANCLD, UNDISBURSED, EXEMPT, CLOSED"},
+        "processing_method": {"in": "spec", "desc": "ProcessingMethod value(s) as published, case-insensitive (\"SBA Express Program\", \"Preferred Lenders Program\", \"504 Basic\" ...)"},
+        "columns": {"in": "spec", "desc": "columns to keep, e.g. [\"ApprovalFY\", \"GrossApproval\", \"LoanStatus\"]; loan_status_code is always kept"}
+      },
+      "records": "$csv",
+      "paging": {"type": "none"},
+      "max_rows": 200000,
+      "flatten": false
+    },
+    "cohorts": {
+      "path": "/sites/default/files/uploaded_resources/{file}",
+      "method": "GET",
+      "description": "Totals per approval fiscal year (cohort), optionally by more columns (group_by), computed while reading the same loan-level files with the same filters: loan counts by status, gross approval and SBA-guaranteed dollars (all loans and disbursed loans), and the gross charge-off amount. One row per ApprovalFY x group.",
+      "params": {
+        "program": {"in": "spec", "required": true, "desc": "7a or 504"},
+        "approval_fy": {"in": "spec", "desc": "approval fiscal year(s): one year or a list"},
+        "start_fy": {"in": "spec", "desc": "first approval fiscal year of a range"},
+        "end_fy": {"in": "spec", "desc": "last approval fiscal year of a range"},
+        "state": {"in": "spec", "desc": "borrower state(s) (BorrState)"},
+        "project_state": {"in": "spec", "desc": "project state(s) (ProjectState)"},
+        "naics": {"in": "spec", "desc": "NAICS code prefix(es)"},
+        "loan_status": {"in": "spec", "desc": "loan_status_code(s) to keep (rarely wanted here: it changes the base)"},
+        "processing_method": {"in": "spec", "desc": "ProcessingMethod value(s), case-insensitive"},
+        "group_by": {"in": "spec", "desc": "extra grouping columns: any of BorrState, ProjectState, ProcessingMethod, naics2 (NAICS sector, first 2 digits), NaicsCode, BusinessType, BusinessAge, FixedorVariableInterestInd, TermInMonths, RevolverStatus, SoldSecMrktInd, loan_status_code"}
+      },
+      "records": "$csv",
+      "paging": {"type": "none"},
+      "max_rows": 200000,
+      "flatten": false
+    }
+  }
+}

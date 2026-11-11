@@ -1,0 +1,113 @@
+{
+  "id": "sba",
+  "title": "SBA 7(a) and 504 loan-level data (FOIA files, data.sba.gov): approvals, guarantees, paid-in-full and charge-offs",
+  "agency": "U.S. Small Business Administration, Office of Capital Access",
+  "depth": "standard",
+  "domains": [
+    "federal credit programs",
+    "small business lending",
+    "loan guarantees"
+  ],
+  "keywords": [
+    "sba",
+    "small business administration",
+    "7(a)",
+    "7a loan",
+    "504 loan",
+    "loan guarantee",
+    "guaranteed loan",
+    "sba guaranty",
+    "charge-off",
+    "chargeoff",
+    "default rate",
+    "loan losses",
+    "credit subsidy",
+    "credit reform",
+    "loan cohort",
+    "paid in full",
+    "certified development company",
+    "sba express",
+    "small business loans"
+  ],
+  "questions": [
+    "cumulative charge-off rate of SBA 7(a) loans by approval fiscal year (cohort), as a default assumption for a credit subsidy estimate",
+    "SBA 7(a) gross approvals and guaranteed amounts by fiscal year and state",
+    "how many 504 loans approved in FY2010-2015 were charged off, and the dollars charged off",
+    "SBA guaranteed lending by industry (NAICS) or processing method (SBA Express, Preferred Lenders)",
+    "average 7(a) loan size and guaranty share by fiscal year"
+  ],
+  "homepage": "https://data.sba.gov/dataset/7a-504-foia",
+  "terms_url": "https://www.sba.gov/about-sba/open-government/foia",
+  "auth": {
+    "env": null,
+    "required": "none",
+    "placement": "none",
+    "param": null,
+    "prefix": "",
+    "home": null,
+    "signup_url": null,
+    "echoes_key": false,
+    "key_only": [],
+    "extra": {},
+    "demo_key": null
+  },
+  "limits": {
+    "rps": 1,
+    "burst": 2,
+    "daily_quota": null,
+    "errors_per_min": null,
+    "bytes_per_min": null,
+    "max_rows": 200000
+  },
+  "routes": {
+    "api": {
+      "base": "https://data.sba.gov",
+      "probe": "https://data.sba.gov/dataset/7a-504-foia",
+      "hosts": [
+        "data.sba.gov"
+      ]
+    },
+    "manual": {
+      "how": "Open https://data.sba.gov/dataset/7a-504-foia in a browser, download the CSV file(s) named in INSTRUCTIONS.md (for example FOIA_7a_FY2020_Present_asof_260930.csv; the as-of date in the name changes each quarter) and upload them unchanged; --ingest filters them by the spec. The files are large (54 to 319 MB each)."
+    }
+  },
+  "cache": {
+    "mode": "run_only",
+    "ttl_hours": null,
+    "why": "Each request streams one or more published CSVs (54 to 319 MB) to a temporary file and keeps only the asked rows or their totals; data/ is reused within a run only."
+  },
+  "redistribution": {
+    "mode": "allowed",
+    "why": "SBA publishes these loan records under the Freedom of Information Act as U.S. government works in the public domain (17 U.S.C. 105); the status of active loans is withheld by SBA (FOIA Exemption 4). Cite SBA and the as-of date."
+  },
+  "notices": [],
+  "retention": null,
+  "citation": "U.S. Small Business Administration, {dataset}, data.sba.gov/dataset/7a-504-foia, retrieved {retrieved_long}.",
+  "audit_hooks": [],
+  "clarify": [
+    "Which program: 7(a) (lender loans with an SBA guaranty) or 504 (CDC debentures)? Default: 7(a), the larger one; 504 when the question names CDCs or real estate and equipment debentures.",
+    "Charge-off rate on what base: loans or dollars, and out of all approvals or only disbursed loans? Default: out of disbursed loans (approvals minus cancelled and undisbursed), by count and by gross approval dollars, cumulative to the file's as-of date."
+  ],
+  "formats": [
+    "csv"
+  ],
+  "use_instead": [
+    {
+      "question": "Credit subsidy rates, default assumptions and reestimates of SBA loan programs by cohort",
+      "source": "omb",
+      "terms": [
+        "credit supplement",
+        "reestimates"
+      ],
+      "why": "The Federal Credit Supplement of the President's Budget publishes them; the SBA files give realized loan outcomes."
+    },
+    {
+      "question": "Federal loan and loan guarantee obligations and subsidy cost by agency or recipient",
+      "source": "usaspending",
+      "terms": [
+        "loan"
+      ],
+      "why": "USAspending reports face value and original subsidy cost of federal loans and guarantees; the SBA files give loan outcomes (paid in full, charged off) but no subsidy cost."
+    }
+  ]
+}

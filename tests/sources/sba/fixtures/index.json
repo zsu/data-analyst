@@ -1,0 +1,5 @@
+{
+ "GET https://data.sba.gov/dataset/7a-504-foia": "dataset_page.html",
+ "GET https://data.sba.gov/sites/default/files/uploaded_resources/FOIA_7a_FY2020_Present_asof_260930.csv": "FOIA_7a_FY2020_Present_subset.csv",
+ "GET https://data.sba.gov/sites/default/files/uploaded_resources/FOIA_504_FY2010_Present_asof_260930.csv": "FOIA_504_FY2010_Present_subset.csv"
+}
