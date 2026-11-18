@@ -44,5 +44,4 @@ One Agent Skills skill (`plugins/data-analyst/skills/data-analyst/`, shipped as 
 - Maintainer skill `rsi-data-analyst` lives in its own project, `C:\zsu\Projects\rsi-data-analyst` (not in this repo or the plugin).
   Load it with `claude --plugin-dir C:\zsu\Projects\rsi-data-analyst` and run `/rsi-data-analyst:rsi-data-analyst [ids] [--repo <this repo>] [--test]`
   (it finds this checkout from `--repo`, env `DATA_ANALYST_REPO` or the working directory, else asks). It checks packs live and against
-  agency docs, fixes drift, and optionally runs a random multi-source question end to end. Its probe records the last live check of
-  each pack in `docs/source_status.json` here, and run artifacts go to `out/rsi/`.
+  agency docs, fixes drift, and optionally runs a random multi-source question end to end. Run artifacts go to `out/rsi/`.
