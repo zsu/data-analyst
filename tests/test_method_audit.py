@@ -151,6 +151,18 @@ class TestMethodRules(MethodBase):
         self.assertEqual(fails(r), [])
         self.assertTrue(any(c == "disclosures" and "disclose" in m for c, ok, m in r if ok))
 
+    def test_disclosures_as_a_list_fails_with_the_format_instead_of_crashing(self):
+        D = copy.deepcopy(GOOD)
+        D["disclosures"] = ["Nobody could be asked; real CPI-U dollars were used."]
+        write(os.path.join(self.out, "decisions.json"), json.dumps(D))
+        R = MA.merged(self.out)
+        self.assertEqual(R["disclosures"], {})
+        msgs = [m for _, _, m in fails(self.check(R), "disclosures")]
+        self.assertTrue(any("is a list" in m and "object" in m for m in msgs), msgs)
+        D["disclosures"] = {"dollar_basis": "Nobody could be asked; real CPI-U dollars were used."}
+        write(os.path.join(self.out, "decisions.json"), json.dumps(D))
+        self.assertEqual(fails(self.check(MA.merged(self.out)), "disclosures"), [])
+
     def test_settled_by_request_needs_the_quote_and_counts_as_answered(self):
         D = copy.deepcopy(GOOD)
         q = D["questions"][1]                                             # backs the user-basis "span"

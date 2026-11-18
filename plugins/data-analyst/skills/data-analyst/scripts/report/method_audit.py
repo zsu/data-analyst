@@ -123,7 +123,11 @@ def merged(base: str, R: dict | None = None) -> dict:
         if D.get(k) or R.get(k):
             R[k] = list(D.get(k, [])) + [x for x in R.get(k, []) if x not in D.get(k, [])]
     if D.get("disclosures") or R.get("disclosures"):
-        R["disclosures"] = {**(D.get("disclosures") or {}), **(R.get("disclosures") or {})}
+        bad = [type(x).__name__ for x in (D.get("disclosures"), R.get("disclosures")) if x and not isinstance(x, dict)]
+        R["disclosures"] = {**(D.get("disclosures") if isinstance(D.get("disclosures"), dict) else {}),
+                            **(R.get("disclosures") if isinstance(R.get("disclosures"), dict) else {})}
+        if bad:                                 # e.g. a list of lines: keyed checks cannot find them
+            R["disclosures_malformed"] = bad[0]
     if "data_needs" in D or "data_needs" in R:
         R.setdefault("data_needs", D.get("data_needs", []))
     if D.get("data_needs_note") and not R.get("data_needs_note"):
@@ -383,6 +387,9 @@ def check_method(R: dict, base: str, facts: dict) -> list[tuple]:
 
     # ---- disclosures: what the gate cannot check, the reader must be told
     disc = R.get("disclosures") or {}
+    if R.get("disclosures_malformed"):
+        res("disclosures", False, f"decisions.json \"disclosures\" is a {R['disclosures_malformed']}: make it an object "
+            "keyed by question id (or \"literature\"), one line each: {\"<question id>\": \"<one line>\"}")
     for key, what in escapes(R):
         text = str(disc.get(key) or "").strip()
         res("disclosures", bool(text), f"{key}: disclose in the answer: {text}" if text else
