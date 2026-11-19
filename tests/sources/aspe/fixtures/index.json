@@ -1,0 +1,12 @@
+{
+ "GET https://aspe.hhs.gov/topics/poverty-economic-mobility/poverty-guidelines/api/2024/us/4": "r001.json",
+ "GET https://aspe.hhs.gov/topics/poverty-economic-mobility/poverty-guidelines/api/2024/us/9": "r002.json",
+ "GET https://aspe.hhs.gov/topics/poverty-economic-mobility/poverty-guidelines/api/2024/ak/4": "r003.json",
+ "GET https://aspe.hhs.gov/topics/poverty-economic-mobility/poverty-guidelines/api/2024/ak/9": "r004.json",
+ "GET https://aspe.hhs.gov/topics/poverty-economic-mobility/poverty-guidelines/api/2026/us/4": "r005.json",
+ "GET https://aspe.hhs.gov/topics/poverty-economic-mobility/poverty-guidelines/api/2026/us/9": "r006.json",
+ "GET https://aspe.hhs.gov/topics/poverty-economic-mobility/poverty-guidelines/api/2026/ak/4": "r007.json",
+ "GET https://aspe.hhs.gov/topics/poverty-economic-mobility/poverty-guidelines/api/2026/ak/9": "r008.json",
+ "GET https://aspe.hhs.gov/topics/poverty-economic-mobility/poverty-guidelines/api/2027/us/4": "r009.json",
+ "GET https://aspe.hhs.gov/topics/poverty-economic-mobility/poverty-guidelines/api/2024/ny/4": "r010.json"
+}

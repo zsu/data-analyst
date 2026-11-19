@@ -1,0 +1,122 @@
+{
+  "id": "aspe",
+  "title": "HHS Poverty Guidelines API (federal poverty level for program eligibility, ASPE)",
+  "agency": "HHS Office of the Assistant Secretary for Planning and Evaluation (ASPE)",
+  "depth": "standard",
+  "domains": [
+    "program eligibility",
+    "safety net",
+    "poverty guidelines",
+    "income thresholds"
+  ],
+  "keywords": [
+    "aspe",
+    "poverty guidelines",
+    "poverty guideline",
+    "hhs poverty guidelines",
+    "federal poverty level",
+    "federal poverty guidelines",
+    "federal poverty line",
+    "fpl",
+    "percent of fpl",
+    "percent of the poverty level",
+    "percent of poverty",
+    "138 percent",
+    "138% fpl",
+    "200 percent of poverty",
+    "400 percent of poverty",
+    "income eligibility",
+    "eligibility threshold",
+    "eligibility limit",
+    "income limit",
+    "medicaid eligibility",
+    "chip eligibility",
+    "premium tax credit eligibility",
+    "subsidy cliff",
+    "liheap",
+    "head start eligibility",
+    "free school meals eligibility"
+  ],
+  "questions": [
+    "federal poverty level for a family of four in 2026",
+    "138 percent of FPL for a single adult in Alaska (Medicaid expansion limit)",
+    "poverty guidelines for household sizes 1 to 8 since 2020",
+    "how much the poverty guideline for a family of three grew from 2000 to 2026",
+    "income at 400 percent of the poverty level for a family of four, with the guideline year the ACA premium tax credit uses"
+  ],
+  "homepage": "https://aspe.hhs.gov/topics/poverty-economic-mobility/poverty-guidelines/poverty-guidelines-api",
+  "terms_url": "https://www.hhs.gov/disclaimer.html",
+  "auth": {
+    "env": null,
+    "required": "none",
+    "placement": "none",
+    "param": null,
+    "prefix": "",
+    "home": null,
+    "signup_url": null,
+    "echoes_key": false,
+    "key_only": [],
+    "extra": {},
+    "demo_key": null
+  },
+  "limits": {
+    "rps": 2,
+    "burst": 4,
+    "daily_quota": null,
+    "errors_per_min": null,
+    "bytes_per_min": null,
+    "max_rows": 600
+  },
+  "routes": {
+    "api": {
+      "base": "https://aspe.hhs.gov/topics/poverty-economic-mobility/poverty-guidelines/api",
+      "probe": "https://aspe.hhs.gov/topics/poverty-economic-mobility/poverty-guidelines/api/2024/us/1",
+      "hosts": [
+        "aspe.hhs.gov"
+      ]
+    },
+    "manual": {
+      "how": "Open each link in manual_download/INSTRUCTIONS.md in a browser (one per year, state group and household size) and save the JSON page under the name shown, then upload the files. Without the links: the current year's three tables (48 contiguous states and DC, Alaska, Hawaii) are on https://aspe.hhs.gov/topics/poverty-economic-mobility/poverty-guidelines, and every earlier year's tables with its Federal Register notice are on https://aspe.hhs.gov/topics/poverty-economic-mobility/poverty-guidelines/prior-hhs-poverty-guidelines-federal-register-references; copy the rows needed (year, state group, household size, guideline in dollars) and cite the Federal Register notice."
+    }
+  },
+  "cache": {
+    "mode": "run_only",
+    "ttl_hours": null,
+    "why": "A few small JSON answers per run; data/ is reused only within a run."
+  },
+  "redistribution": {
+    "mode": "allowed",
+    "why": "The poverty guidelines are a work of the U.S. government published in the Federal Register, public domain (17 U.S.C. 105)."
+  },
+  "notices": [],
+  "retention": null,
+  "citation": "U.S. Department of Health and Human Services, Office of the Assistant Secretary for Planning and Evaluation, HHS Poverty Guidelines ({dataset}), Poverty Guidelines API, aspe.hhs.gov, retrieved {retrieved_long}.",
+  "audit_hooks": [],
+  "clarify": [
+    "Which program's year convention? Guidelines are named for the year they are issued (January), and each program sets its own effective date (school meals from July 1); ACA premium tax credits for coverage year Y use the guidelines of year Y-1; SNAP uses USDA's fiscal-year tables (from October 1). Default: the guidelines of the year the user names, said as such.",
+    "Which schedule: the 48 contiguous states and DC, Alaska or Hawaii? Default: the 48 states and DC (us), unless the question names Alaska or Hawaii."
+  ],
+  "use_instead": [
+    {
+      "question": "Poverty rates, people in poverty, or the Census poverty thresholds (statistical poverty measure) by place or group",
+      "source": "census",
+      "terms": ["poverty"],
+      "why": "Census publishes the official poverty thresholds and poverty estimates (ACS, CPS ASEC); the HHS guidelines are an administrative eligibility measure."
+    },
+    {
+      "question": "SNAP participation, benefits or state eligibility options",
+      "source": "usda-fna",
+      "terms": ["snap"],
+      "why": "USDA FNS program data and the SNAP State Options Report; SNAP's income limits come from USDA's own fiscal-year tables."
+    },
+    {
+      "question": "Medicaid and CHIP enrollment or spending",
+      "source": "medicaid",
+      "terms": ["medicaid", "chip"],
+      "why": "data.medicaid.gov holds enrollment and expenditure data; this pack gives only the income guidelines programs apply."
+    }
+  ],
+  "formats": [
+    "json"
+  ]
+}

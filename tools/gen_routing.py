@@ -35,6 +35,9 @@ PAIRINGS = [
      "IPUMS CPS/ACS/decennial, NHIS, MEPS; weighted estimates with SEs; microdata never redistributed. SIPP through census."),
     ("Income and program participation month to month (SNAP, SSI, Medicaid, coverage spells)", "census", "ipums, medicaid",
      "SIPP microdata (person-months; weight by WPFINWGT; reference year = file year - 1)."),
+    ("Federal poverty guidelines (FPL) and income eligibility limits", "aspe", "census, usda-fna, medicaid",
+     "HHS guidelines by year, schedule (48 states and DC, Alaska, Hawaii) and household size; not the Census poverty "
+     "thresholds; ACA premium tax credits use the prior year's guidelines."),
     ("Federal budget by account or function, historical tables, credit subsidy rates", "omb", "treasury, usaspending",
      "OMB Historical Tables and Public Budget Database by budget edition (each revises history); Treasury MTS for actual monthly totals."),
     ("Federal loan guarantees: SBA 7(a) and 504 volume and loan losses by cohort", "sba", "omb, usaspending",

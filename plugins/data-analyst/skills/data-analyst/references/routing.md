@@ -20,6 +20,7 @@ Use `fetch.py --route "<question>"` for a ranked suggestion.
 | Custom tabulations from recent ACS or CPS microdata | census | ipums, bls | ACS PUMS (2004 on, PWGTP1-80 replicate SEs), CPS basic monthly (1989 on) and ASEC (1992 on; 160 replicate SEs from 2005) from Census, public domain; IPUMS for harmonized codes across years, CPI99, CPS panels, earlier years. |
 | Custom tabulations from survey microdata: long series, NHIS, MEPS, ATUS, historical censuses | ipums | census, bls | IPUMS CPS/ACS/decennial, NHIS, MEPS; weighted estimates with SEs; microdata never redistributed. SIPP through census. |
 | Income and program participation month to month (SNAP, SSI, Medicaid, coverage spells) | census | ipums, medicaid | SIPP microdata (person-months; weight by WPFINWGT; reference year = file year - 1). |
+| Federal poverty guidelines (FPL) and income eligibility limits | aspe | census, usda-fna, medicaid | HHS guidelines by year, schedule (48 states and DC, Alaska, Hawaii) and household size; not the Census poverty thresholds; ACA premium tax credits use the prior year's guidelines. |
 | Federal budget by account or function, historical tables, credit subsidy rates | omb | treasury, usaspending | OMB Historical Tables and Public Budget Database by budget edition (each revises history); Treasury MTS for actual monthly totals. |
 | Federal loan guarantees: SBA 7(a) and 504 volume and loan losses by cohort | sba | omb, usaspending | SBA FOIA loan files (status of active loans withheld); OMB Federal Credit Supplement for subsidy rates and reestimates. |
 | Social Security and Medicare trust funds, national health spending projections | actuaries | treasury, cms, medicaid | Trustees Reports (intermediate assumptions) and CMS NHE; SSA tables by manual download. |
@@ -74,6 +75,9 @@ Questions a pack does not answer, and the pack that does (each pack's policy.jso
 
 | Not in | Question | Use | Why |
 |---|---|---|---|
+| aspe | Poverty rates, people in poverty, or the Census poverty thresholds (statistical poverty measure) by place or group | census | Census publishes the official poverty thresholds and poverty estimates (ACS, CPS ASEC); the HHS guidelines are an administrative eligibility measure. |
+| aspe | SNAP participation, benefits or state eligibility options | usda-fna | USDA FNS program data and the SNAP State Options Report; SNAP's income limits come from USDA's own fiscal-year tables. |
+| aspe | Medicaid and CHIP enrollment or spending | medicaid | data.medicaid.gov holds enrollment and expenditure data; this pack gives only the income guidelines programs apply. |
 | bea | CPI, jobs, unemployment, wages by occupation | bls | BLS produces these. |
 | bea | Budget data by fiscal year | treasury | Treasury Fiscal Data. |
 | bea | Market interest rates | treasury-yields | Daily Treasury yields. |
@@ -111,6 +115,7 @@ Questions a pack does not answer, and the pack that does (each pack's policy.jso
 |---|---|---|---|---|
 | acf | standard | none | welfare, cash assistance, child care, safety net, state spending, federal grants to states | HHS Administration for Children and Families program data (TANF financial and caseload data, CCDF expenditures) |
 | actuaries | standard | none | social security, medicare, health spending, entitlement programs, long-term fiscal outlook | Social Security and Medicare Trustees Reports and National Health Expenditure data (SSA and CMS actuaries) |
+| aspe | standard | none | program eligibility, safety net, poverty guidelines, income thresholds | HHS Poverty Guidelines API (federal poverty level for program eligibility, ASPE) |
 | bea | deep | required (BEA_API_KEY) | economy, national accounts, income, regional economy, international trade | Bureau of Economic Analysis (BEA) Data API and bulk files |
 | bls | deep | optional (BLS_API_KEY) | labor, employment, prices, inflation, wages, productivity | Bureau of Labor Statistics Public Data API |
 | bts | standard | none | transportation, freight, travel | Bureau of Transportation Statistics Open Data (data.bts.gov) |
