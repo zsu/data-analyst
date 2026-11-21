@@ -68,3 +68,11 @@ powershell -NoProfile -ExecutionPolicy Bypass -File plugins/data-analyst/skills/
 | `tools/` | routing generator and upload packager |
 
 Tests: `python -I tests/run_all.py`.
+
+## Related
+- [data-analyst-mcp](https://github.com/zsu/data-analyst-mcp): the same workflow as a Model Context Protocol (MCP)
+  server, for Cursor, VS Code, Claude Desktop and any other MCP client (`npx -y data-analyst-mcp`).
+- [rsi-skill](https://github.com/zsu/rsi-skill): recursive self-improvement for Claude Code and Agent Skills.
+- Project page: [zsu.github.io/data-analyst](https://zsu.github.io/data-analyst/).
+
+MIT licensed; see [LICENSE](LICENSE).
