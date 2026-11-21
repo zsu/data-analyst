@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>US Economic Analysis Skill for Claude: FRED, BLS, BEA</title>
+  <meta name="description" content="Open-source Agent Skill and Claude Code plugin for U.S. economic analysis with official government data from FRED, BLS, BEA, Census, Treasury and 55+ more federal sources. Outputs audited CSVs and reports.">
+  <meta name="keywords" content="Claude skill, Agent Skills, Claude Code plugin, economic analysis, US government data, FRED, BLS, BEA, Census, Treasury, Codex plugin, open data">
+  <link rel="canonical" href="https://zsu.github.io/data-analyst/">
+  <!-- Google Search Console: paste the HTML-tag verification line for https://zsu.github.io/data-analyst/ here, e.g.
+       <meta name="google-site-verification" content="..."> -->
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="US Economic Analysis Skill for Claude: FRED, BLS, BEA">
+  <meta property="og:description" content="Open-source Agent Skill and Claude Code plugin for U.S. economic analysis with official government data from FRED, BLS, BEA, Census, Treasury and 55+ more federal sources. Outputs audited CSVs and reports.">
+  <meta property="og:url" content="https://zsu.github.io/data-analyst/">
+  <meta name="twitter:card" content="summary">
+  <script type="application/ld+json">{"@context": "https://schema.org", "@type": "SoftwareSourceCode", "name": "data-analyst", "description": "Open-source Agent Skill and Claude Code plugin for U.S. economic analysis with official government data from FRED, BLS, BEA, Census, Treasury and 55+ more federal sources. Outputs audited CSVs and reports.", "url": "https://zsu.github.io/data-analyst/", "codeRepository": "https://github.com/zsu/data-analyst", "programmingLanguage": "Python", "license": "https://opensource.org/licenses/MIT", "author": {"@type": "Person", "name": "zsu", "url": "https://github.com/zsu"}, "keywords": "Claude skill, Agent Skills, Claude Code plugin, economic analysis, US government data, FRED, BLS, BEA, Census, Treasury, Codex plugin, open data"}</script>
+  <style>
+:root{--bg:#fbfbf9;--fg:#1d1f22;--muted:#5b6068;--line:#e3e3de;--card:#ffffff;--accent:#1f5fbf;--code:#f2f2ee}
+@media (prefers-color-scheme:dark){:root{--bg:#141619;--fg:#e8e9eb;--muted:#a0a6ae;--line:#2c3036;--card:#1b1e22;--accent:#7fb0ff;--code:#22262b}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:17px/1.6 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+main{max-width:780px;margin:0 auto;padding:48px 16px 64px}
+header p.kicker{margin:0 0 8px;color:var(--muted);font-size:14px;letter-spacing:.04em;text-transform:uppercase}
+h1{font-size:clamp(28px,5vw,40px);line-height:1.15;margin:0 0 16px}
+h2{font-size:22px;margin:40px 0 12px}
+p.lede{font-size:19px;color:var(--fg);margin:0 0 20px}
+a{color:var(--accent)}
+.links{display:flex;flex-wrap:wrap;gap:10px;margin:20px 0 8px}
+.links a{display:inline-block;padding:8px 14px;border:1px solid var(--line);border-radius:8px;background:var(--card);text-decoration:none;font-weight:600}
+.links a.primary{background:var(--accent);border-color:var(--accent);color:var(--bg)}
+pre{background:var(--code);border:1px solid var(--line);border-radius:8px;padding:12px 14px;overflow-x:auto;font-size:14px;line-height:1.5}
+code{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:.92em}
+ul,ol{padding-left:22px}
+li{margin:4px 0}
+.tags{color:var(--muted);font-size:15px}
+footer{margin-top:56px;padding-top:16px;border-top:1px solid var(--line);color:var(--muted);font-size:14px}
+</style>
+</head>
+<body>
+  <main>
+    <header>
+      <p class="kicker">Agent Skill · Claude Code plugin · MIT</p>
+      <h1>U.S. economic analysis skill for Claude and AI agents</h1>
+      <p class="lede"><code>data-analyst</code> is an open-source <strong>Agent Skill</strong> for <strong>U.S. economic analysis</strong>, shipped as a plugin for Claude Code, Claude Desktop, claude.ai and Codex. It picks the federal sources a question needs (FRED, BLS, BEA, Census, Treasury, USAspending, CDC, Congress.gov, EPA and more), downloads the data, runs reproducible calculations, and returns audited CSVs and an HTML report.</p>
+    </header>
+    <nav class="links" aria-label="Project links">
+      <a class="primary" href="https://github.com/zsu/data-analyst">View on GitHub</a>
+      <a href="https://github.com/zsu/agent-plugins">Plugin catalog</a>
+      <a href="https://zsu.github.io/data-analyst-mcp/">MCP server version</a>
+    </nav>
+
+    <h2>Install</h2>
+    <p><strong>Claude Code</strong></p>
+    <pre><code>/plugin marketplace add zsu/agent-plugins
+/plugin install data-analyst@zsu</code></pre>
+    <p><strong>Codex</strong></p>
+    <pre><code>codex plugin marketplace add zsu/agent-plugins</code></pre>
+    <p>Then install <code>data-analyst</code> from the Plugins directory. On Claude Desktop, Cowork and claude.ai, add the
+    marketplace <code>zsu/agent-plugins</code> under Plugins. Any other assistant that reads Agent Skills can load the
+    skill folder directly.</p>
+
+    <h2>Questions it answers</h2>
+    <ul>
+      <li>How much has federal debt held by the public grown as a share of GDP since 2015?</li>
+      <li>Chart real average hourly earnings by industry over the last ten years.</li>
+      <li>How has the unemployment rate compared with CPI inflation since 2020?</li>
+      <li>How much did each federal agency spend in fiscal year 2024?</li>
+    </ul>
+
+    <h2>How it works</h2>
+    <ol>
+      <li>Asks only the questions that change the answer: which measure, which years, which population.</li>
+      <li>Fetches official series from the agency itself, with or without API keys; when a site refuses scripts it hands
+      over a one-command manual download.</li>
+      <li>Runs reproducible calculations and registers every number it cites.</li>
+      <li>Audits the answer before release, and writes CSVs plus a short answer or an HTML report.</li>
+    </ol>
+    <p>It never writes into its own folder, never prints or stores API keys in output, and never invents data.</p>
+
+    <h2>Data sources</h2>
+    <p class="tags">FRED · BLS · BEA · Census · IPUMS · Treasury and Treasury yields · Federal Reserve Board · New York
+    Fed · Philadelphia Fed · USAspending · OMB · Congress.gov · Federal Register · GovInfo · SEC · FEC · FDIC · CFPB ·
+    CDC · CMS · Medicaid · FDA · NIH · EPA · NOAA · NWS · USGS · EIA · NREL · USDA · HUD · OPM · DOL · IRS SOI · SBA ·
+    BTS · NHTSA · FBI · USPTO · NAEP · World Bank and more (63 in all).</p>
+
+    <footer>
+      <p>MIT licensed. Source and issues on <a href="https://github.com/zsu/data-analyst">GitHub</a>. Other projects:
+      <a href="https://zsu.github.io/data-analyst-mcp/">data-analyst-mcp</a> (the same data as an MCP server) · <a href="https://zsu.github.io/rsi-skill/">rsi-skill</a>.</p>
+    </footer>
+  </main>
+</body>
+</html>
