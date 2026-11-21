@@ -1,12 +1,6 @@
-# data-analyst
+# US Economic Analysis Skill (`data-analyst`)
 
-An AI-assistant skill (Claude, Codex, or any assistant that reads Agent Skills) that answers questions with official U.S. government data from federal sources (BEA, BLS,
-FRED, Census, IPUMS, Treasury, OPM, USAspending, CDC, Congress.gov, EPA and more). It picks the sources a
-question needs, gets the data in any environment, asks only the questions that change the numbers, and
-returns CSV data plus a short answer, or an audited HTML report or paper when asked.
-
-Each source keeps its own rules (IPUMS microdata is never redistributed; FRED forbids persistent copies;
-OPM reports disclose redaction coverage; ...). `fetch.py --sources` lists every source.
+An AI-assistant skill for **U.S. economic analysis** using official **U.S. government data** from federal sources—including FRED, BLS, BEA, Census, Treasury, USAspending, CDC, Congress.gov, and EPA. Built for Claude Code, Claude Desktop, Codex, and Agent Skills-compatible tools, it fetches official series, runs reproducible calculations, and outputs audited CSVs and reports.
 
 ## Install
 Install it as a plugin from the `zsu` marketplace in the [zsu/agent-plugins](https://github.com/zsu/agent-plugins)
