@@ -26,6 +26,7 @@ sys.path[:0] = [os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "
 from testkit import PackTest, load_pack_module  # noqa: E402
 
 KEY = {"DOL_API_KEY": "test-key-not-real-0000"}
+LOCAL = {"DATA_ANALYST_ENV": "local"}   # the keyed-route message depends on where the run is
 UTF = {"description": "UI trust fund: Wyoming latest month, CA and TX in 2026, each state's latest month",
        "requests": [{"name": "wy", "endpoint": "ui_trust_fund", "params": {"state": "WY", "latest": True}},
                     {"name": "ca_tx", "endpoint": "ui_trust_fund",
@@ -46,7 +47,7 @@ class TestDol(PackTest):
     sample_spec = WHD
 
     def test_check_data_query_needs_key(self):
-        code, r = self.check(WHD)
+        code, r = self.check(WHD, env=LOCAL)
         self.assertEqual(code, 0, r)
         self.assertEqual(r["route"], "run_setup", r)
         self.assertTrue(r["key_only_needs"])
@@ -126,18 +127,18 @@ class TestDol(PackTest):
                              "params": {"dataset": "osha_inspection", "state": "NH",
                                         "filters": {"site_district": "NORTH", "insp_type": "B"},
                                         "search": {"establishment": "acme"}}}]}
-        code, r = self.check(bad)
+        code, r = self.check(bad, env=LOCAL)
         self.assertEqual(r["route"], "fix_spec", r)
         self.assertIn("'site_district'", r["message"])
         self.assertIn("'establishment'", r["message"])
         self.assertNotIn("'insp_type'", r["message"].split("its fields")[0])
         self.assertIn("site_city", r["message"])                    # the real fields are listed
         bad["requests"][0]["check_fields"] = False                  # the escape when the dictionary is incomplete
-        code, r = self.check(bad)
+        code, r = self.check(bad, env=LOCAL)
         self.assertEqual(r["route"], "run_setup", r)
         good = {"requests": [{"name": "x", "endpoint": "query",
                               "params": {"dataset": "osha_inspection", "state": "NH", "filters": {"site_city": "KEENE"}}}]}
-        code, r = self.check(good)
+        code, r = self.check(good, env=LOCAL)
         self.assertEqual(r["route"], "run_setup", r)
         # run_setup names the pack's keyless way to the same data and the command that packages such a file
         self.assertIn("https://", r["keyless_alternative"])
@@ -151,7 +152,7 @@ class TestDol(PackTest):
         self.assertEqual(r["route"], "api", r)
         self.assertEqual(r["key_only_needs"], [])
         # a spec mixing a keyed API query and a trust fund file still needs the key, for the query only
-        code, r = self.check({"requests": UTF["requests"] + WHD["requests"]})
+        code, r = self.check({"requests": UTF["requests"] + WHD["requests"]}, env=LOCAL)
         self.assertEqual(r["route"], "run_setup", r)
         self.assertIn("whd_tx", r["key_only_needs"][0])
         self.assertNotIn("wy", r["key_only_needs"][0])

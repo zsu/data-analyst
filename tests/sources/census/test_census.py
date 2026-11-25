@@ -40,6 +40,7 @@ sys.path[:0] = [os.path.join(HERE, "..", ".."),                                 
 from testkit import PackTest, load_pack_module, pack_dir  # noqa: E402
 
 KEY = {"CENSUS_API_KEY": "test-key-not-real-0000"}
+LOCAL = {"DATA_ANALYST_ENV": "local"}   # the keyed-route message depends on where the run is
 SPEC = {"description": "Median household income, Maryland counties, latest ACS 5-year",
         "requests": [{"name": "md_county_income", "endpoint": "query",
                       "params": {"dataset": "acs5", "get": "NAME,B19013_001E", "for": "county:*", "state": "Maryland"}}]}
@@ -75,13 +76,13 @@ class TestCensus(PackTest):
     sample_spec = SPEC
 
     def test_check_without_key_is_run_setup(self):
-        code, r = self.check(SPEC)
+        code, r = self.check(SPEC, env=LOCAL)
         self.assertEqual(code, 0, r)
         self.assertEqual(r["route"], "run_setup", r)
         self.assertEqual(r["key_env"], "CENSUS_API_KEY")
 
     def test_keyless_query_is_blocked_as_missing_key(self):
-        code, r, out = self.fetch(SPEC)
+        code, r, out = self.fetch(SPEC, env=LOCAL)
         self.assertEqual(code, 4, r)
         self.assertEqual(r["kind"], "key_missing", r)
         self.assertEqual(r["route"], "run_setup")
