@@ -388,7 +388,7 @@ def route_check(s: dict, out: str, env: str, force: bool = False, spec_path: str
         b = bundle("the request needs a FRED API key")
         if env == "cloud":
             return done("cloud_secret",
-                        lead + need + f" {croutes.cloud_key_how('FRED_API_KEY')}, and start the session "
+                        lead + need + f" {croutes.cloud_key_how('FRED_API_KEY', signup=KEY_URL)}, and start the session "
                         f"again, or download on your own computer with the files in {b}.",
                         "Explain both options (and the keyless alternative). If the user downloads by hand: "
                         + SEND, ingest_cmd)
@@ -638,6 +638,30 @@ def vintage_label(x: dict, rt_start: str = "", column: str = "") -> str:
     return f"{m.group(1)[:4]}-{m.group(1)[4:6]}-{m.group(1)[6:]}" if m else ""
 
 
+def known_ids() -> list[str]:
+    """Series IDs the pack documents (backticked IDs in source.md and docs/*.md), for did-you-mean hints."""
+    ids = set()
+    for p in [os.path.join(PACK, "source.md"), *sorted(glob.glob(os.path.join(PACK, "docs", "*.md")))]:
+        try:
+            with open(p, encoding="utf-8") as f:
+                ids.update(re.findall(r"`([A-Z][A-Z0-9_]{2,})`", f.read()))
+        except OSError:
+            continue
+    return sorted(ids)
+
+
+def unknown_id_hint(sid: str) -> str:
+    """What to do about an ID FRED does not know. FRED answers "does not exist" (404 keyless) for a mistyped or
+    guessed ID; series it discontinues keep their page and data, so the answer never means FRED stopped serving
+    the series."""
+    import difflib
+    close = difflib.get_close_matches(sid.upper(), known_ids(), n=3, cutoff=0.8)
+    return (f"FRED has no series {sid}: the ID is almost surely mistyped or guessed (a discontinued series keeps "
+            "its page, marked DISCONTINUED), so never report the data as no longer on FRED." + (f" Close documented IDs: {', '.join(close)}." if close else "") +
+            ' Find the ID with --search "<words>" (needs a key) or in docs/series.md, confirm it with --describe, '
+            "and fix spec.json.")
+
+
 def new_parts(calls: list) -> dict:
     return {"obs": [], "meta": {}, "raw": [], "regional": [], "problems": [], "calls": calls, "release_dates": [],
             "release_series": [], "release_obs": [], "notes": []}
@@ -699,7 +723,7 @@ def fetch_api(s: dict, c: FredClient) -> dict:
         except FredError as e:
             if e.kind in ("auth", "network", "rate", "unavailable"):
                 raise
-            parts["problems"].append(f"{tag(x)}: {e}")
+            parts["problems"].append(f"{tag(x)}: {e}" + (f" {unknown_id_hint(sid)}" if e.kind == "not_found" else ""))
     for j, rb in enumerate(s["regional"], start=1):
         try:
             p = {k: v for k, v in rb.items() if k not in ("label", "series_id")}
@@ -849,7 +873,7 @@ def fetch_keyless(s: dict, k: Keyless) -> dict:
                 if e.kind == "network":
                     raise
                 parts["problems"].append(f"{x['id']}" + (f" vintages {dates[0]} to {dates[-1]}" if dates else "")
-                                         + f": {e}")
+                                         + f": {e}" + (f" {unknown_id_hint(x['id'])}" if e.kind == "not_found" else ""))
                 continue
             parts["raw"].append({"name": chunk_file(x, n, len(chunks)), "request": k.calls[-1], "bytes": body})
             rows += graph_rows(x, cols)
@@ -1263,11 +1287,13 @@ def report_blocked(err: FredError, env: str, s: dict | None, out: str, spec_path
                       message="FRED could not be reached: check the connection, VPN or proxy, then run again.")
     elif s:
         bundle = write_manual_bundle(s, out, f"{err.kind}: {str(err)[:120]}", spec_path)
-        result.update(route="cloud_secret" if env == "cloud" and err.kind in ("auth", "key_missing") else
-                      "cloud_allowlist" if env == "cloud" else "manual_download",
+        secret = env == "cloud" and err.kind in ("auth", "key_missing")
+        result.update(route="cloud_secret" if secret else "cloud_allowlist" if env == "cloud" else "manual_download",
                       manual_bundle=bundle, instructions=os.path.join(bundle, "INSTRUCTIONS.md"),
                       download_scripts=download_scripts(bundle),
-                      message="The data cannot be downloaded here. Send the bundle to the user and continue with "
+                      message=(f"FRED needs a working FRED_API_KEY here. {croutes.cloud_key_how('FRED_API_KEY', signup=KEY_URL)}"
+                               ", and start the session again. Meanwhile: " if secret else "") +
+                              "The data cannot be downloaded here. Send the bundle to the user and continue with "
                               "--ingest after the upload.",
                       action=SEND)
     else:
@@ -1296,15 +1322,28 @@ def describe(ids: list[str], no_key: bool = False) -> list[dict]:
                             or copyright_status(m.get("notes"), True),
                             "notes": (m.get("notes") or "")[:400], "url": SERIES_URL.format(sid.upper())})
             except FredError as e:
-                out.append({"series_id": sid.upper(), "error": str(e)})
+                out.append({"series_id": sid.upper(), "error": str(e),
+                            **({"hint": unknown_id_hint(sid.upper())} if e.kind == "not_found" else {})})
         return out
     k, meta = Keyless(), {}
     up = [x.upper() for x in ids]
     for i in range(0, len(up), GRAPH_MAX):
-        meta.update(k.metadata(up[i:i + GRAPH_MAX])[0])
+        chunk = up[i:i + GRAPH_MAX]
+        try:
+            meta.update(k.metadata(chunk)[0])
+        except FredError as e:                      # one unknown ID fails the whole download: ask one by one
+            if e.kind != "not_found":
+                raise
+            for sid in chunk if len(chunk) > 1 else []:
+                try:
+                    meta.update(k.metadata([sid])[0])
+                except FredError as e1:
+                    if e1.kind != "not_found":
+                        raise
     for sid in ids:
         m = meta.get(sid.upper())
-        out.append({"series_id": sid.upper(), **(m or {"error": "not found on FRED"}),
+        out.append({"series_id": sid.upper(), **(m or {"error": "not found on FRED",
+                                                     "hint": unknown_id_hint(sid.upper())}),
                     "source": "(needs a key, or read the series page)", "copyright": "unknown",
                     "url": SERIES_URL.format(sid.upper()), "metadata_source": "fredgraph.xlsx (keyless)"})
     return out

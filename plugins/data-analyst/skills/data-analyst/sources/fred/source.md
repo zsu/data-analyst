@@ -87,7 +87,9 @@ fiscal_year, first/last date, n_obs, n_missing, n_future, source, release, copyr
   vintages. Find updates by changes larger than rounding over the periods both vintages hold.
 - **Keyless limits**: a graph download holds at most 12 series (with as-of vintages fetch.py asks 12 at a
   time); mixed
-  frequencies come as a zip; an unknown ID answers HTTP 404 with an HTML page. The keyless route gives no
+  frequencies come as a zip; an unknown ID answers HTTP 404 with an HTML page (with a key: "The series does
+  not exist"). Either means a wrong ID, not a series FRED dropped: fetch.py and --describe name close
+  documented IDs. The keyless route gives no
   source, notes or copyright (`copyright` = `unknown`): for a report, read the tag on each series page
   (https://fred.stlouisfed.org/series/ID: "Public Domain: Citation Requested", "Copyrighted: Citation
   Required", "Copyrighted: Pre-Approval Required"; ignore the generic banner) and add `source`, `copyright`,

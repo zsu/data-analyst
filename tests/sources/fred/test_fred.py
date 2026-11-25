@@ -119,6 +119,16 @@ class TestFredCli(PackTest):
         self.assertIn("Authorization: Bearer", sh)
         self.assertIn("curl -sS -K -", sh)
 
+    def test_03b_cloud_needs_key_names_signup(self):
+        cloud = {"DATA_ANALYST_ENV": "cloud"}
+        code, r = self.check(FULL, env=cloud)
+        self.assertEqual(r["route"], "cloud_secret", r)
+        self.assertIn("https://fredaccount.stlouisfed.org/apikeys", r["message"])
+        code, r, out = self.fetch(FULL, env=cloud)                       # the fetch itself stops the same way
+        self.assertEqual((code, r["route"]), (4, "cloud_secret"), r)
+        self.assertIn("https://fredaccount.stlouisfed.org/apikeys", r["message"])
+        self.assertIn("FRED_API_KEY", r["message"])
+
     def test_04_fix_spec(self):
         code, r = self.check({"series": [{"id": "GDPC1", "vintage": "yesterday"}]})
         self.assertEqual((code, r["route"]), (2, "fix_spec"), r)
@@ -201,6 +211,9 @@ class TestFredCli(PackTest):
         code, r = self.cli(sp, "--out", out, "--no-key")
         self.assertEqual(code, 2, r)
         self.assertTrue(any("no such series" in p for p in r["problems"]))
+        self.assertTrue(any("--search" in p and "never report" in p for p in r["problems"]), r["problems"])
+        code, r = self.cli("--describe", "NOSUCHSERIESXYZ")
+        self.assertIn("--search", r["series"][0]["hint"])
 
     def test_11_reuse_and_repackage(self):
         sp, out = self.write_spec(PIPE)
@@ -342,6 +355,14 @@ class TestFredUnits(unittest.TestCase):
             c._json(Stub(), "https://api.stlouisfed.org/fred/series", {}, "series")
         self.assertEqual(e.exception.kind, "unavailable")
         self.assertEqual(c.ping()["auth_ok"], c.ping()["auth_ok"])      # ping never raises
+
+    def test_16b_unknown_id_hint(self):
+        # a near miss of a documented ID is named; an ID like nothing documented still gets the search route
+        h = self.f.unknown_id_hint("UNRATEE")
+        self.assertIn("UNRATE", h)
+        self.assertIn("never report", h)
+        self.assertNotIn("Close documented IDs", self.f.unknown_id_hint("QQQZZZ9"))
+        self.assertIn("GDPPOT", self.f.known_ids())
 
     def test_17_norm_vintage(self):
         nv = self.f.norm_vintage
