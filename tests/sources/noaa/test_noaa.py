@@ -66,6 +66,16 @@ class TestNoaa(PackTest):
         self.assertEqual(r.get("kind"), "key_missing", r)
         self.assertIn("NOAA_API_KEY", r.get("error", ""))
 
+    def test_cdo_fetch_auto_mode_without_secret_is_key_missing(self):
+        """Auto key mode in a cloud session, and no network secret attached a token: CDO answers HTTP 400 "Token
+        parameter is required" (recorded live 2026-11-25). That is a missing key, not a bad spec."""
+        code, r, out = self.fetch(CDO, env={"DATA_ANALYST_ENV": "cloud", "DATA_ANALYST_KEY_PROXY": "auto"})
+        self.assertEqual(code, 4, r)
+        self.assertEqual(r.get("kind"), "key_missing", r)
+        self.assertEqual(r.get("route"), "cloud_secret", r)
+        self.assertIn("NOAA_API_KEY", r.get("message", ""))
+        self.assertIn("https://www.ncei.noaa.gov/cdo-web/token", r.get("message", ""))
+
     def test_ping_without_key_reports_key_absence(self):
         ad = __import__("testkit").load_pack_module("noaa")
 

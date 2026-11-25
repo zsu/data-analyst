@@ -3,7 +3,8 @@
 - before_request: ADS station ids without the CDO "GHCND:" prefix; YYYY / YYYY-MM dates padded to full dates
   (ADS refuses them, even for monthly data).
 - fetch: the generic fetch, except that cdo_* requests without NOAA_API_KEY stop as key_missing (CDO
-  answers a bare HTTP 400 "Token parameter is required").
+  answers a bare HTTP 400 "Token parameter is required"). That 400 after a key the network proxy was to
+  attach (auto or named) stops the same way: no token arrived.
 - normalize: ADS values are padded text ("   83"); they are trimmed (the digits are unchanged). The
   station search returns nested documents; they become one row per station. A data request none of
   whose data types came back fails instead of returning only DATE and STATION.
@@ -18,6 +19,7 @@ import re
 import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "scripts"))
+from core import keys  # noqa: E402
 from core.http import DataError  # noqa: E402
 
 ADS_DATA = "/access/services/data/"
@@ -56,11 +58,24 @@ def fetch(spec, pack, route):
     from core import generic_rest as gr
     c = gr.client_for(pack)
     cdo = [r.get("name") for r in spec.get("requests") or [] if str(r.get("endpoint", "")).startswith("cdo_")]
+    need = (f"request(s) {', '.join(map(repr, cdo))}: the Climate Data Online v2 endpoints (cdo_*) need a free NOAA "
+            "token: set NOAA_API_KEY (https://www.ncei.noaa.gov/cdo-web/token), or use the keyless data / "
+            "station_search endpoints")
     if cdo and not c.key:
-        raise DataError(f"request(s) {', '.join(map(repr, cdo))}: the Climate Data Online v2 endpoints (cdo_*) need a "
-                        "free NOAA token: set NOAA_API_KEY (https://www.ncei.noaa.gov/cdo-web/token), or use the "
-                        "keyless data / station_search endpoints", kind="key_missing")
-    return gr.fetch(pack, spec, c)
+        raise DataError(need, kind="key_missing")
+    try:
+        return gr.fetch(pack, spec, c)
+    except DataError as e:
+        # a key the network proxy was to attach (auto or named) that never arrived: CDO answers a bare HTTP 400
+        # "Token parameter is required", which is a refused key, not a bad spec
+        if not (cdo and keys.is_proxy(c.key) and e.kind == "bad_request" and "token" in str(e).lower()):
+            raise
+        if keys.on_refusal(c.key, pack.policy.get("auth") or {}) == "no_key":
+            raise DataError(need + " (no network secret attached a token for www.ncei.noaa.gov)",
+                            kind="key_missing") from None
+        raise DataError(need + " (NOAA_API_KEY is set to come from the network proxy, and the proxy attached no "
+                        "token: check the network secret for www.ncei.noaa.gov, fetch.py --key-proxy-setup)",
+                        kind="auth") from None
 
 
 def _station_rows(rows):
