@@ -37,6 +37,7 @@
   "terms_url": "https://www.fec.gov/updates/sale-or-use-contributor-information/",
   "auth": {
     "env": "DATA_GOV_API_KEY",
+    "proxy_header": "X-Api-Key",
     "required": "optional",
     "placement": "query",
     "param": "api_key",

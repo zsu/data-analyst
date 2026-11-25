@@ -156,8 +156,7 @@ def list_sources(as_json: bool):
         probs = pol.validate(P, p.dir)
         rows.append({"id": p.id, "title": P["title"], "agency": P["agency"], "depth": P["depth"],
                      "key": P["auth"]["required"], "key_env": P["auth"].get("env"),
-                     "key_mode": keys.key_mode(P["auth"].get("env"), P["auth"].get("home"))
-                     if P["auth"].get("env") else None,
+                     "key_mode": keys.key_mode(P["auth"]) if P["auth"].get("env") else None,
                      "domains": P["domains"],
                      "cli": "own (deep pack)" if p.deep_cli else "generic", "policy_ok": not probs})
     if as_json:
@@ -169,61 +168,69 @@ def list_sources(as_json: bool):
     sys.exit(0)
 
 
-# Where the network proxy must put each key, by policy placement. A header is the documented kind of network
-# secret; query and body need a secret type that adds a parameter.
-_PLACEMENT_HOW = {
-    "header": "header secret: Header name = {param}, Prefix = {prefix}",
-    "query": "query-parameter secret: parameter {param} (not confirmed for every cloud environment; test with a session)",
-    "body": "JSON-body secret: field {param} (not confirmed for every cloud environment; test with a session)",
-}
+def secret_form(auth: dict) -> dict:
+    """What a network secret for this auth block looks like in the Add secret form, or why there is none."""
+    default = {"query": "api_key", "header": "X-Api-Key", "body": "registrationkey"}.get(auth.get("placement"), "")
+    if auth.get("placement") == "header":
+        return {"secret_type": "Bearer", "header": auth.get("param") or default,
+                "prefix": (auth.get("prefix") or "").strip(), "auto": True}
+    if auth.get("proxy_header"):
+        return {"secret_type": "Bearer", "header": auth["proxy_header"], "prefix": "", "auto": True}
+    if auth.get("placement") == "body":
+        return {"secret_type": "Body parameter", "body_param": auth.get("param") or default, "auto": False,
+                "note": f"--key-proxy auto does not use it; name {auth.get('env')} in --key-proxy to use the secret"}
+    return {"secret_type": None, "auto": False, "note": f"the key goes in the URL ({auth.get('param') or default}=), "
+            "which no network secret can add: set it as an environment variable"}
+
+
+def key_names() -> set[str]:
+    """Every pack key variable (auth.env and alt_env): the names --key-proxy accepts."""
+    out = set()
+    for p in packs.all_packs():
+        a = p.policy["auth"]
+        out |= {n.upper() for n in [a.get("env"), *(a.get("alt_env") or [])] if n}
+    return out
 
 
 def key_proxy_setup(as_json: bool):
-    """For each key variable: the hosts and where the key goes, i.e. what to enter for a network secret."""
-    groups: dict[tuple, dict] = {}       # one secret per (variable, placement): DATA_GOV_API_KEY is query and header
+    """For each key variable: the hosts that take it (auth.key_hosts or the api base host, never link or bulk
+    hosts the key must not reach) and the Add secret form fields, or why the key must be an environment variable."""
+    groups: dict[tuple, dict] = {}       # DATA_GOV_API_KEY has a header form (most packs) and a URL-only one (fda)
     for p in packs.all_packs():
         a = p.policy["auth"]
         if not a.get("env") or a.get("placement") in (None, "none"):
             continue
-        api = p.policy["routes"].get("api")              # the keyed route; bulk and keyless hosts get no key
-        hosts = set(api.get("hosts", [])) if isinstance(api, dict) else set()
-        default = {"query": "api_key", "header": "X-Api-Key", "body": "registrationkey"}[a["placement"]]
-        param, prefix = a.get("param") or default, a.get("prefix") or ""
-        e = groups.setdefault((a["env"], a["placement"], param, prefix),
-                              {"env": a["env"], "mode": keys.key_mode(a["env"], a.get("home")),
-                               "required": a["required"],
-                               "placement": a["placement"], "param": param, "prefix": prefix, "hosts": set(),
-                               "sources": []})
-        e["hosts"] |= hosts
+        form = secret_form(a)
+        e = groups.setdefault((a["env"], json.dumps(form, sort_keys=True)),
+                              {"env": a["env"], "mode": keys.key_mode(a), "required": a["required"], **form,
+                               "hosts": set(), "sources": []})
+        e["hosts"] |= set(pol.key_hosts(p.policy))
         e["sources"].append(p.id)
         if a.get("extra"):
             e["extra"] = sorted((a["extra"] or {}).values())
-    by_env = {e["env"] for e in groups.values()}
-    rows = []
-    for e in sorted(groups.values(), key=lambda x: (x["env"], x["placement"])):
-        e = {**e, "hosts": sorted(e["hosts"])}
-        e["how"] = _PLACEMENT_HOW[e["placement"]].format(param=e["param"], prefix=e["prefix"].strip() or "(none)")
-        rows.append(e)
-    names = keys.proxy_names() - {"*", "AUTO"}
-    unknown = sorted(names - set(by_env))
+    rows = [{**e, "hosts": sorted(e["hosts"])} for e in sorted(groups.values(), key=lambda x: (x["env"], x["sources"]))]
     out = {"setting": keys.PROXY_VAR, "value": os.environ.get(keys.PROXY_VAR) or "",
-           "note": (f"--key-proxy (or {keys.PROXY_VAR}): 'auto' in a cloud session uses a key stored on this "
-                    "machine when there is one, else sends the request without a key so a network secret is "
-                    "used if the environment has one, and takes the pack's keyless route when refused; 'all' or "
-                    "a comma list of the variables below always leaves those to the network secret; unset or "
-                    "'env' (the default) looks every key up on this machine. A network secret is attached to every "
-                    "request to its hosts, so do not also store that key on this machine. Extra values (e.g. "
-                    "AQS_EMAIL) are never proxied: set them as environment variables."),
-           "unknown_names": unknown, "keys": rows}
+           "note": (f"--key-proxy (or {keys.PROXY_VAR}): 'auto' (cloud sessions) uses a key stored on this machine "
+                    "when there is one; otherwise, for keys with a Bearer form below, the request goes without a key "
+                    "so a network secret is used if the environment has one, and the pack's keyless route is taken "
+                    "when refused. A list of variables (or 'all') always leaves those to the network secret. Unset "
+                    "or 'env' (the default) looks every key up on this machine. A network secret is attached to "
+                    "every request to its hosts: list only the hosts below, and do not also store that key here. "
+                    "Extra values (e.g. AQS_EMAIL) are never proxied: set them as environment variables."),
+           "keys": rows}
     if as_json:
         emit(out)
     print(out["note"])
-    if unknown:
-        print(f"Not a pack key variable (ignored): {', '.join(unknown)}")
     for e in rows:
-        print(f"\n{e['env']} ({e['mode']}; {', '.join(e['sources'])})\n  hosts: {', '.join(e['hosts']) or '-'}"
-              f"\n  {e['how']}" + (f"\n  also set as environment variables: {', '.join(e['extra'])}"
-                                   if e.get("extra") else ""))
+        if e["secret_type"] == "Bearer":
+            how = f"Secret type Bearer: Header name = {e['header']}, Prefix = {e['prefix'] or '(empty)'}"
+        elif e["secret_type"]:
+            how = f"Secret type {e['secret_type']}: Name = {e['body_param']} ({e['note']})"
+        else:
+            how = e["note"]
+        print(f"\n{e['env']} ({e['mode']}; {', '.join(e['sources'])})\n  allowed websites: "
+              f"{', '.join(e['hosts']) or '-'}\n  {how}" +
+              (f"\n  also set as environment variables: {', '.join(e['extra'])}" if e.get("extra") else ""))
     sys.exit(0)
 
 
@@ -537,9 +544,25 @@ def run_plan(a):
                   "geography and vintages before joining (see SKILL.md, Combining sources). " + handoff_next(out)}, code)
 
 
-def take_key_proxy(argv: list[str]) -> list[str]:
-    """--key-proxy auto|all|VAR[,VAR...]|env on any command (deep packs too) sets DATA_ANALYST_KEY_PROXY for this
-    run (core.keys explains each value); "env" (or "none") looks every key up here."""
+def key_proxy_problem(value: str, known: set[str] | None = None) -> str | None:
+    """Why a --key-proxy / DATA_ANALYST_KEY_PROXY value is not valid (None when it is)."""
+    words = [w.strip().upper() for w in value.replace(";", ",").split(",") if w.strip()]
+    if any(w.startswith("-") for w in words):
+        return f"--key-proxy needs a value, not the option {value!r}"
+    known = key_names() if known is None else known
+    bad = sorted(w for w in words if w not in keys.PROXY_WORDS and w not in known)
+    if bad:
+        return (f"--key-proxy: {', '.join(bad)} is not auto, all, env or a key variable of any pack "
+                "(fetch.py --key-proxy-setup lists them)")
+    return None
+
+
+def take_global_options(argv: list[str]) -> list[str]:
+    """Options that apply to every command, deep packs included (in-process and their subprocesses), so they
+    travel as environment variables:
+      --key-proxy auto|all|VAR[,VAR...]|env  sets DATA_ANALYST_KEY_PROXY for this run (removed from argv)
+      --env local|ssh|cloud|sandbox         also sets DATA_ANALYST_ENV, so key lookup (auto mode) agrees with the
+                                            route check (kept in argv for the commands that read it)"""
     out, i = [], 0
     while i < len(argv):
         a = argv[i]
@@ -549,21 +572,26 @@ def take_key_proxy(argv: list[str]) -> list[str]:
             elif i + 1 < len(argv):
                 v, i = argv[i + 1], i + 1
             else:
-                emit({"status": "error", "message": "--key-proxy needs auto, all, env, or a comma list of key "
-                                                    "variables (see --key-proxy-setup)"}, routes.EXIT_SPEC)
-            v = v.strip()
-            if v.lower() in ("", "env", "none", "off"):
+                v = "-"
+            problem = key_proxy_problem(v)
+            if problem:
+                emit({"status": "error", "message": problem}, routes.EXIT_SPEC)
+            if v.strip().lower() in ("", "env", "none", "off"):
                 os.environ.pop(keys.PROXY_VAR, None)
             else:
-                os.environ[keys.PROXY_VAR] = v
+                os.environ[keys.PROXY_VAR] = v.strip()
         else:
+            if a == "--env" and i + 1 < len(argv):
+                os.environ["DATA_ANALYST_ENV"] = argv[i + 1]
+            elif a.startswith("--env="):
+                os.environ["DATA_ANALYST_ENV"] = a.split("=", 1)[1]
             out.append(a)
         i += 1
     return out
 
 
 def main():
-    argv = take_key_proxy(sys.argv[1:])
+    argv = take_global_options(sys.argv[1:])
     if "--source" in argv:
         i = argv.index("--source")
         if i + 1 >= len(argv):

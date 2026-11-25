@@ -47,6 +47,21 @@ SEND_BUNDLE = ("Send INSTRUCTIONS.md, both download scripts (download_scripts: .
                "chat. Wait for the upload, then run next_command.")
 
 
+def cloud_key_how(env: str, secret_hosts: list[str] | None = None) -> str:
+    """The ways to give a cloud session a key, for cloud_secret messages: an environment variable always; a
+    network secret too when the API takes the key in a header (secret_hosts: the hosts it would list)."""
+    if not secret_hosts:
+        return f"Set {env} as an environment variable of the cloud environment"
+    return (f"Either set {env} as an environment variable of the cloud environment, or add a network secret for "
+            f"{', '.join(secret_hosts)} (fetch.py --key-proxy-setup shows where the key goes) and run with "
+            "--key-proxy auto")
+
+
+def secret_hosts(policy: dict) -> list[str] | None:
+    """The hosts a network secret for this pack lists, or None when its API cannot take a proxy-added key."""
+    return pol.key_hosts(policy) if keys.proxy_capable(policy.get("auth") or {}) else None
+
+
 def cmd(*parts: str) -> str:
     # the interpreter running now: "python" may not exist (only python3, or py on Windows)
     return " ".join([f'"{sys.executable}" -B "{HERE}"' if sys.executable else f'python -B "{HERE}"', *parts])
@@ -150,14 +165,21 @@ def route_check(pack, spec: dict, spec_path: str, out: str, env: str, force: boo
 
     if api_ok and a["required"] == "none":
         return done("api", f"{P['title']} answers from here; no key is needed.", "Run next_command.", run)
+    key_hosts = ", ".join(pol.key_hosts(P)) or "its API host"
+    auto_refused = False                            # auto mode, and no network secret answered for the host
     if api_ok and key:
         p = ping(key) if ping else {"auth_ok": True, "kind": "", "detail": "not checked"}
         r.update(key_ok=p["auth_ok"], key_detail=p.get("detail", ""))
         if p["auth_ok"]:
-            return done("api", f"A {a['env']} key was found ({key_src}) and {P['title']} answers.", "Run next_command.", run)
+            found = (f"A network secret for {key_hosts} was attached" if keys.is_auto(key) else
+                     f"A {a['env']} key was found ({key_src})")
+            return done("api", f"{found} and {P['title']} answers.", "Run next_command.", run)
         if p.get("kind") not in ("auth", "key_missing"):
             return done("report_error", f"The key check failed: {p.get('detail', '')}", "Tell the user and stop.")
-    if api_ok and a["required"] == "optional" and not needs and not key:
+        if keys.is_auto(key):                       # from here on the same as no key, but never demo_key
+            auto_refused, key = True, None
+            r.update(key_ok=None, key_source=None)
+    if api_ok and a["required"] == "optional" and not needs and not key and not auto_refused:
         demo = a.get("demo_key") and keyless()   # the shared demo key can be spent: say what works without it
         return done("api", f"{P['title']} answers from here without a key (a free key at {signup} raises the "
                     "rate limits)." + (f" If the shared {a['demo_key']} is rate-limited (HTTP 429), the same series "
@@ -167,8 +189,8 @@ def route_check(pack, spec: dict, spec_path: str, out: str, env: str, force: boo
                      "under its filename) into a new folder and run ingest_command on that folder." if demo else ""),
                     run)
     rejected = r["key_ok"] is False
-    lead = (f"No {a['env']} is set on this machine and {P['title']} refused the request without one (no working "
-            "network secret for its host). " if rejected and keys.is_auto(key) else
+    lead = (f"No {a['env']} is set on this machine and no network secret for {key_hosts} answered. "
+            if auto_refused else
             f"{P['title']} rejected the {a['env']} key found in {key_src}. " if rejected else
             f"No {a['env']} key is set up. " if key_needed and not key else "")
 
@@ -202,15 +224,10 @@ def route_check(pack, spec: dict, spec_path: str, out: str, env: str, force: boo
                         "data as not fetched, with run_command.", setup)
         b = bundle(f"the request needs a {a['env']} key")
         if env == "cloud":
-            hosts = ", ".join(sorted({h for v in P["routes"].values() if isinstance(v, dict) for h in v.get("hosts", [])}))
-            via = f" {keys.cloud_key_how(a['env'])}; then restart the session"
-            if keys.is_auto(key):
-                via = (f" Either add a network secret for {hosts or 'its host'} (fetch.py --key-proxy-setup; "
-                       f"--key-proxy auto then uses it) or set {a['env']} as an environment variable; then restart "
-                       "the session")
-            elif keys.is_proxy(key):
+            via = f" {cloud_key_how(a['env'], secret_hosts(P))}; then restart the session"
+            if keys.is_proxy(key):
                 via = (f" {a['env']} is set to come from the network proxy ({keys.PROXY_VAR}), and the proxy did not "
-                       f"attach a working key: check the network secret for {hosts or 'its host'} (fetch.py "
+                       f"attach a working key: check the network secret for {key_hosts} (fetch.py "
                        f"--key-proxy-setup), or set {a['env']} as an environment variable and remove it from "
                        f"{keys.PROXY_VAR}; then restart the session")
             kf = keyless()                            # a keyless file the pack's ingest reads, when one covers this

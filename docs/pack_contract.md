@@ -88,20 +88,10 @@ Field rules (`core/policy.py: validate` enforces the starred ones):
 - **`auth`**\*: when a key is used, `env` and `signup_url` are required. `required: "optional"` means the API
   works without a key at lower limits. Shared keys: every api.data.gov API uses `DATA_GOV_API_KEY` with
   `home: "data-gov"` and `demo_key: "DEMO_KEY"`.
-  Proxy mode: `DATA_ANALYST_KEY_PROXY` (or `fetch.py --key-proxy all|VAR,...|env`) names keys a cloud network
-  proxy attaches itself (a "network secret"). `core.keys.find_key` then returns the `PROXY_KEY` stand-in
-  (truthy, never sent) and `core.http.Client` leaves the credential and `demo_key` off the request. So a pack
-  puts a key on a request only through `Client` (its `auth` block or `key=`), never in a header or URL it
-  builds itself, and branches on "keyed" with `if key`, never on the key's value. Non-key values the request
-  must carry (an `extra` e-mail, a User-Agent) are looked up with `find_key(..., proxy=False)`. When the API
-  refuses a proxied request (no working network secret for that host) and the pack also works without a key
-  (`required: "optional"` or a `demo_key`), `Client` retries once the keyless way and stays keyless for the
-  run; BLS drops to keyless v1. A required key has no keyless retry: the error says to check the secret.
-  `--key-proxy auto` (cloud sessions only): a key stored on the machine is used as usual; a key not found
-  becomes the `AUTO_KEY` stand-in, so the request goes to the keyed API with no key and no `demo_key`, and a
-  network secret is used if the environment has one. A refusal is not retried inside `Client`: the route check
-  then takes the pack's keyless route (another host, bulk, a keyless file; BLS v1), else `cloud_secret`.
-  `fetch.py --key-proxy-setup` lists, per key, the hosts and placement a network secret needs.
+  `key_hosts` (optional): the hosts that take the key, when they are not just the `api` route's base host.
+  `proxy_header` (optional): a header the API also accepts the key in although the pack sends it elsewhere
+  (api.data.gov APIs take `X-Api-Key`); set it only after checking the API answers a header-only request.
+  Both feed proxy mode (below).
 - **`routes`**\*: `manual.how` is always required: every source must be obtainable by a user with a browser.
   Each network route needs a cheap `probe` URL that needs no key and returns quickly (any HTTP status means
   reachable). Use `api_keyless` for a different keyless host (FRED graph CSVs), `bulk` for flat files.
@@ -143,6 +133,32 @@ Field rules (`core/policy.py: validate` enforces the starred ones):
   never as an entry.
 - **`citation`**\*: must contain `{retrieved}` or `{retrieved_long}`. Placeholders: `{title}` `{dataset}`
   `{retrieved}` `{retrieved_long}` `{vintage}` `{url}`.
+
+## Proxy mode (keys from cloud network secrets)
+
+In a cloud environment a "network secret" is a key the egress proxy adds to requests for listed hosts, as a
+header (or a JSON body field); the key never exists in the session. `DATA_ANALYST_KEY_PROXY`, or
+`fetch.py --key-proxy` on any command (it sets the variable for the run), says which keys come from there:
+
+| setting | key stored here | key not stored |
+|---|---|---|
+| unset / `env` (default) | used | keyless: `demo_key`, keyless route, or "key needed" |
+| `VAR,...` / `all` | not used (still redacted) | `PROXY_KEY`: sent without a key; refused → one keyless retry when the pack works without a key, else "check the secret" |
+| `auto` (cloud only) | used | header-capable packs (`placement: "header"` or `proxy_header`): `AUTO_KEY`, sent without a key; refused → as if no key, never `demo_key`. Other packs: as the default |
+
+- `PROXY_KEY` and `AUTO_KEY` are not strings: they count as a key (`if key`), `core.http.Client` never puts
+  them on a request, and formatting one raises. So a pack puts a key on a request only through `Client` (its
+  `auth` block or `key=`), never in a header or URL it builds itself (ipums' raw download checks
+  `keys.is_proxy`), and decides keyed limits with `keys.is_proxy` in mind (fda).
+- Non-key values a request must carry (an `extra` e-mail, a User-Agent) are looked up with
+  `find_key(..., proxy=False)`. A deep pack whose API takes the key in a header passes `auto=True` to
+  `find_key` (ipums); find_auth_key decides it from the policy.
+- The route check resolves auto: a refused `AUTO_KEY` becomes "no key" there (standard packs in
+  `core/routes.py`, ipums in its own check). BLS v2 falls back to keyless v1 inside `fetch()` only; its ping
+  reports the refusal so the check plans honestly.
+- `fetch.py --key-proxy-setup` lists, per key, the Add-secret form (type, header or body name, prefix) and the
+  allowed websites (`policy.key_hosts`: never link, bulk or keyless hosts, which must not receive the key), or
+  says the key must be an environment variable (URL-only keys).
 
 ## source.md sections (in this order; headings exactly)
 

@@ -6,7 +6,9 @@ policy.json is where a source's rules live so code can enforce them, not just do
   *id, *title, *agency, *depth ("deep" | "standard"), *domains [..], keywords [..], questions [..]
   *homepage, terms_url
   *auth        {env, required: "required"|"optional"|"none", signup_url, placement: "query"|"header"|"body"|
-                "none", param, prefix, home, echoes_key: bool, key_only: [features a keyless route lacks]}
+                "none", param, prefix, home, echoes_key: bool, key_only: [features a keyless route lacks],
+                key_hosts: [hosts that take the key; default the api route's base host],
+                proxy_header: header name the API also accepts the key in (a network secret can add it)}
   *limits      {rps, burst, daily_quota, max_series, max_years, errors_per_min, bytes_per_min, max_rows}
   *routes      {api: {base, probe, hosts}, api_keyless: {...}, bulk: {...}, manual: {how}}  (manual required;
                manual.keyless_file: a direct keyless agency file --ingest reads, manual.keyless_citation: the
@@ -78,6 +80,20 @@ def load(pack_dir: str) -> dict:
     return p
 
 
+def key_hosts(p: dict) -> list[str]:
+    """The hosts that take this pack's key (auth.key_hosts, else the api route's base host): what a network
+    secret may list. Never every reachable host: those include link and bulk hosts the key must not reach."""
+    from urllib.parse import urlsplit
+    a = p.get("auth") or {}
+    if a.get("key_hosts"):
+        return list(a["key_hosts"])
+    api = (p.get("routes") or {}).get("api") or {}
+    for url in (api.get("base"), api.get("probe")):
+        if url and urlsplit(url).netloc:
+            return [urlsplit(url).netloc]
+    return []
+
+
 def validate(p: dict, pack_dir: str | None = None) -> list[str]:
     """Problems with a policy (empty list = valid). Used by the structure test and by fetch.py at load."""
     bad = [f"missing field: {k}" for k in REQUIRED if k not in p or p[k] in (None, "", [])]
@@ -94,6 +110,11 @@ def validate(p: dict, pack_dir: str | None = None) -> list[str]:
         bad.append("auth.env is required when a key is used")
     if a.get("required") in ("required", "optional") and not a.get("signup_url"):
         bad.append("auth.signup_url is required when a key is used")
+    if a.get("key_hosts") is not None and not (isinstance(a["key_hosts"], list) and a["key_hosts"]
+                                               and all(isinstance(h, str) and "/" not in h for h in a["key_hosts"])):
+        bad.append("auth.key_hosts must be a non-empty list of host names")
+    if a.get("proxy_header") is not None and not (isinstance(a["proxy_header"], str) and a["proxy_header"].strip()):
+        bad.append("auth.proxy_header must be a header name")
     r = p.get("routes") or {}
     if "manual" not in r or not (r["manual"] or {}).get("how"):
         bad.append("routes.manual.how is required: every source needs a manual-download route")

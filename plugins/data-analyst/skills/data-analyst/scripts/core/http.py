@@ -234,10 +234,10 @@ class Client:
         """A request in proxy mode that the API refused: the network proxy did not attach a working key."""
         host = urllib.parse.urlsplit(r.url).netloc
         env = self.auth.get("env") or "the key"
-        if keys.is_auto(self.key):
-            return DataError(f"{self.name}: HTTP {r.status} from {host}: no {env} on this machine and no working "
-                             f"network secret for {host} (--key-proxy auto). {keys.cloud_key_how(env)}. "
-                             f"{detail}".rstrip(), kind="auth", status=r.status)
+        if keys.is_auto(self.key):                   # auto, nothing attached: the same as no key at all
+            return DataError(f"{self.name}: API key required (HTTP {r.status} from {host}): no {env} on this "
+                             f"machine and no network secret for {host} answered. {detail}".rstrip(),
+                             kind="key_missing", status=r.status)
         return DataError(f"{self.name}: HTTP {r.status} from {host} in proxy mode ({keys.PROXY_VAR} names {env}): "
                          "the network proxy did not attach a working key. Check the cloud environment's network "
                          f"secret for {host} (host, header or parameter name, value), or remove {env} from "
@@ -287,10 +287,11 @@ class Client:
         return open_url(req, self.timeout, (hdr,) if hdr else (), tuple(p for p in par if p))
 
     def _go_keyless(self, e: "DataError") -> bool:
-        """Proxy mode, and the API refused the request: when the pack also works without a key (an optional key,
-        or a shared demo_key), drop the proxied key for the rest of this client's life so the call can be
-        retried the keyless way (demo_key included). Returns False when that does not apply, and always in auto
-        mode: there the request already went without a key, and the pack's keyless route is the fallback."""
+        """Named proxy key refused (no network secret for this host): when the pack also works without a key (an
+        optional key, or a shared demo_key), drop the proxied key for the rest of this client's life so the call
+        is retried the keyless way (demo_key included), with a warning. A secret that exists but is wrong is
+        attached again by the proxy, so that retry fails too and the error stands. Never in auto mode: there the
+        request already went without a key, and the route check takes the keyless route."""
         if not (keys.is_proxy(self.key) and not keys.is_auto(self.key) and e.kind == "auth"
                 and e.status in (400, 401, 403)):
             return False

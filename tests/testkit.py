@@ -53,6 +53,54 @@ def load_pack_module(pid: str, filename: str = "adapter.py"):
     return mod
 
 
+class FakeApi:
+    """A local HTTP API for tests whose answer depends on the credentials sent (fixtures are keyed by the
+    credential-free URL, so they cannot tell a keyed request from a keyless one).
+
+        with FakeApi(lambda path, headers: (200, b"[1]") if "api_key=X" in path else (403, b"{}")) as api:
+            Client(api.base, ...).get("/x"); api.seen  # [(path, headers), ...]
+    """
+
+    def __init__(self, answer):
+        self.answer, self.seen = answer, []
+
+    def __enter__(self):
+        import http.server
+        import threading
+        outer = self
+
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def log_message(self, *a):
+                pass
+
+            def do_GET(self):
+                outer.seen.append((self.path, dict(self.headers)))
+                status, body = outer.answer(self.path, dict(self.headers))
+                self.send_response(status)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(body)
+
+        self.server = http.server.HTTPServer(("127.0.0.1", 0), Handler)
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+        self.base = f"http://127.0.0.1:{self.server.server_port}"
+        self._env = {k: os.environ.get(k) for k in ("NO_PROXY", "no_proxy", "DATA_ANALYST_FIXTURES",
+                                                     "DATA_ACCESS_FORCE")}
+        os.environ.update(NO_PROXY="127.0.0.1", no_proxy="127.0.0.1")
+        os.environ.pop("DATA_ANALYST_FIXTURES", None)
+        os.environ.pop("DATA_ACCESS_FORCE", None)
+        return self
+
+    def __exit__(self, *exc):
+        self.server.shutdown()
+        self.server.server_close()
+        for k, v in self._env.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+
+
 def run(args: list[str], fixtures: str | None = None, env: dict | None = None, home: str | None = None,
         fetch: str = FETCH):
     e = {k: v for k, v in os.environ.items() if k not in KEY_VARS and not k.endswith("_API_KEY")}

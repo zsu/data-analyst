@@ -191,14 +191,11 @@ class BlsClient:
 
     def ping(self) -> dict:
         """One small query (it counts against the daily limit). Returns reachable/auth_ok/kind/detail; never raises."""
+        # no v1 fallback here: the route check must hear that a proxied key was refused (its plan and limits are
+        # v2's); fetch() still falls back to v1 for a run that was started anyway
         y = str(date.today().year - 1)
         try:
-            try:
-                self._post({"seriesid": ["LNS14000000"], "startyear": y, "endyear": y}, retries=1)
-            except BlsError as e:
-                if not self._proxy_refused(e):
-                    raise
-                self._post({"seriesid": ["LNS14000000"], "startyear": y, "endyear": y}, retries=1)
+            self._post({"seriesid": ["LNS14000000"], "startyear": y, "endyear": y}, retries=1)
             return {"reachable": True, "auth_ok": True, "kind": "ok", "detail": ""}
         except BlsError as e:
             return {"reachable": e.kind != "network", "auth_ok": False if e.kind == "auth" else None,

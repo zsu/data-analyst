@@ -46,6 +46,9 @@ BASE_PATTERNS = [
     re.compile(rb"(?i)[?&]userid=" + GUID),
     re.compile(rb'(?i)"ParameterName"\s*:\s*"USERID"\s*,\s*"ParameterValue"\s*:\s*"' + GUID),
     re.compile(rb"(?i)authorization['\"]?\s*[:=]\s*['\"]?(?:bearer\s+|token\s+|basic\s+)?" + PLACE + rb"[A-Za-z0-9._-]{30,}"),
+    # credentials an unattended run may hold beside the pack keys: GitHub tokens, Google OAuth tokens and secrets
+    re.compile(rb"\b(?:gh[pousr]_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{40,})"),
+    re.compile(rb"\b(?:ya29\.[A-Za-z0-9_-]{20,}|1//0[A-Za-z0-9_-]{20,}|GOCSPX-[A-Za-z0-9_-]{20,})"),
 ]
 HEX32 = re.compile(rb"(?i)(?<![0-9a-f])[0-9a-f]{32}(?![0-9a-f])")
 

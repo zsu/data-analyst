@@ -40,8 +40,9 @@ ALL_STATUSES = tuple(range(100, 600))
 
 
 def find_api_key() -> tuple[str | None, str | None]:
-    """(key, source label). The label may be printed; the key never is."""
-    return keys.find_key(KEY_ENV, KEY_HOME)
+    """(key, source label). The label may be printed; the key never is. The key travels in a header, so
+    --key-proxy auto applies (AUTO_KEY when nothing is stored in a cloud session)."""
+    return keys.find_key(KEY_ENV, KEY_HOME, auto=True)
 
 
 class IpumsError(RuntimeError):

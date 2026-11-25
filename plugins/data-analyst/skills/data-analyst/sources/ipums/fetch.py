@@ -795,8 +795,11 @@ def route_check(spec: dict, body: dict, spec_path: str, out: str, env: str, forc
                     f"{collection}#{ex['extract_number']}, downloaded {ex.get('downloaded')}).",
                     "Skip the download and continue with the analysis. Pass --force to resubmit.")
 
+    p = IpumsClient(api_key=key).ping(collection) if key else None
+    if p and keys.is_auto(key) and not p["auth_ok"] and p["kind"] in ("auth", "key_missing"):
+        key = None                                   # auto, no network secret for api.ipums.org: no key at all
+        r.update(key_source=None, auth_detail="no IPUMS_API_KEY on this machine and no network secret answered")
     if key:
-        p = IpumsClient(api_key=key).ping(collection)
         r.update(ipums_reachable=p["reachable"], auth_ok=p["auth_ok"], auth_detail=p["detail"])
         if p["auth_ok"]:
             if pending:
@@ -858,7 +861,7 @@ def route_check(spec: dict, body: dict, spec_path: str, out: str, env: str, forc
                     setup)
     if env == "cloud":
         return done("cloud_secret",
-                    "This cloud session has no IPUMS API key. " + keys.cloud_key_how("IPUMS_API_KEY") +
+                    "This cloud session has no IPUMS API key. " + routes.cloud_key_how("IPUMS_API_KEY", ["api.ipums.org"]) +
                     ", and start the session again; or download the extract by hand "
                     "on the IPUMS website (free account, no key) or with a key and the download script "
                     f"({DOWNLOAD_SCRIPTS['bash']} or {DOWNLOAD_SCRIPTS['powershell']}, run on your own computer): "

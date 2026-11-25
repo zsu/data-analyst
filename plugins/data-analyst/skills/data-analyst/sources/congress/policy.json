@@ -61,6 +61,7 @@
   "terms_url": "https://www.loc.gov/legal/",
   "auth": {
     "env": "DATA_GOV_API_KEY",
+    "proxy_header": "X-Api-Key",
     "required": "optional",
     "placement": "query",
     "param": "api_key",

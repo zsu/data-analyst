@@ -16,6 +16,9 @@ from core import keys, manual, package, policy  # noqa: E402
 from core.cache import Cache  # noqa: E402
 from core.http import Budget, Client, DataError, clean_url  # noqa: E402
 from core.packs import Pack  # noqa: E402
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import testkit  # noqa: E402
+from testkit import FakeApi  # noqa: E402
 
 FAKE = "abcdef0123456789abcdef0123456789"
 
@@ -67,57 +70,78 @@ class TestKeys(unittest.TestCase):
 
 
 class TestKeyProxy(unittest.TestCase):
-    """DATA_ANALYST_KEY_PROXY: keys the cloud network proxy attaches are never looked up or sent from here."""
+    """DATA_ANALYST_KEY_PROXY / --key-proxy: keys a cloud network proxy attaches are never looked up or sent
+    from here (docs/pack_contract.md, Proxy mode)."""
+
+    HEADER = {"env": "X_TEST_KEY", "placement": "header", "param": "X-Api-Key"}   # a network secret can add it
+    QUERY = {"env": "X_TEST_KEY", "placement": "query", "param": "api_key"}       # it cannot
 
     def proxy(self, value):
         return mock.patch.dict(os.environ, {keys.PROXY_VAR: value})
 
+    def cloud(self):
+        return mock.patch.dict(os.environ, {"DATA_ANALYST_ENV": "cloud"})
+
+    def fetch_module(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("_fetch_cli", os.path.join(SKILL, "scripts", "fetch.py"))
+        m = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(m)
+        return m
+
+    # ---- the setting
     def test_default_is_env_lookup(self):
         os.environ.pop(keys.PROXY_VAR, None)
         with mock.patch.dict(os.environ, {"X_TEST_KEY": "from-env"}):
             self.assertEqual(keys.find_key("X_TEST_KEY")[0], "from-env")
-            self.assertEqual(keys.key_mode("X_TEST_KEY"), "env")
-        with self.proxy(""):
-            self.assertFalse(keys.proxied("X_TEST_KEY"))
+            self.assertEqual(keys.key_mode(self.HEADER), "env")
+        for off in ("", "env", "none"):
+            with self.proxy(off):
+                self.assertFalse(keys.proxied("X_TEST_KEY"))
 
     def test_named_or_all_keys_come_from_the_proxy(self):
-        with mock.patch.dict(os.environ, {"X_TEST_KEY": "from-env", "Y_TEST_KEY": "y-env"}):
+        with mock.patch.dict(os.environ, {"X_TEST_KEY": "stored-x-value", "Y_TEST_KEY": "y-env"}):
             with self.proxy("x_test_key, OTHER"):
                 k, src = keys.find_key("X_TEST_KEY")
-                self.assertTrue(keys.is_proxy(k))         # the local value is not used
+                self.assertTrue(keys.is_proxy(k) and k)    # counts as a key for routes and keyed limits
                 self.assertEqual(src, keys.PROXY_LABEL)
-                self.assertTrue(k)                        # counts as a key for routes and keyed limits
+                self.assertIn("stored-x-value", keys.secret_values())   # a stored copy is still redacted
                 self.assertEqual(keys.find_key("Y_TEST_KEY")[0], "y-env")
-                self.assertEqual(keys.key_mode("X_TEST_KEY"), "proxy")
+                self.assertEqual(keys.key_mode(self.QUERY), "proxy")
             with self.proxy("all"):
-                self.assertTrue(keys.is_proxy(keys.find_key("Y_TEST_KEY")[0]))
                 self.assertTrue(keys.is_proxy(keys.find_auth_key({"env": "Y_TEST_KEY"})[0]))
                 self.assertEqual(keys.find_key("Y_TEST_KEY", proxy=False)[0], "y-env")   # e-mail, User-Agent
                 with mock.patch.dict(os.environ, {"DATA_ACCESS_FORCE": "restricted"}):
                     self.assertEqual(keys.find_key("Y_TEST_KEY"), (None, None))
-                    self.assertEqual(keys.key_mode("Y_TEST_KEY"), "env")
+                    self.assertEqual(keys.key_mode({"env": "Y_TEST_KEY"}), "env")
 
-    def test_the_stand_in_is_never_a_secret(self):
+    def test_the_stand_in_can_never_become_text(self):
         keys.remember(keys.PROXY_KEY)
-        self.assertNotIn(str(keys.PROXY_KEY), keys.secret_values())
-        self.assertEqual(repr(keys.PROXY_KEY), "PROXY_KEY")
+        self.assertEqual(keys.secret_values(), [s for s in keys.secret_values() if isinstance(s, str)])
+        self.assertEqual((repr(keys.PROXY_KEY), repr(keys.AUTO_KEY)), ("PROXY_KEY", "AUTO_KEY"))
+        for make_text in (str, lambda k: f"{k}", lambda k: "Bearer " + k, lambda k: json.dumps(k)):
+            with self.assertRaises(TypeError):
+                make_text(keys.PROXY_KEY)
+        self.assertTrue(keys.PROXY_KEY and keys.AUTO_KEY)
 
+    # ---- the request
     def test_no_credential_and_no_demo_key_on_the_request(self):
         url = "https://example.gov/x?a=1"
         for auth in ({"env": "T", "placement": "query", "param": "api_key", "demo_key": "DEMO_KEY"},
                      {"env": "T", "placement": "header", "param": "Authorization", "prefix": "Bearer "},
                      {"env": "T", "placement": "body", "param": "registrationkey"}):
-            c = Client("https://example.gov", name="t", auth=auth, key=keys.PROXY_KEY)
-            self.assertEqual(c.key_source, keys.PROXY_LABEL)
-            u, h, b = c._with_key(url, {}, {"seriesid": ["X"]})
-            self.assertEqual((u, h, b), (url, {}, {"seriesid": ["X"]}), auth["placement"])
+            for stand_in in (keys.PROXY_KEY, keys.AUTO_KEY):
+                c = Client("https://example.gov", name="t", auth=auth, key=stand_in)
+                u, h, b = c._with_key(url, {}, {"seriesid": ["X"]})
+                self.assertEqual((u, h, b), (url, {}, {"seriesid": ["X"]}), auth["placement"])
         with mock.patch.dict(os.environ, {"T_EMAIL": "me@example.gov"}), self.proxy("all"):   # extras still go
             c = Client("https://example.gov", name="t", key=keys.PROXY_KEY,
                        auth={"env": "T", "placement": "query", "param": "key", "extra": {"email": "T_EMAIL"}})
-            self.assertIn("email=me%40example.gov", c._with_key(url, {}, None)[0])
-            self.assertNotIn("key=", c._with_key(url, {}, None)[0].replace("api_key", ""))
+            sent = c._with_key(url, {}, None)[0]
+            self.assertIn("email=me%40example.gov", sent)
+            self.assertNotIn("&key=", sent)
 
-    def test_refused_request_explains_the_proxy(self):
+    def test_refused_named_key_says_check_the_secret(self):
         with tempfile.TemporaryDirectory() as t:
             json.dump({"GET https://example.gov/x": {"file": "r.json", "status": 401},
                        "GET https://example.gov/y": {"file": "r.json", "status": 400}},
@@ -130,106 +154,129 @@ class TestKeyProxy(unittest.TestCase):
                         Client("https://example.gov", name="t", retries=0, auth=auth).get(path)
                     self.assertEqual(e.exception.kind, "auth")
                     self.assertIn("network proxy did not attach", str(e.exception))
-                    self.assertIn(keys.PROXY_VAR, str(e.exception))
 
-    def test_route_check_in_proxy_mode(self):
+    def test_refused_named_key_retries_keyless_when_the_pack_allows(self):
+        demo = {"env": "T", "required": "optional", "placement": "query", "param": "api_key", "demo_key": "DEMO_KEY"}
+        answer = lambda path, headers: (200, b"[1]") if "api_key=DEMO_KEY" in path else (403, b'{"e": 1}')  # noqa: E731
+        with FakeApi(answer) as api:                     # no network secret here: only DEMO_KEY gets data
+            c = Client(api.base, name="t", retries=0, auth=demo, key=keys.PROXY_KEY)
+            self.assertEqual(c.get_json("/x"), [1])
+            self.assertEqual([p for p, _ in api.seen], ["/x", "/x?api_key=DEMO_KEY"])
+            self.assertIsNone(c.key)
+            self.assertEqual(c.get_json("/y"), [1])       # the rest of the run goes keyless at once
+            req = Client(api.base, name="t", retries=0, key=keys.PROXY_KEY,
+                         auth={**demo, "required": "required", "demo_key": None})
+            with self.assertRaises(DataError) as e:       # a required key: no keyless way to retry
+                req.get("/z")
+            self.assertEqual((e.exception.kind, api.seen[-1][0]), ("auth", "/z"))
+
+    # ---- auto
+    def test_auto_applies_only_to_keys_a_network_secret_can_add(self):
+        with tempfile.TemporaryDirectory() as t, isolated_home(t), self.proxy("auto"):
+            os.environ.pop("X_TEST_KEY", None)
+            with mock.patch.dict(os.environ, {"DATA_ANALYST_ENV": "local"}):   # auto means the default here
+                self.assertEqual(keys.find_auth_key(self.HEADER), (None, None))
+            with self.cloud():
+                k, src = keys.find_auth_key(self.HEADER)
+                self.assertTrue(keys.is_auto(k))
+                self.assertEqual(src, keys.AUTO_LABEL)
+                self.assertEqual(keys.key_mode(self.HEADER), "auto")
+                self.assertTrue(keys.is_auto(keys.find_auth_key({**self.QUERY, "proxy_header": "X-Api-Key"})[0]))
+                self.assertEqual(keys.find_auth_key(self.QUERY), (None, None))     # URL-only: DEMO_KEY as before
+                self.assertEqual(keys.find_key("X_TEST_KEY"), (None, None))         # deep packs opt in (auto=True)
+                with mock.patch.dict(os.environ, {"X_TEST_KEY": "stored-value"}):  # a stored key wins
+                    self.assertEqual(keys.find_auth_key(self.HEADER)[0], "stored-value")
+                with mock.patch.dict(os.environ, {"ALT_TEST_KEY": "alt-value"}):   # so does a stored alternative
+                    self.assertEqual(keys.find_auth_key({**self.HEADER, "alt_env": ["ALT_TEST_KEY"]})[0], "alt-value")
+                with mock.patch.dict(os.environ, {keys.PROXY_VAR: "auto,X_TEST_KEY", "X_TEST_KEY": "stored-value"}):
+                    k = keys.find_auth_key(self.QUERY)[0]                          # named: always the proxy
+                    self.assertTrue(keys.is_proxy(k) and not keys.is_auto(k))
+
+    def test_auto_leaves_url_key_packs_alone(self):
+        # BLS (body), FRED, BEA, Census (URL), Treasury's BLS context: no network secret can add their key, so
+        # auto keeps the default: BLS v1, DEMO_KEY for EIA, keyless openFDA
+        from core import packs
+        with tempfile.TemporaryDirectory() as t, isolated_home(t), self.proxy("auto"), self.cloud():
+            for v in testkit.KEY_VARS:
+                os.environ.pop(v, None)
+            for pid in ("eia", "fda", "census", "fred", "bea", "bls"):
+                self.assertEqual(keys.find_auth_key(packs.load(pid).policy["auth"]), (None, None), pid)
+            self.assertEqual(keys.find_key("BLS_API_KEY", "bls"), (None, None))   # treasury/context.py
+            for pid in ("congress", "regulations", "hud", "ipums", "usgs"):
+                self.assertTrue(keys.is_auto(keys.find_auth_key(packs.load(pid).policy["auth"])[0]), pid)
+
+    def test_auto_refusal_means_no_key(self):
+        demo = {"env": "T_KEY", "required": "optional", "placement": "query", "param": "api_key", "demo_key": "DEMO_KEY"}
+        c = Client("https://example.gov", name="t", auth=demo, key=keys.AUTO_KEY)
+        self.assertEqual(c.key_source, keys.AUTO_LABEL)
+        with tempfile.TemporaryDirectory() as t:
+            json.dump({"GET https://example.gov/x": {"file": "r.json", "status": 403}}, open(os.path.join(t, "index.json"), "w"))
+            open(os.path.join(t, "r.json"), "wb").write(b'{"error": {"code": "API_KEY_MISSING"}}')
+            with mock.patch.dict(os.environ, {"DATA_ANALYST_FIXTURES": t}):
+                with self.assertRaises(DataError) as e:
+                    c.get("/x")
+        self.assertEqual(e.exception.kind, "key_missing")   # the route check takes the keyless route
+        self.assertIn("no network secret", str(e.exception))
+        self.assertTrue(keys.is_auto(c.key))                # no demo_key retry inside the client
+
+    def test_auto_route_check(self):
         from core import packs, routes
-        with tempfile.TemporaryDirectory() as t, mock.patch.dict(os.environ, {"DATA_ANALYST_FIXTURES": t}), \
-                self.proxy("HUD_USER_TOKEN"):
-            os.environ.pop("HUD_USER_TOKEN", None)
-            hud = packs.load("hud")
-            r = routes.route_check(hud, {"requests": []}, os.path.join(t, "spec.json"), t, "local")
-            self.assertEqual((r["route"], r["key_mode"], r["key_source"]), ("api", "proxy", keys.PROXY_LABEL))
-            r = routes.route_check(hud, {"requests": []}, os.path.join(t, "spec.json"), t, "cloud",
-                                   ping=lambda k: {"auth_ok": False, "kind": "auth", "detail": "HTTP 401"})
-            self.assertIs(r["key_ok"], False)
-            self.assertEqual(r["route"], "cloud_secret")
-            self.assertIn("did not attach a working key", r["message"])
-        with tempfile.TemporaryDirectory() as t, mock.patch.dict(os.environ, {"DATA_ANALYST_FIXTURES": t}):
+        refused = lambda k: {"auth_ok": False, "kind": "key_missing", "detail": "HTTP 403"}   # noqa: E731
+        with tempfile.TemporaryDirectory() as t, isolated_home(t), self.proxy("auto"), self.cloud(), \
+                mock.patch.dict(os.environ, {"DATA_ANALYST_FIXTURES": t}):
+            for v in testkit.KEY_VARS:
+                os.environ.pop(v, None)
+            check = lambda pid, ping: routes.route_check(packs.load(pid), {"requests": []},  # noqa: E731
+                                                         os.path.join(t, "spec.json"), t, "cloud", ping=ping)
+            ok = check("hud", lambda k: {"auth_ok": True, "kind": "ok", "detail": ""})
+            self.assertEqual((ok["route"], ok["key_mode"]), ("api", "auto"))
+            self.assertIn("network secret for www.huduser.gov was attached", ok["message"])
+            r = check("hud", refused)                       # required key, no secret: as if no key at all
+            self.assertEqual((r["route"], r["key_ok"], r["key_source"]), ("cloud_secret", None, None))
+            self.assertIn("No HUD_USER_TOKEN is set on this machine and no network secret for www.huduser.gov",
+                          r["message"])
+            self.assertNotIn("rejected", r["message"])
+            r = check("congress", refused)                  # optional key: no DEMO_KEY api route in auto mode
+            self.assertNotEqual(r["route"], "api")
+            self.assertIn("api.congress.gov", r["message"])
+            self.assertNotIn("clerk.house.gov", r["message"])
+
+    def test_route_check_messages_offer_what_works(self):
+        from core import packs, routes
+        with tempfile.TemporaryDirectory() as t, isolated_home(t), mock.patch.dict(os.environ, {"DATA_ANALYST_FIXTURES": t}):
             os.environ.pop(keys.PROXY_VAR, None)
-            os.environ.pop("HUD_USER_TOKEN", None)
-            with isolated_home(t):
-                r = routes.route_check(packs.load("hud"), {"requests": []}, os.path.join(t, "spec.json"), t, "cloud")
-            self.assertEqual((r["route"], r["key_mode"]), ("cloud_secret", "env"))
-            self.assertIn("--key-proxy HUD_USER_TOKEN", r["message"])   # both options offered
-            self.assertIn("environment variable", r["message"])
+            for v in testkit.KEY_VARS:
+                os.environ.pop(v, None)
+            hud = routes.route_check(packs.load("hud"), {"requests": []}, os.path.join(t, "s.json"), t, "cloud")
+            self.assertEqual((hud["route"], hud["key_mode"]), ("cloud_secret", "env"))
+            self.assertIn("network secret for www.huduser.gov", hud["message"])
+            self.assertIn("--key-proxy auto", hud["message"])
+            self.assertEqual(routes.cloud_key_how("FRED_API_KEY"),
+                             "Set FRED_API_KEY as an environment variable of the cloud environment")
+            with self.proxy("HUD_USER_TOKEN"):
+                r = routes.route_check(packs.load("hud"), {"requests": []}, os.path.join(t, "s.json"), t, "cloud",
+                                       ping=lambda k: {"auth_ok": False, "kind": "auth", "detail": "HTTP 401"})
+            self.assertEqual((r["route"], r["key_ok"]), ("cloud_secret", False))
+            self.assertIn("did not attach a working key", r["message"])
 
+    # ---- deep packs
     def test_deep_packs_send_no_key_in_proxy_mode(self):
-        import importlib.util
-
-        def load(pid, mod):
-            spec = importlib.util.spec_from_file_location(f"_proxy_{mod}", os.path.join(SKILL, "sources", pid, f"{mod}.py"))
-            m = importlib.util.module_from_spec(spec)
-            sys.path.insert(0, os.path.join(SKILL, "sources", pid))
-            try:
-                spec.loader.exec_module(m)
-            finally:
-                sys.path.remove(os.path.join(SKILL, "sources", pid))
-            return m
-
         url = "https://example.gov/x?a=1"
         with tempfile.TemporaryDirectory() as t, isolated_home(t), self.proxy("all"):
-            bls = load("bls", "bls_api").BlsClient()
+            bls = testkit.load_pack_module("bls", "bls_api.py").BlsClient()
             self.assertEqual(bls.version, "v2")           # keyed API version, key added by the proxy
             self.assertEqual(bls.http._with_key(url, {}, {"seriesid": ["X"]}), (url, {}, {"seriesid": ["X"]}))
-            for pid, mod, cls in (("fred", "fred_api", "FredClient"), ("bea", "bea_api", "BeaClient"),
-                                  ("ipums", "ipums_api", "IpumsClient")):
-                c = getattr(load(pid, mod), cls)()        # no key_missing: the proxy supplies it
+            for pid, mod, cls in (("fred", "fred_api.py", "FredClient"), ("bea", "bea_api.py", "BeaClient"),
+                                  ("ipums", "ipums_api.py", "IpumsClient")):
+                c = getattr(testkit.load_pack_module(pid, mod), cls)()   # no key_missing: the proxy supplies it
                 self.assertTrue(keys.is_proxy(c.key), pid)
                 http = getattr(c, "http", None) or c.client   # BeaClient keeps its Client as .client
                 self.assertEqual(http._with_key(url, {}, None), (url, {}, None), pid)
 
-    def test_refused_proxy_key_retries_keyless_when_the_pack_allows(self):
-        import http.server
-        import threading
-        seen = []
-
-        class Api(http.server.BaseHTTPRequestHandler):
-            def log_message(self, *a):
-                pass
-
-            def do_GET(self):                             # no network secret here: only DEMO_KEY gets data
-                seen.append(self.path)
-                ok = "api_key=DEMO_KEY" in self.path
-                self.send_response(200 if ok else 403)
-                self.send_header("Content-Type", "application/json")
-                self.end_headers()
-                self.wfile.write(b"[1]" if ok else b'{"error": {"code": "API_KEY_MISSING"}}')
-
-        srv = http.server.HTTPServer(("127.0.0.1", 0), Api)
-        threading.Thread(target=srv.serve_forever, daemon=True).start()
-        base = f"http://127.0.0.1:{srv.server_port}"
-        try:
-            with mock.patch.dict(os.environ, {"NO_PROXY": "127.0.0.1", "no_proxy": "127.0.0.1"}):
-                os.environ.pop("DATA_ANALYST_FIXTURES", None)
-                os.environ.pop("DATA_ACCESS_FORCE", None)
-                demo = {"env": "T", "required": "optional", "placement": "query", "param": "api_key",
-                        "demo_key": "DEMO_KEY"}
-                c = Client(base, name="t", retries=0, auth=demo, key=keys.PROXY_KEY)
-                self.assertEqual(c.get_json("/x"), [1])   # refused, then keyless with DEMO_KEY
-                self.assertEqual(seen, ["/x", "/x?api_key=DEMO_KEY"])
-                self.assertIsNone(c.key)
-                self.assertIn("keyless", c.key_source)
-                self.assertEqual(c.get_json("/y"), [1])   # the rest of the run goes keyless at once
-                self.assertEqual(seen[-1], "/y?api_key=DEMO_KEY")
-                req = Client(base, name="t", retries=0, key=keys.PROXY_KEY,
-                             auth={**demo, "required": "required", "demo_key": None})
-                with self.assertRaises(DataError) as e:   # a required key: no keyless way to retry
-                    req.get("/z")
-                self.assertEqual(e.exception.kind, "auth")
-                self.assertEqual(seen[-1], "/z")
-        finally:
-            srv.shutdown()
-            srv.server_close()
-
-    def test_bls_falls_back_to_v1_when_the_proxy_key_is_refused(self):
-        import importlib.util
-        spec = importlib.util.spec_from_file_location("_proxy_bls_api", os.path.join(SKILL, "sources", "bls", "bls_api.py"))
-        bls = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(bls)
+    def test_bls_refused_proxy_key(self):
+        bls = testkit.load_pack_module("bls", "bls_api.py")
         with tempfile.TemporaryDirectory() as t, isolated_home(t), self.proxy("BLS_API_KEY"):
             c = bls.BlsClient()
-            self.assertEqual(c.version, "v2")
             sent = []
 
             def post(body, retries=None):
@@ -239,104 +286,62 @@ class TestKeyProxy(unittest.TestCase):
                 return {"status": "REQUEST_SUCCEEDED", "message": [], "Results": {"series": []}}
 
             c._post = post
-            c.fetch(["LNS14000000"], 2001, 2020, log=lambda m: None)
-            self.assertEqual(c.version, "v1")
-            self.assertIsNone(c.key)
-            self.assertEqual(sent, [("v2", "2001", "2020"), ("v1", "2001", "2010"), ("v1", "2011", "2020")])
-            c2 = bls.BlsClient()                          # ping: the same fallback
-            calls = []
+            p = c.ping()                                 # the check hears the refusal (its plan is v2's)
+            self.assertEqual((p["auth_ok"], c.version), (False, "v2"))
+            c.fetch(["LNS14000000"], 2001, 2020, log=lambda m: None)   # a run started anyway falls back to v1
+            self.assertEqual((c.version, c.key), ("v1", None))
+            self.assertEqual(sent[1:], [("v2", "2001", "2020"), ("v1", "2001", "2010"), ("v1", "2011", "2020")])
 
-            def ping_post(body, retries=None):
-                calls.append(c2.version)
-                if c2.version == "v2":
-                    raise bls.BlsError("invalid key", kind="auth")
-                return {"status": "REQUEST_SUCCEEDED"}
+    # ---- the command line
+    def test_global_options(self):
+        f = self.fetch_module()
+        known = {"HUD_USER_TOKEN", "FRED_API_KEY"}
+        self.assertIsNone(f.key_proxy_problem("auto", known))
+        self.assertIsNone(f.key_proxy_problem("auto, hud_user_token", known))
+        self.assertIsNone(f.key_proxy_problem("env", known))
+        self.assertIn("ATUO", f.key_proxy_problem("atuo", known))
+        self.assertIn("not the option", f.key_proxy_problem("--sources", known))
+        with mock.patch.dict(os.environ, {keys.PROXY_VAR: "all"}):
+            os.environ.pop("DATA_ANALYST_ENV", None)
+            self.assertEqual(f.take_global_options(["--key-proxy", "auto", "--env", "cloud", "--sources"]),
+                             ["--env", "cloud", "--sources"])
+            self.assertEqual((os.environ[keys.PROXY_VAR], os.environ["DATA_ANALYST_ENV"]), ("auto", "cloud"))
+            f.take_global_options(["--key-proxy=env"])   # the option wins over the variable
+            self.assertNotIn(keys.PROXY_VAR, os.environ)
+        os.environ.pop("DATA_ANALYST_ENV", None)
 
-            c2._post = ping_post
-            self.assertTrue(c2.ping()["auth_ok"])
-            self.assertEqual(calls, ["v2", "v1"])
-
-    def test_command_option_overrides_the_variable(self):
-        fetch = os.path.join(SKILL, "scripts", "fetch.py")
-
-        def modes(*args, env=None):
-            e = {k: v for k, v in os.environ.items() if k != keys.PROXY_VAR}
-            e.update(env or {})
-            out = subprocess.run([sys.executable, "-I", fetch, *args, "--key-proxy-setup", "--json"], env=e,
-                                 capture_output=True, text=True, timeout=120)
-            self.assertEqual(out.returncode, 0, out.stderr)
-            data = json.loads(out.stdout)
-            return data, {(k["env"], k["placement"]): k["mode"] for k in data["keys"]}
-
-        data, m = modes()
-        self.assertEqual(set(m.values()), {"env"})                 # the default
-        data, m = modes("--key-proxy", "HUD_USER_TOKEN,NOPE_KEY")
-        self.assertEqual(m[("HUD_USER_TOKEN", "header")], "proxy")
-        self.assertEqual(m[("FRED_API_KEY", "query")], "env")
-        self.assertEqual(data["unknown_names"], ["NOPE_KEY"])
-        data, m = modes("--key-proxy=all")
-        self.assertEqual(set(m.values()), {"proxy"})
-        data, m = modes("--key-proxy", "env", env={keys.PROXY_VAR: "all"})   # the option wins over the variable
-        self.assertEqual(set(m.values()), {"env"})
-        with tempfile.TemporaryDirectory() as t:              # auto in a cloud session with no stored keys
-            bare = {k: "" for k in os.environ if k.endswith(("_API_KEY", "_TOKEN"))}
-            data, m = modes("--key-proxy", "auto", env={**bare, "DATA_ANALYST_ENV": "cloud", "HOME": t, "USERPROFILE": t,
-                                                         "DATA_ANALYST_CONFIG_DIR": t, "CLAUDE_CONFIG_DIR": t})
-            self.assertEqual(set(m.values()), {"auto"})
-            self.assertEqual(data["unknown_names"], [])
-
-    def test_auto_uses_a_stored_key_else_the_network_secret(self):
-        with tempfile.TemporaryDirectory() as t, isolated_home(t), self.proxy("auto"):
-            os.environ.pop("X_TEST_KEY", None)
-            with mock.patch.dict(os.environ, {"DATA_ANALYST_ENV": "local"}):   # auto means the default here
-                self.assertEqual(keys.find_key("X_TEST_KEY"), (None, None))
-                self.assertEqual(keys.key_mode("X_TEST_KEY"), "env")
-            with mock.patch.dict(os.environ, {"DATA_ANALYST_ENV": "cloud"}):
-                k, src = keys.find_key("X_TEST_KEY")
-                self.assertTrue(keys.is_auto(k) and keys.is_proxy(k))
-                self.assertEqual(src, keys.AUTO_LABEL)
-                self.assertEqual(keys.key_mode("X_TEST_KEY"), "auto")
-                self.assertEqual(keys.find_key("X_TEST_KEY", proxy=False), (None, None))
-                with mock.patch.dict(os.environ, {"X_TEST_KEY": "from-env"}):   # a stored key wins
-                    self.assertEqual(keys.find_key("X_TEST_KEY")[0], "from-env")
-                    self.assertEqual(keys.key_mode("X_TEST_KEY"), "env")
-                with mock.patch.dict(os.environ, {"ALT_TEST_KEY": "alt"}):      # so does a stored alternative
-                    self.assertEqual(keys.find_auth_key({"env": "X_TEST_KEY", "alt_env": ["ALT_TEST_KEY"]})[0], "alt")
-                with mock.patch.dict(os.environ, {keys.PROXY_VAR: "auto,X_TEST_KEY", "X_TEST_KEY": "from-env"}):
-                    self.assertFalse(keys.is_auto(keys.find_key("X_TEST_KEY")[0]))   # named: always the proxy
-                    self.assertTrue(keys.is_proxy(keys.find_key("X_TEST_KEY")[0]))
-
-    def test_auto_sends_no_demo_key_and_does_not_retry(self):
-        url = "https://example.gov/x?a=1"
-        demo = {"env": "T_KEY", "required": "optional", "placement": "query", "param": "api_key", "demo_key": "DEMO_KEY"}
-        c = Client("https://example.gov", name="t", auth=demo, key=keys.AUTO_KEY)
-        self.assertEqual(c.key_source, keys.AUTO_LABEL)
-        self.assertEqual(c._with_key(url, {}, None), (url, {}, None))
+    def test_key_proxy_setup_lists_only_key_hosts(self):
         with tempfile.TemporaryDirectory() as t:
-            json.dump({"GET https://example.gov/x": {"file": "r.json", "status": 403}}, open(os.path.join(t, "index.json"), "w"))
-            open(os.path.join(t, "r.json"), "wb").write(b'{"error": {"code": "API_KEY_MISSING"}}')
-            with mock.patch.dict(os.environ, {"DATA_ANALYST_FIXTURES": t}):
-                with self.assertRaises(DataError) as e:
-                    c.get("/x")
-            self.assertEqual(e.exception.kind, "auth")       # the route check then picks the keyless route
-            self.assertIn("--key-proxy auto", str(e.exception))
-            self.assertTrue(keys.is_auto(c.key))             # no keyless retry inside the client
+            code, data = testkit.run(["--key-proxy", "auto", "--env", "cloud", "--key-proxy-setup", "--json"],
+                                     home=t)
+        self.assertEqual(code, 0, data)
+        rows = {(k["env"], tuple(k["sources"])): k for k in data["keys"]}
+        gov = next(k for (env, src), k in rows.items() if env == "DATA_GOV_API_KEY" and "congress" in src)
+        self.assertEqual((gov["secret_type"], gov["header"], gov["mode"]), ("Bearer", "X-Api-Key", "auto"))
+        self.assertIn("api.congress.gov", gov["hosts"])
+        for host in ("clerk.house.gov", "www.senate.gov", "www.govinfo.gov", "earthquake.usgs.gov"):
+            self.assertNotIn(host, json.dumps(data["keys"]), host)
+        fred = next(k for (env, _), k in rows.items() if env == "FRED_API_KEY")
+        self.assertEqual((fred["secret_type"], fred["mode"]), (None, "env"))
+        bls = next(k for (env, _), k in rows.items() if env == "BLS_API_KEY")
+        self.assertEqual((bls["secret_type"], bls["body_param"]), ("Body parameter", "registrationkey"))
+        code, data = testkit.run(["--key-proxy", "atuo", "--sources"])
+        self.assertEqual(code, 2)
+        self.assertIn("ATUO", data.get("message", ""))
 
-    def test_auto_route_check_after_a_refusal(self):
-        from core import packs, routes
-        refused = lambda k: {"auth_ok": False, "kind": "auth", "detail": "HTTP 401"}   # noqa: E731
-        with tempfile.TemporaryDirectory() as t, isolated_home(t), \
-                mock.patch.dict(os.environ, {"DATA_ANALYST_FIXTURES": t, "DATA_ANALYST_ENV": "cloud"}), \
-                self.proxy("auto"):
-            os.environ.pop("HUD_USER_TOKEN", None)
-            r = routes.route_check(packs.load("hud"), {"requests": []}, os.path.join(t, "spec.json"), t, "cloud",
-                                   ping=refused)
-            self.assertEqual((r["route"], r["key_mode"], r["key_ok"]), ("cloud_secret", "auto", False))
-            self.assertIn("No HUD_USER_TOKEN is set on this machine", r["message"])
-            self.assertIn("network secret", r["message"])
-            ok = routes.route_check(packs.load("hud"), {"requests": []}, os.path.join(t, "spec.json"), t, "cloud",
-                                    ping=lambda k: {"auth_ok": True, "kind": "ok", "detail": ""})
-            self.assertEqual((ok["route"], ok["key_mode"]), ("api", "auto"))   # the secret was attached
+    def test_policy_key_hosts_and_proxy_header(self):
+        p = {"auth": {"env": "T"}, "routes": {"api": {"base": "https://api.example.gov/v1",
+                                                      "hosts": ["api.example.gov", "files.example.gov"]}}}
+        self.assertEqual(policy.key_hosts(p), ["api.example.gov"])          # never the other reachable hosts
+        self.assertEqual(policy.key_hosts({**p, "auth": {"key_hosts": ["a.gov", "b.gov"]}}), ["a.gov", "b.gov"])
+        base = {"id": "t", "title": "T", "agency": "A", "depth": "standard", "domains": ["x"], "homepage": "https://x",
+                "limits": {}, "routes": {"manual": {"how": "download"}}, "cache": {"mode": "none"},
+                "redistribution": {"mode": "allowed"}, "citation": "c"}
+        auth = {"env": "T", "required": "optional", "placement": "query", "signup_url": "https://x"}
+        ok = policy.validate({**base, "auth": {**auth, "proxy_header": "X-Api-Key", "key_hosts": ["api.x.gov"]}})
+        self.assertEqual([b for b in ok if "key_hosts" in b or "proxy_header" in b], [])
+        bad = policy.validate({**base, "auth": {**auth, "proxy_header": "", "key_hosts": ["https://x.gov/a"]}})
+        self.assertEqual(len([b for b in bad if "key_hosts" in b or "proxy_header" in b]), 2, bad)
 
 
 class TestPolicy(unittest.TestCase):
