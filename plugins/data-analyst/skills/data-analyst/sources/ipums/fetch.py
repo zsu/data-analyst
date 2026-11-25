@@ -861,7 +861,8 @@ def route_check(spec: dict, body: dict, spec_path: str, out: str, env: str, forc
                     setup)
     if env == "cloud":
         return done("cloud_secret",
-                    "This cloud session has no IPUMS API key. " + routes.cloud_key_how("IPUMS_API_KEY", ["api.ipums.org"]) +
+                    "This cloud session has no IPUMS API key. " + routes.cloud_key_how("IPUMS_API_KEY", ["api.ipums.org"],
+                                                                               signup="https://account.ipums.org/api_keys") +
                     ", and start the session again; or download the extract by hand "
                     "on the IPUMS website (free account, no key) or with a key and the download script "
                     f"({DOWNLOAD_SCRIPTS['bash']} or {DOWNLOAD_SCRIPTS['powershell']}, run on your own computer): "
@@ -1049,8 +1050,9 @@ def report_blocked(err: IpumsError, env: str, collection, body, spec_path: str |
                  next_command=setup, ingest_command=ingest_cmd)
     elif reason == "key_missing" and env == "cloud":
         r.update(route="cloud_secret",
-                 message=lead + " Add IPUMS_API_KEY to the cloud environment's secrets and start the session "
-                 "again, or download by hand." + where,
+                 message=lead + " " + routes.cloud_key_how("IPUMS_API_KEY", ["api.ipums.org"],
+                                                         signup="https://account.ipums.org/api_keys") +
+                 ", and start the session again, or download by hand." + where,
                  action="Explain both options. For the manual one: " + SEND_BUNDLE, next_command=ingest_cmd)
     elif reason == "auth" or (env in ("local", "ssh") and not keys.restricted()):
         r.update(route="report_error",

@@ -136,6 +136,16 @@ class TestBeaCli(PackTest):
         self.assertEqual(r["route"], "run_setup", r)
         self.assertIn("-Source bea", r["run_command"]) if sys.platform == "win32" else self.assertIn("bea", r["run_command"])
 
+    def test_api_needs_key_cloud_names_signup(self):
+        # the user cannot set a key without knowing where to get one: both the route check and a blocked fetch say it
+        code, r = self.check(ITA_SPEC, env={"DATA_ANALYST_ENV": "cloud"})
+        self.assertEqual(r["route"], "cloud_secret", r)
+        self.assertIn("https://apps.bea.gov/API/signup/", r["message"])
+        self.assertIn("BEA_API_KEY", r["message"])
+        code, r, out = self.fetch(ITA_SPEC, env={"DATA_ANALYST_ENV": "cloud"})
+        self.assertEqual((code, r["route"]), (4, "cloud_secret"), r)
+        self.assertIn("https://apps.bea.gov/API/signup/", r["message"])
+
     def test_api_needs_key_sandbox_is_manual(self):
         sp, out = self.write_spec(ITA_SPEC)
         code, r = self.cli(sp, "--out", out, "--check", "--env", "sandbox")

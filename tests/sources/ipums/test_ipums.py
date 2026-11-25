@@ -88,6 +88,7 @@ class TestIpums(PackTest):
         code, r = self.cli(sp, "--out", out, "--check", "--env", "cloud")
         self.assertEqual(r["route"], "cloud_secret", r)
         self.assertIn("--ingest", r["next_command"])
+        self.assertIn("https://account.ipums.org/api_keys", r["message"])
 
     def test_restricted_sandbox_bundle(self):
         from testkit import run

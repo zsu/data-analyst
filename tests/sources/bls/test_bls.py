@@ -68,6 +68,13 @@ class TestBls(PackTest):
         self.assertEqual(r["queries_needed"], {"v1_keyless": 1, "v2_with_key": 1})
         self.assertLess(len(json.dumps(r)), 2600)
 
+    def test_check_cloud_needs_key_names_signup(self):
+        big = {"series": [f"CES{i:010d}" for i in range(200)], "start_year": 1990, "end_year": 2026}
+        code, r = self.check(big, env={"DATA_ANALYST_ENV": "cloud"})
+        self.assertEqual(r["route"], "cloud_secret", r)
+        self.assertIn("https://data.bls.gov/registrationEngine/", r["message"])
+        self.assertIn("BLS_API_KEY", r["message"])
+
     def test_check_fix_spec(self):
         code, r = self.check({"series": ["not-an-id"], "start_year": 2020, "end_year": 2021})
         self.assertEqual(code, 2, r)

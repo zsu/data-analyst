@@ -47,13 +47,16 @@ SEND_BUNDLE = ("Send INSTRUCTIONS.md, both download scripts (download_scripts: .
                "chat. Wait for the upload, then run next_command.")
 
 
-def cloud_key_how(env: str, secret_hosts: list[str] | None = None) -> str:
+def cloud_key_how(env: str, secret_hosts: list[str] | None = None, signup: str | None = None) -> str:
     """The ways to give a cloud session a key, for cloud_secret messages: an environment variable always; a
-    network secret too when the API takes the key in a header (secret_hosts: the hosts it would list)."""
+    network secret too when the API takes the key in a header (secret_hosts: the hosts it would list).
+    signup: where the free key comes from, for a message that does not already say it (the user cannot set
+    a key without knowing where to get one)."""
+    get = f"A free key is at {signup}. " if signup else ""
     if not secret_hosts:
-        return f"Set {env} as an environment variable of the cloud environment"
-    return (f"Either set {env} as an environment variable of the cloud environment, or add a network secret for "
-            f"{', '.join(secret_hosts)} (fetch.py --key-proxy-setup shows where the key goes) and run with "
+        return get + f"Set {env} as an environment variable of the cloud environment"
+    return (get + f"Either set {env} as an environment variable of the cloud environment, or add a network secret "
+            f"for {', '.join(secret_hosts)} (fetch.py --key-proxy-setup shows where the key goes) and run with "
             "--key-proxy auto")
 
 

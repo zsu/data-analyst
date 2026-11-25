@@ -294,7 +294,7 @@ def route_check(s: dict, out: str, env: str, force: bool = False, spec_path: str
     b = bundle("the request needs a BLS registration key")
     if env == "cloud":
         return done("cloud_secret",
-                    need + f" {croutes.cloud_key_how('BLS_API_KEY')}, and start the session again, or "
+                    need + f" {croutes.cloud_key_how('BLS_API_KEY', signup=REGISTER_URL)}, and start the session again, or "
                     f"download on your own computer with the files in {b}.",
                     "Explain both options (and the smaller-request alternative). If the user downloads by hand: "
                     + SEND_ACTION, ingest_cmd)
@@ -801,11 +801,13 @@ def report_blocked(err: BlsError, env: str, s: dict | None, out: str, spec_path:
                       action="Tell the user and stop. Do not substitute data from memory.")
     elif s:
         bundle = write_manual_bundle(s, out, f"{err.kind}: {str(err)[:120]}")
-        result.update(route="cloud_secret" if env == "cloud" and err.kind == "auth" else
-                      "cloud_allowlist" if env == "cloud" else "manual_download",
+        secret = env == "cloud" and err.kind == "auth"
+        result.update(route="cloud_secret" if secret else "cloud_allowlist" if env == "cloud" else "manual_download",
                       manual_bundle=bundle, instructions=os.path.join(bundle, "INSTRUCTIONS.md"),
                       download_scripts=download_scripts(bundle),
-                      message="The data cannot be downloaded here. Send the bundle to the user and continue with "
+                      message=(f"BLS needs a working BLS_API_KEY here. {croutes.cloud_key_how('BLS_API_KEY', signup=REGISTER_URL)}"
+                               ", and start the session again. Meanwhile: " if secret else "") +
+                              "The data cannot be downloaded here. Send the bundle to the user and continue with "
                               "--ingest after the upload.",
                       send_files=[os.path.join(bundle, n) for n in SEND_FILES], action=SEND_ACTION)
     else:

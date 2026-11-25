@@ -1424,7 +1424,7 @@ def route_check(spec: dict, reqs: list[dict], out: str, env: str, spec_path: str
     b = bundle("key_missing")
     if env == "cloud":
         return done("cloud_secret", f"This cloud session has no BEA API key, and these requests need the API: "
-                    f"{', '.join(need_api)}. {routes.cloud_key_how(KEY_VAR)}, and start the "
+                    f"{', '.join(need_api)}. {routes.cloud_key_how(KEY_VAR, signup=SIGNUP_URL)}, and start the "
                     f"session again; or download on their own computer with the script in {b}.",
                     "Explain both options. If the user downloads on their own computer: " + SEND_BUNDLE, ingest_cmd)
     return done("manual_download", f"This environment has no BEA API key, and these requests need the API: "
@@ -1453,6 +1453,9 @@ def report_blocked(err: BeaError, env: str, reqs, out: str, spec_path: str):
         bundle = write_manual_bundle(reqs, out, reason, spec_path) if reqs else None
         route = ("cloud_secret" if env == "cloud" and reason == "key_missing" else
                  "cloud_allowlist" if env == "cloud" else "manual_download")
+        if route == "cloud_secret":
+            result["message"] += (f" {routes.cloud_key_how(KEY_VAR, signup=SIGNUP_URL)}, and start the session "
+                                  "again; or download on your own computer with the bundle.")
         result.update(route=route, **_bundle_fields(bundle), action=SEND_BUNDLE,
                       next_command=cli(spec_path, out, "--ingest", "<the uploaded files or their folder>"))
     say(f"CANNOT DOWNLOAD FROM BEA: {REASON_TEXT[reason]}. {result['action']}")
