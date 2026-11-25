@@ -85,7 +85,7 @@ def route_check(pack, spec: dict, spec_path: str, out: str, env: str, force: boo
                      "it resets within hours)")
     r = {"status": "route_check", "source": pack.id, "environment": env, "os": sys.platform,
          "restricted": keys.restricted(), "key_env": a.get("env"), "key_source": key_src,
-         "key_required": a["required"], "key_mode": keys.key_mode(a.get("env")), "key_ok": None,
+         "key_required": a["required"], "key_mode": "auto" if keys.is_auto(key) else "proxy" if keys.is_proxy(key) else "env", "key_ok": None,
          "key_only_needs": needs, "probed": {},
          "existing_data": None, "route": None, "message": "", "action": "", "next_command": ""}
 
@@ -167,7 +167,9 @@ def route_check(pack, spec: dict, spec_path: str, out: str, env: str, force: boo
                      "under its filename) into a new folder and run ingest_command on that folder." if demo else ""),
                     run)
     rejected = r["key_ok"] is False
-    lead = (f"{P['title']} rejected the {a['env']} key found in {key_src}. " if rejected else
+    lead = (f"No {a['env']} is set on this machine and {P['title']} refused the request without one (no working "
+            "network secret for its host). " if rejected and keys.is_auto(key) else
+            f"{P['title']} rejected the {a['env']} key found in {key_src}. " if rejected else
             f"No {a['env']} key is set up. " if key_needed and not key else "")
 
     if (kl_ok or bulk_ok) and not needs:
@@ -202,14 +204,23 @@ def route_check(pack, spec: dict, spec_path: str, out: str, env: str, force: boo
         if env == "cloud":
             hosts = ", ".join(sorted({h for v in P["routes"].values() if isinstance(v, dict) for h in v.get("hosts", [])}))
             via = f" {keys.cloud_key_how(a['env'])}; then restart the session"
-            if keys.is_proxy(key):
+            if keys.is_auto(key):
+                via = (f" Either add a network secret for {hosts or 'its host'} (fetch.py --key-proxy-setup; "
+                       f"--key-proxy auto then uses it) or set {a['env']} as an environment variable; then restart "
+                       "the session")
+            elif keys.is_proxy(key):
                 via = (f" {a['env']} is set to come from the network proxy ({keys.PROXY_VAR}), and the proxy did not "
                        f"attach a working key: check the network secret for {hosts or 'its host'} (fetch.py "
                        f"--key-proxy-setup), or set {a['env']} as an environment variable and remove it from "
                        f"{keys.PROXY_VAR}; then restart the session")
+            kf = keyless()                            # a keyless file the pack's ingest reads, when one covers this
             return done("cloud_secret", lead + need + via +
-                        (f", or download on your own computer with the files in {b}." if b else "."),
-                        "Explain both options. If the user downloads by hand: " + SEND_BUNDLE, ingest)
+                        (f", or download on your own computer with the files in {b}." if b else ".") +
+                        (" Without a key, keyless_files cover this request." if kf else ""),
+                        "Explain both options." + (" With nobody to ask, download keyless_files (each url under its "
+                                                   "filename) into a new folder and run ingest_command on that folder."
+                                                   if kf else "") + " If the user downloads by hand: " + SEND_BUNDLE,
+                        ingest)
         return done("manual_download", lead + need + " A key cannot be stored in this environment (a hosted sandbox "
                     "such as claude.ai or ChatGPT), so the files must be downloaded where the key is: " +
                     (f"the links and scripts are in {b}." if b else P["routes"]["manual"]["how"]) +

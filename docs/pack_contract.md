@@ -97,6 +97,10 @@ Field rules (`core/policy.py: validate` enforces the starred ones):
   refuses a proxied request (no working network secret for that host) and the pack also works without a key
   (`required: "optional"` or a `demo_key`), `Client` retries once the keyless way and stays keyless for the
   run; BLS drops to keyless v1. A required key has no keyless retry: the error says to check the secret.
+  `--key-proxy auto` (cloud sessions only): a key stored on the machine is used as usual; a key not found
+  becomes the `AUTO_KEY` stand-in, so the request goes to the keyed API with no key and no `demo_key`, and a
+  network secret is used if the environment has one. A refusal is not retried inside `Client`: the route check
+  then takes the pack's keyless route (another host, bulk, a keyless file; BLS v1), else `cloud_secret`.
   `fetch.py --key-proxy-setup` lists, per key, the hosts and placement a network secret needs.
 - **`routes`**\*: `manual.how` is always required: every source must be obtainable by a user with a browser.
   Each network route needs a cheap `probe` URL that needs no key and returns quickly (any HTTP status means

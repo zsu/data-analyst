@@ -23,6 +23,11 @@ proxy supplies: "all" (every pack key) or a comma list such as "HUD_USER_TOKEN,I
 returns PROXY_KEY, which counts as a key everywhere (routes, keyed limits) but is never sent: core.http.Client
 leaves the credential off the request, so the proxy's copy is the only one. Whether the proxy attached a
 working key shows in the API's answer (401/403 means it did not). The setting is not a secret.
+"auto" (cloud sessions only; elsewhere it means the default): a key found on this machine is used as usual;
+a key not found returns AUTO_KEY, so the request goes to the keyed API with no key and no demo_key, and the
+proxy attaches its network secret if the environment has one. If the API refuses it, the pack takes its
+keyless route when it has one (another host, bulk or keyless file, BLS v1), else reports the key as needed.
+"auto" can be combined with names ("auto,HUD_USER_TOKEN"): the named keys always come from the proxy.
 """
 from __future__ import annotations
 
@@ -49,11 +54,26 @@ class _ProxyKey(str):
         return "PROXY_KEY"
 
 
+class _AutoKey(_ProxyKey):
+    """"auto" mode, no key on this machine: the proxy attaches a network secret if there is one. A refusal
+    means there is none, so the pack goes keyless by another route; no demo_key retry."""
+
+    def __repr__(self):
+        return "AUTO_KEY"
+
+
 PROXY_KEY = _ProxyKey("<network-secret>")
+AUTO_KEY = _AutoKey("<network-secret-if-any>")
+AUTO_LABEL = "network secret if the cloud environment has one (none on this machine; --key-proxy auto)"
 
 
 def is_proxy(key) -> bool:
+    """PROXY_KEY or AUTO_KEY: never put on a request."""
     return isinstance(key, _ProxyKey)
+
+
+def is_auto(key) -> bool:
+    return isinstance(key, _AutoKey)
 
 
 def restricted() -> bool:
@@ -61,7 +81,8 @@ def restricted() -> bool:
 
 
 def proxy_names() -> set[str]:
-    """The key variables DATA_ANALYST_KEY_PROXY hands to the proxy, upper-cased; {"*"} for "all"."""
+    """The key variables DATA_ANALYST_KEY_PROXY hands to the proxy, upper-cased; {"*"} for "all"; "AUTO" for
+    auto mode (alone or with names)."""
     raw = (os.environ.get(PROXY_VAR) or "").strip()
     if not raw:
         return set()
@@ -70,20 +91,34 @@ def proxy_names() -> set[str]:
 
 
 def proxied(env: str | None) -> bool:
+    """env always comes from the proxy (named, or "all")."""
     names = proxy_names()
     return bool(env) and ("*" in names or env.upper() in names)
+
+
+def auto_on() -> bool:
+    """--key-proxy auto in a cloud session (it means the default anywhere else)."""
+    if "AUTO" not in proxy_names():
+        return False
+    from core.env import detect_environment
+    return detect_environment() == "cloud"
 
 
 def cloud_key_how(env: str) -> str:
     """The two ways to give a cloud session a key, for cloud_secret messages."""
     return (f"Either set {env} as an environment variable of the cloud environment, or add a network secret for "
             f"its API host (fetch.py --key-proxy-setup shows the host and where the key goes) and run with "
-            f"--key-proxy {env} (or set {PROXY_VAR}={env})")
+            f"--key-proxy auto (or --key-proxy {env}, or set {PROXY_VAR})")
 
 
-def key_mode(env: str | None) -> str:
-    """"proxy" when the network proxy supplies this key, else "env" (looked up on this machine)."""
-    return "proxy" if proxied(env) and not restricted() else "env"
+def key_mode(env: str | None, home: str | None = None) -> str:
+    """"proxy": the network proxy supplies this key; "auto": auto mode and no key on this machine, so a network
+    secret is used if the environment has one; "env": looked up on this machine."""
+    if not env or restricted():
+        return "env"
+    if proxied(env):
+        return "proxy"
+    return "auto" if is_auto(find_key(env, home)[0]) else "env"
 
 
 def config_path() -> str:
@@ -152,6 +187,8 @@ def find_key(env: str | None, home: str | None = None, proxy: bool = True) -> tu
             found = key, kf
     if found[0]:
         remember(found[0])
+    elif proxy and auto_on():
+        return AUTO_KEY, AUTO_LABEL
     return found
 
 
@@ -191,8 +228,8 @@ def find_auth_key(auth: dict) -> tuple[str | None, str | None]:
     """The key for a pack's auth block: auth.env first, then each auth.alt_env (e.g. EIA accepts an
     api.data.gov key, so ["DATA_GOV_API_KEY"])."""
     key, src = find_key(auth.get("env"), auth.get("home"))
-    for alt in ([] if key else auth.get("alt_env") or []):
-        key, src = find_key(alt)
-        if key:
-            break
+    for alt in ([] if key and not is_auto(key) else auth.get("alt_env") or []):
+        k, s = find_key(alt, proxy=False)            # auto mode: a stored alternative key still wins
+        if k:
+            return k, s
     return key, src

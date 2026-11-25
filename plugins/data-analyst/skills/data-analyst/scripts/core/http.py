@@ -225,7 +225,8 @@ class Client:
             self.bucket = _BUCKETS.setdefault(host, TokenBucket(rps or 5, burst or 10))
         if key:
             keys.remember(key)                        # ignores PROXY_KEY
-            self.key, self.key_source = key, keys.PROXY_LABEL if keys.is_proxy(key) else "argument"
+            self.key, self.key_source = key, (keys.AUTO_LABEL if keys.is_auto(key) else
+                                              keys.PROXY_LABEL if keys.is_proxy(key) else "argument")
         else:
             self.key, self.key_source = keys.find_auth_key(self.auth)
 
@@ -233,6 +234,10 @@ class Client:
         """A request in proxy mode that the API refused: the network proxy did not attach a working key."""
         host = urllib.parse.urlsplit(r.url).netloc
         env = self.auth.get("env") or "the key"
+        if keys.is_auto(self.key):
+            return DataError(f"{self.name}: HTTP {r.status} from {host}: no {env} on this machine and no working "
+                             f"network secret for {host} (--key-proxy auto). {keys.cloud_key_how(env)}. "
+                             f"{detail}".rstrip(), kind="auth", status=r.status)
         return DataError(f"{self.name}: HTTP {r.status} from {host} in proxy mode ({keys.PROXY_VAR} names {env}): "
                          "the network proxy did not attach a working key. Check the cloud environment's network "
                          f"secret for {host} (host, header or parameter name, value), or remove {env} from "
@@ -284,8 +289,10 @@ class Client:
     def _go_keyless(self, e: "DataError") -> bool:
         """Proxy mode, and the API refused the request: when the pack also works without a key (an optional key,
         or a shared demo_key), drop the proxied key for the rest of this client's life so the call can be
-        retried the keyless way (demo_key included). Returns False when that does not apply."""
-        if not (keys.is_proxy(self.key) and e.kind == "auth" and e.status in (400, 401, 403)):
+        retried the keyless way (demo_key included). Returns False when that does not apply, and always in auto
+        mode: there the request already went without a key, and the pack's keyless route is the fallback."""
+        if not (keys.is_proxy(self.key) and not keys.is_auto(self.key) and e.kind == "auth"
+                and e.status in (400, 401, 403)):
             return False
         if self.auth.get("required") != "optional" and not self.auth.get("demo_key"):
             return False

@@ -278,6 +278,65 @@ class TestKeyProxy(unittest.TestCase):
         self.assertEqual(set(m.values()), {"proxy"})
         data, m = modes("--key-proxy", "env", env={keys.PROXY_VAR: "all"})   # the option wins over the variable
         self.assertEqual(set(m.values()), {"env"})
+        with tempfile.TemporaryDirectory() as t:              # auto in a cloud session with no stored keys
+            bare = {k: "" for k in os.environ if k.endswith(("_API_KEY", "_TOKEN"))}
+            data, m = modes("--key-proxy", "auto", env={**bare, "DATA_ANALYST_ENV": "cloud", "HOME": t, "USERPROFILE": t,
+                                                         "DATA_ANALYST_CONFIG_DIR": t, "CLAUDE_CONFIG_DIR": t})
+            self.assertEqual(set(m.values()), {"auto"})
+            self.assertEqual(data["unknown_names"], [])
+
+    def test_auto_uses_a_stored_key_else_the_network_secret(self):
+        with tempfile.TemporaryDirectory() as t, isolated_home(t), self.proxy("auto"):
+            os.environ.pop("X_TEST_KEY", None)
+            with mock.patch.dict(os.environ, {"DATA_ANALYST_ENV": "local"}):   # auto means the default here
+                self.assertEqual(keys.find_key("X_TEST_KEY"), (None, None))
+                self.assertEqual(keys.key_mode("X_TEST_KEY"), "env")
+            with mock.patch.dict(os.environ, {"DATA_ANALYST_ENV": "cloud"}):
+                k, src = keys.find_key("X_TEST_KEY")
+                self.assertTrue(keys.is_auto(k) and keys.is_proxy(k))
+                self.assertEqual(src, keys.AUTO_LABEL)
+                self.assertEqual(keys.key_mode("X_TEST_KEY"), "auto")
+                self.assertEqual(keys.find_key("X_TEST_KEY", proxy=False), (None, None))
+                with mock.patch.dict(os.environ, {"X_TEST_KEY": "from-env"}):   # a stored key wins
+                    self.assertEqual(keys.find_key("X_TEST_KEY")[0], "from-env")
+                    self.assertEqual(keys.key_mode("X_TEST_KEY"), "env")
+                with mock.patch.dict(os.environ, {"ALT_TEST_KEY": "alt"}):      # so does a stored alternative
+                    self.assertEqual(keys.find_auth_key({"env": "X_TEST_KEY", "alt_env": ["ALT_TEST_KEY"]})[0], "alt")
+                with mock.patch.dict(os.environ, {keys.PROXY_VAR: "auto,X_TEST_KEY", "X_TEST_KEY": "from-env"}):
+                    self.assertFalse(keys.is_auto(keys.find_key("X_TEST_KEY")[0]))   # named: always the proxy
+                    self.assertTrue(keys.is_proxy(keys.find_key("X_TEST_KEY")[0]))
+
+    def test_auto_sends_no_demo_key_and_does_not_retry(self):
+        url = "https://example.gov/x?a=1"
+        demo = {"env": "T_KEY", "required": "optional", "placement": "query", "param": "api_key", "demo_key": "DEMO_KEY"}
+        c = Client("https://example.gov", name="t", auth=demo, key=keys.AUTO_KEY)
+        self.assertEqual(c.key_source, keys.AUTO_LABEL)
+        self.assertEqual(c._with_key(url, {}, None), (url, {}, None))
+        with tempfile.TemporaryDirectory() as t:
+            json.dump({"GET https://example.gov/x": {"file": "r.json", "status": 403}}, open(os.path.join(t, "index.json"), "w"))
+            open(os.path.join(t, "r.json"), "wb").write(b'{"error": {"code": "API_KEY_MISSING"}}')
+            with mock.patch.dict(os.environ, {"DATA_ANALYST_FIXTURES": t}):
+                with self.assertRaises(DataError) as e:
+                    c.get("/x")
+            self.assertEqual(e.exception.kind, "auth")       # the route check then picks the keyless route
+            self.assertIn("--key-proxy auto", str(e.exception))
+            self.assertTrue(keys.is_auto(c.key))             # no keyless retry inside the client
+
+    def test_auto_route_check_after_a_refusal(self):
+        from core import packs, routes
+        refused = lambda k: {"auth_ok": False, "kind": "auth", "detail": "HTTP 401"}   # noqa: E731
+        with tempfile.TemporaryDirectory() as t, isolated_home(t), \
+                mock.patch.dict(os.environ, {"DATA_ANALYST_FIXTURES": t, "DATA_ANALYST_ENV": "cloud"}), \
+                self.proxy("auto"):
+            os.environ.pop("HUD_USER_TOKEN", None)
+            r = routes.route_check(packs.load("hud"), {"requests": []}, os.path.join(t, "spec.json"), t, "cloud",
+                                   ping=refused)
+            self.assertEqual((r["route"], r["key_mode"], r["key_ok"]), ("cloud_secret", "auto", False))
+            self.assertIn("No HUD_USER_TOKEN is set on this machine", r["message"])
+            self.assertIn("network secret", r["message"])
+            ok = routes.route_check(packs.load("hud"), {"requests": []}, os.path.join(t, "spec.json"), t, "cloud",
+                                    ping=lambda k: {"auth_ok": True, "kind": "ok", "detail": ""})
+            self.assertEqual((ok["route"], ok["key_mode"]), ("api", "auto"))   # the secret was attached
 
 
 class TestPolicy(unittest.TestCase):

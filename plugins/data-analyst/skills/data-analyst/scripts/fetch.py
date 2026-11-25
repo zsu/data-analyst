@@ -32,8 +32,10 @@ References (decisions.json "opened": true is accepted only for a page saved this
   python fetch.py --cite <url> --id <ref id> --out <out> [--from-file <text your fetch tool returned>]
 
 Common options: --env local|ssh|cloud|sandbox (override the guess), --force (download again), --no-cache,
---key-proxy all|VAR[,VAR...]|env (keys the cloud network proxy attaches as network secrets; sets
-DATA_ANALYST_KEY_PROXY for the run; default env: every key is looked up on this machine).
+--key-proxy auto|all|VAR[,VAR...]|env (keys the cloud network proxy attaches as network secrets; sets
+DATA_ANALYST_KEY_PROXY for the run; default env: every key is looked up on this machine; auto, in a cloud
+session: a key not on this machine goes to the API without a key so a network secret is used if there is one,
+and when refused the pack's keyless route is taken).
 Exit codes: 0 ok; 2 source or spec error; 3 unexpected error or missing dependency; 4 blocked (follow the
 printed route). Never invent data when a source cannot be reached: follow the route.
 """
@@ -154,13 +156,14 @@ def list_sources(as_json: bool):
         probs = pol.validate(P, p.dir)
         rows.append({"id": p.id, "title": P["title"], "agency": P["agency"], "depth": P["depth"],
                      "key": P["auth"]["required"], "key_env": P["auth"].get("env"),
-                     "key_mode": keys.key_mode(P["auth"].get("env")) if P["auth"].get("env") else None,
+                     "key_mode": keys.key_mode(P["auth"].get("env"), P["auth"].get("home"))
+                     if P["auth"].get("env") else None,
                      "domains": P["domains"],
                      "cli": "own (deep pack)" if p.deep_cli else "generic", "policy_ok": not probs})
     if as_json:
         emit(rows)
     for r in rows:
-        key = f"key {r['key']}" + (f" ({r['key_env']}{', proxy' if r['key_mode'] == 'proxy' else ''})"
+        key = f"key {r['key']}" + (f" ({r['key_env']}{'' if r['key_mode'] == 'env' else ', ' + r['key_mode']})"
                                    if r["key_env"] else "")
         print(f"{r['id']:<20} {r['depth']:<8} {key:<38} {r['title']}")
     sys.exit(0)
@@ -187,7 +190,8 @@ def key_proxy_setup(as_json: bool):
         default = {"query": "api_key", "header": "X-Api-Key", "body": "registrationkey"}[a["placement"]]
         param, prefix = a.get("param") or default, a.get("prefix") or ""
         e = groups.setdefault((a["env"], a["placement"], param, prefix),
-                              {"env": a["env"], "mode": keys.key_mode(a["env"]), "required": a["required"],
+                              {"env": a["env"], "mode": keys.key_mode(a["env"], a.get("home")),
+                               "required": a["required"],
                                "placement": a["placement"], "param": param, "prefix": prefix, "hosts": set(),
                                "sources": []})
         e["hosts"] |= hosts
@@ -200,14 +204,16 @@ def key_proxy_setup(as_json: bool):
         e = {**e, "hosts": sorted(e["hosts"])}
         e["how"] = _PLACEMENT_HOW[e["placement"]].format(param=e["param"], prefix=e["prefix"].strip() or "(none)")
         rows.append(e)
-    names = keys.proxy_names() - {"*"}
+    names = keys.proxy_names() - {"*", "AUTO"}
     unknown = sorted(names - set(by_env))
     out = {"setting": keys.PROXY_VAR, "value": os.environ.get(keys.PROXY_VAR) or "",
-           "note": (f"Set {keys.PROXY_VAR} to 'all' or to a comma list of the variables below that the cloud "
-                    "environment's network secrets supply; unset (the default) looks every key up on this "
-                    "machine. A network secret is attached to every request to its hosts, so name its variable "
-                    "here rather than also storing the key on this machine. Extra values (e.g. AQS_EMAIL) are "
-                    "never proxied: set them as environment variables."),
+           "note": (f"--key-proxy (or {keys.PROXY_VAR}): 'auto' in a cloud session uses a key stored on this "
+                    "machine when there is one, else sends the request without a key so a network secret is "
+                    "used if the environment has one, and takes the pack's keyless route when refused; 'all' or "
+                    "a comma list of the variables below always leaves those to the network secret; unset or "
+                    "'env' (the default) looks every key up on this machine. A network secret is attached to every "
+                    "request to its hosts, so do not also store that key on this machine. Extra values (e.g. "
+                    "AQS_EMAIL) are never proxied: set them as environment variables."),
            "unknown_names": unknown, "keys": rows}
     if as_json:
         emit(out)
@@ -532,8 +538,8 @@ def run_plan(a):
 
 
 def take_key_proxy(argv: list[str]) -> list[str]:
-    """--key-proxy all|VAR[,VAR...]|env on any command (deep packs too) sets DATA_ANALYST_KEY_PROXY for this run:
-    those keys come from the cloud environment's network secrets; "env" (or "none") looks every key up here."""
+    """--key-proxy auto|all|VAR[,VAR...]|env on any command (deep packs too) sets DATA_ANALYST_KEY_PROXY for this
+    run (core.keys explains each value); "env" (or "none") looks every key up here."""
     out, i = [], 0
     while i < len(argv):
         a = argv[i]
@@ -543,7 +549,7 @@ def take_key_proxy(argv: list[str]) -> list[str]:
             elif i + 1 < len(argv):
                 v, i = argv[i + 1], i + 1
             else:
-                emit({"status": "error", "message": "--key-proxy needs all, env, or a comma list of key "
+                emit({"status": "error", "message": "--key-proxy needs auto, all, env, or a comma list of key "
                                                     "variables (see --key-proxy-setup)"}, routes.EXIT_SPEC)
             v = v.strip()
             if v.lower() in ("", "env", "none", "off"):
