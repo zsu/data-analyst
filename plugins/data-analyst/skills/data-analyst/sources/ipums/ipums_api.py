@@ -173,7 +173,8 @@ class IpumsClient:
             h.update(r.body)
             n = len(r.body)
         else:
-            req = urllib.request.Request(url, headers={"Authorization": self.key, "User-Agent": UA})
+            hdrs = {"User-Agent": UA} if keys.is_proxy(self.key) else {"Authorization": self.key, "User-Agent": UA}
+            req = urllib.request.Request(url, headers=hdrs)   # proxy mode: the network proxy adds the key
             try:
                 with open_url(req, self.timeout) as resp, open(tmp, "wb") as f:   # no key past a redirect
                     while chunk := resp.read(1 << 20):

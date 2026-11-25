@@ -858,8 +858,8 @@ def route_check(spec: dict, body: dict, spec_path: str, out: str, env: str, forc
                     setup)
     if env == "cloud":
         return done("cloud_secret",
-                    "This cloud session has no IPUMS API key. Either add IPUMS_API_KEY to the cloud environment's "
-                    "secrets (environment settings) and start the session again, or download the extract by hand "
+                    "This cloud session has no IPUMS API key. " + keys.cloud_key_how("IPUMS_API_KEY") +
+                    ", and start the session again; or download the extract by hand "
                     "on the IPUMS website (free account, no key) or with a key and the download script "
                     f"({DOWNLOAD_SCRIPTS['bash']} or {DOWNLOAD_SCRIPTS['powershell']}, run on your own computer): "
                     f"the steps are in {instructions}.",

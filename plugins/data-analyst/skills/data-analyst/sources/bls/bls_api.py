@@ -148,6 +148,18 @@ class BlsClient:
         self.http = Client(URLS[self.version], name="bls", auth=AUTH if self.key else {}, key=self.key,
                            rps=4, burst=5, retries=3, timeout=timeout, user_agent=UA)
 
+    def _proxy_refused(self, e: BlsError) -> bool:
+        """Proxy mode (core.keys DATA_ANALYST_KEY_PROXY) and v2 refused the request for its key: no working
+        network secret for api.bls.gov. Switch to keyless v1 (smaller limits) and say so; False otherwise."""
+        if not (keys.is_proxy(self.key) and (e.kind == "auth" or (e.kind == "request" and "key" in str(e).lower()))):
+            return False
+        print("[bls] v2 refused the request in proxy mode (no working network secret for api.bls.gov): "
+              "retrying keyless on v1", file=sys.stderr, flush=True)
+        self.key, self.key_source, self.version = None, "none: no working network secret, so keyless v1", "v1"
+        self.http = Client(URLS["v1"], name="bls", auth={}, rps=4, burst=5, retries=self.http.retries,
+                           timeout=self.http.timeout, user_agent=UA)
+        return True
+
     # ---- low level
     def _post(self, body: dict, retries: int | None = None) -> dict:
         if retries is not None:
@@ -179,9 +191,14 @@ class BlsClient:
 
     def ping(self) -> dict:
         """One small query (it counts against the daily limit). Returns reachable/auth_ok/kind/detail; never raises."""
+        y = str(date.today().year - 1)
         try:
-            y = str(date.today().year - 1)
-            self._post({"seriesid": ["LNS14000000"], "startyear": y, "endyear": y}, retries=1)
+            try:
+                self._post({"seriesid": ["LNS14000000"], "startyear": y, "endyear": y}, retries=1)
+            except BlsError as e:
+                if not self._proxy_refused(e):
+                    raise
+                self._post({"seriesid": ["LNS14000000"], "startyear": y, "endyear": y}, retries=1)
             return {"reachable": True, "auth_ok": True, "kind": "ok", "detail": ""}
         except BlsError as e:
             return {"reachable": e.kind != "network", "auth_ok": False if e.kind == "auth" else None,
@@ -210,7 +227,12 @@ class BlsClient:
         for i, (chunk, y0, y1) in enumerate(plan, start=1):
             log(f"[bls] query {i}/{len(plan)} ({self.version}): {len(chunk)} series, {y0}-{y1}")
             body = {"seriesid": chunk, "startyear": str(y0), "endyear": str(y1), **extras}
-            out = self._post(body)
+            try:
+                out = self._post(body)
+            except BlsError as e:
+                if i == 1 and self._proxy_refused(e):    # nothing fetched yet: plan again within v1's limits
+                    return self.fetch(series, start, end, catalog, annualaverage, calculations, aspects, log)
+                raise
             raw.append({"request": body, "response": out})
             for m in out.get("message", []):
                 if "reduced to the system-allowed limit" in m.lower():

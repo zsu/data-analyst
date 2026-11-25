@@ -10,7 +10,8 @@ next_command, plus what was probed. Routes, first match wins:
                    request needs no key-only feature; the message says what a key would add
   bulk             the bulk-file host answers (no key), the API does not or is not needed
   run_setup        a key is needed; the user has a terminal (local, ssh): give them the setup command
-  cloud_secret     a key is needed in a Claude Code cloud session: add it to the environment's secrets
+  cloud_secret     a key is needed in a cloud session: an environment variable, or a network secret the proxy
+                   attaches (with --key-proxy / DATA_ANALYST_KEY_PROXY)
                    (a manual bundle is written as the other option)
   cloud_allowlist  a cloud session cannot reach the host: allow it in the network settings, or use the bundle
   manual_download  the analysis environment cannot get the data (sandbox, hosted chat with network off or the
@@ -84,7 +85,8 @@ def route_check(pack, spec: dict, spec_path: str, out: str, env: str, force: boo
                      "it resets within hours)")
     r = {"status": "route_check", "source": pack.id, "environment": env, "os": sys.platform,
          "restricted": keys.restricted(), "key_env": a.get("env"), "key_source": key_src,
-         "key_required": a["required"], "key_ok": None, "key_only_needs": needs, "probed": {},
+         "key_required": a["required"], "key_mode": keys.key_mode(a.get("env")), "key_ok": None,
+         "key_only_needs": needs, "probed": {},
          "existing_data": None, "route": None, "message": "", "action": "", "next_command": ""}
 
     def keyless() -> bool:
@@ -198,8 +200,15 @@ def route_check(pack, spec: dict, spec_path: str, out: str, env: str, force: boo
                         "data as not fetched, with run_command.", setup)
         b = bundle(f"the request needs a {a['env']} key")
         if env == "cloud":
-            return done("cloud_secret", lead + need + f" Add {a['env']} to the cloud environment's secrets and restart "
-                        "the session" + (f", or download on your own computer with the files in {b}." if b else "."),
+            hosts = ", ".join(sorted({h for v in P["routes"].values() if isinstance(v, dict) for h in v.get("hosts", [])}))
+            via = f" {keys.cloud_key_how(a['env'])}; then restart the session"
+            if keys.is_proxy(key):
+                via = (f" {a['env']} is set to come from the network proxy ({keys.PROXY_VAR}), and the proxy did not "
+                       f"attach a working key: check the network secret for {hosts or 'its host'} (fetch.py "
+                       f"--key-proxy-setup), or set {a['env']} as an environment variable and remove it from "
+                       f"{keys.PROXY_VAR}; then restart the session")
+            return done("cloud_secret", lead + need + via +
+                        (f", or download on your own computer with the files in {b}." if b else "."),
                         "Explain both options. If the user downloads by hand: " + SEND_BUNDLE, ingest)
         return done("manual_download", lead + need + " A key cannot be stored in this environment (a hosted sandbox "
                     "such as claude.ai or ChatGPT), so the files must be downloaded where the key is: " +

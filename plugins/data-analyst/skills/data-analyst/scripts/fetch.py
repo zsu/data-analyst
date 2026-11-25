@@ -4,6 +4,7 @@
 Find sources
   python fetch.py --sources [--json]                  # every pack: id, title, key, depth, domains
   python fetch.py --route "real wages of federal workers since 2015"   # which packs answer this?
+  python fetch.py --key-proxy-setup [--json]          # per key: hosts and placement for a cloud network secret
 
 One source (spec.json format: the pack's source.md)
   python fetch.py --source <id> <out>/spec.json --out <out> --check          # pre-flight: which route works here?
@@ -30,7 +31,9 @@ Hand-off (data-only replies; the route and date lines of any product)
 References (decisions.json "opened": true is accepted only for a page saved this way)
   python fetch.py --cite <url> --id <ref id> --out <out> [--from-file <text your fetch tool returned>]
 
-Common options: --env local|ssh|cloud|sandbox (override the guess), --force (download again), --no-cache.
+Common options: --env local|ssh|cloud|sandbox (override the guess), --force (download again), --no-cache,
+--key-proxy all|VAR[,VAR...]|env (keys the cloud network proxy attaches as network secrets; sets
+DATA_ANALYST_KEY_PROXY for the run; default env: every key is looked up on this machine).
 Exit codes: 0 ok; 2 source or spec error; 3 unexpected error or missing dependency; 4 blocked (follow the
 printed route). Never invent data when a source cannot be reached: follow the route.
 """
@@ -55,6 +58,7 @@ from core import manual, package, packfiles, packs, routes  # noqa: E402
 from core import policy as pol  # noqa: E402
 from core.env import detect_environment  # noqa: E402
 from core.http import SOURCES, DataError  # noqa: E402
+from core import keys  # noqa: E402
 from core.keys import find_auth_key, redact  # noqa: E402
 
 HERE = os.path.abspath(__file__)
@@ -149,13 +153,71 @@ def list_sources(as_json: bool):
         P = p.policy
         probs = pol.validate(P, p.dir)
         rows.append({"id": p.id, "title": P["title"], "agency": P["agency"], "depth": P["depth"],
-                     "key": P["auth"]["required"], "key_env": P["auth"].get("env"), "domains": P["domains"],
+                     "key": P["auth"]["required"], "key_env": P["auth"].get("env"),
+                     "key_mode": keys.key_mode(P["auth"].get("env")) if P["auth"].get("env") else None,
+                     "domains": P["domains"],
                      "cli": "own (deep pack)" if p.deep_cli else "generic", "policy_ok": not probs})
     if as_json:
         emit(rows)
     for r in rows:
-        key = f"key {r['key']}" + (f" ({r['key_env']})" if r["key_env"] else "")
+        key = f"key {r['key']}" + (f" ({r['key_env']}{', proxy' if r['key_mode'] == 'proxy' else ''})"
+                                   if r["key_env"] else "")
         print(f"{r['id']:<20} {r['depth']:<8} {key:<38} {r['title']}")
+    sys.exit(0)
+
+
+# Where the network proxy must put each key, by policy placement. A header is the documented kind of network
+# secret; query and body need a secret type that adds a parameter.
+_PLACEMENT_HOW = {
+    "header": "header secret: Header name = {param}, Prefix = {prefix}",
+    "query": "query-parameter secret: parameter {param} (not confirmed for every cloud environment; test with a session)",
+    "body": "JSON-body secret: field {param} (not confirmed for every cloud environment; test with a session)",
+}
+
+
+def key_proxy_setup(as_json: bool):
+    """For each key variable: the hosts and where the key goes, i.e. what to enter for a network secret."""
+    groups: dict[tuple, dict] = {}       # one secret per (variable, placement): DATA_GOV_API_KEY is query and header
+    for p in packs.all_packs():
+        a = p.policy["auth"]
+        if not a.get("env") or a.get("placement") in (None, "none"):
+            continue
+        api = p.policy["routes"].get("api")              # the keyed route; bulk and keyless hosts get no key
+        hosts = set(api.get("hosts", [])) if isinstance(api, dict) else set()
+        default = {"query": "api_key", "header": "X-Api-Key", "body": "registrationkey"}[a["placement"]]
+        param, prefix = a.get("param") or default, a.get("prefix") or ""
+        e = groups.setdefault((a["env"], a["placement"], param, prefix),
+                              {"env": a["env"], "mode": keys.key_mode(a["env"]), "required": a["required"],
+                               "placement": a["placement"], "param": param, "prefix": prefix, "hosts": set(),
+                               "sources": []})
+        e["hosts"] |= hosts
+        e["sources"].append(p.id)
+        if a.get("extra"):
+            e["extra"] = sorted((a["extra"] or {}).values())
+    by_env = {e["env"] for e in groups.values()}
+    rows = []
+    for e in sorted(groups.values(), key=lambda x: (x["env"], x["placement"])):
+        e = {**e, "hosts": sorted(e["hosts"])}
+        e["how"] = _PLACEMENT_HOW[e["placement"]].format(param=e["param"], prefix=e["prefix"].strip() or "(none)")
+        rows.append(e)
+    names = keys.proxy_names() - {"*"}
+    unknown = sorted(names - set(by_env))
+    out = {"setting": keys.PROXY_VAR, "value": os.environ.get(keys.PROXY_VAR) or "",
+           "note": (f"Set {keys.PROXY_VAR} to 'all' or to a comma list of the variables below that the cloud "
+                    "environment's network secrets supply; unset (the default) looks every key up on this "
+                    "machine. A network secret is attached to every request to its hosts, so name its variable "
+                    "here rather than also storing the key on this machine. Extra values (e.g. AQS_EMAIL) are "
+                    "never proxied: set them as environment variables."),
+           "unknown_names": unknown, "keys": rows}
+    if as_json:
+        emit(out)
+    print(out["note"])
+    if unknown:
+        print(f"Not a pack key variable (ignored): {', '.join(unknown)}")
+    for e in rows:
+        print(f"\n{e['env']} ({e['mode']}; {', '.join(e['sources'])})\n  hosts: {', '.join(e['hosts']) or '-'}"
+              f"\n  {e['how']}" + (f"\n  also set as environment variables: {', '.join(e['extra'])}"
+                                   if e.get("extra") else ""))
     sys.exit(0)
 
 
@@ -469,8 +531,33 @@ def run_plan(a):
                   "geography and vintages before joining (see SKILL.md, Combining sources). " + handoff_next(out)}, code)
 
 
+def take_key_proxy(argv: list[str]) -> list[str]:
+    """--key-proxy all|VAR[,VAR...]|env on any command (deep packs too) sets DATA_ANALYST_KEY_PROXY for this run:
+    those keys come from the cloud environment's network secrets; "env" (or "none") looks every key up here."""
+    out, i = [], 0
+    while i < len(argv):
+        a = argv[i]
+        if a == "--key-proxy" or a.startswith("--key-proxy="):
+            if "=" in a:
+                v = a.split("=", 1)[1]
+            elif i + 1 < len(argv):
+                v, i = argv[i + 1], i + 1
+            else:
+                emit({"status": "error", "message": "--key-proxy needs all, env, or a comma list of key "
+                                                    "variables (see --key-proxy-setup)"}, routes.EXIT_SPEC)
+            v = v.strip()
+            if v.lower() in ("", "env", "none", "off"):
+                os.environ.pop(keys.PROXY_VAR, None)
+            else:
+                os.environ[keys.PROXY_VAR] = v
+        else:
+            out.append(a)
+        i += 1
+    return out
+
+
 def main():
-    argv = sys.argv[1:]
+    argv = take_key_proxy(sys.argv[1:])
     if "--source" in argv:
         i = argv.index("--source")
         if i + 1 >= len(argv):
@@ -507,6 +594,7 @@ def main():
         return run_deep(pack, rest) if pack.deep_cli else run_standard(pack, rest)
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--sources", action="store_true")
+    ap.add_argument("--key-proxy-setup", action="store_true")
     ap.add_argument("--json", action="store_true")
     ap.add_argument("--route")
     ap.add_argument("--plan")
@@ -531,6 +619,8 @@ def main():
         emit(handoff.summarize(a.out))
     if a.sources:
         list_sources(a.json)
+    if a.key_proxy_setup:
+        key_proxy_setup(a.json)
     if a.route:
         emit({"question": a.route, "candidates": packs.route(a.route),
               "next": "Split the question into measures; give each one a source (references/routing.md lists the "

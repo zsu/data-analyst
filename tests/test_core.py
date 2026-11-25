@@ -66,6 +66,220 @@ class TestKeys(unittest.TestCase):
         self.assertEqual(keys.redact("authorization: abcdef123456"), "authorization: [REDACTED]")
 
 
+class TestKeyProxy(unittest.TestCase):
+    """DATA_ANALYST_KEY_PROXY: keys the cloud network proxy attaches are never looked up or sent from here."""
+
+    def proxy(self, value):
+        return mock.patch.dict(os.environ, {keys.PROXY_VAR: value})
+
+    def test_default_is_env_lookup(self):
+        os.environ.pop(keys.PROXY_VAR, None)
+        with mock.patch.dict(os.environ, {"X_TEST_KEY": "from-env"}):
+            self.assertEqual(keys.find_key("X_TEST_KEY")[0], "from-env")
+            self.assertEqual(keys.key_mode("X_TEST_KEY"), "env")
+        with self.proxy(""):
+            self.assertFalse(keys.proxied("X_TEST_KEY"))
+
+    def test_named_or_all_keys_come_from_the_proxy(self):
+        with mock.patch.dict(os.environ, {"X_TEST_KEY": "from-env", "Y_TEST_KEY": "y-env"}):
+            with self.proxy("x_test_key, OTHER"):
+                k, src = keys.find_key("X_TEST_KEY")
+                self.assertTrue(keys.is_proxy(k))         # the local value is not used
+                self.assertEqual(src, keys.PROXY_LABEL)
+                self.assertTrue(k)                        # counts as a key for routes and keyed limits
+                self.assertEqual(keys.find_key("Y_TEST_KEY")[0], "y-env")
+                self.assertEqual(keys.key_mode("X_TEST_KEY"), "proxy")
+            with self.proxy("all"):
+                self.assertTrue(keys.is_proxy(keys.find_key("Y_TEST_KEY")[0]))
+                self.assertTrue(keys.is_proxy(keys.find_auth_key({"env": "Y_TEST_KEY"})[0]))
+                self.assertEqual(keys.find_key("Y_TEST_KEY", proxy=False)[0], "y-env")   # e-mail, User-Agent
+                with mock.patch.dict(os.environ, {"DATA_ACCESS_FORCE": "restricted"}):
+                    self.assertEqual(keys.find_key("Y_TEST_KEY"), (None, None))
+                    self.assertEqual(keys.key_mode("Y_TEST_KEY"), "env")
+
+    def test_the_stand_in_is_never_a_secret(self):
+        keys.remember(keys.PROXY_KEY)
+        self.assertNotIn(str(keys.PROXY_KEY), keys.secret_values())
+        self.assertEqual(repr(keys.PROXY_KEY), "PROXY_KEY")
+
+    def test_no_credential_and_no_demo_key_on_the_request(self):
+        url = "https://example.gov/x?a=1"
+        for auth in ({"env": "T", "placement": "query", "param": "api_key", "demo_key": "DEMO_KEY"},
+                     {"env": "T", "placement": "header", "param": "Authorization", "prefix": "Bearer "},
+                     {"env": "T", "placement": "body", "param": "registrationkey"}):
+            c = Client("https://example.gov", name="t", auth=auth, key=keys.PROXY_KEY)
+            self.assertEqual(c.key_source, keys.PROXY_LABEL)
+            u, h, b = c._with_key(url, {}, {"seriesid": ["X"]})
+            self.assertEqual((u, h, b), (url, {}, {"seriesid": ["X"]}), auth["placement"])
+        with mock.patch.dict(os.environ, {"T_EMAIL": "me@example.gov"}), self.proxy("all"):   # extras still go
+            c = Client("https://example.gov", name="t", key=keys.PROXY_KEY,
+                       auth={"env": "T", "placement": "query", "param": "key", "extra": {"email": "T_EMAIL"}})
+            self.assertIn("email=me%40example.gov", c._with_key(url, {}, None)[0])
+            self.assertNotIn("key=", c._with_key(url, {}, None)[0].replace("api_key", ""))
+
+    def test_refused_request_explains_the_proxy(self):
+        with tempfile.TemporaryDirectory() as t:
+            json.dump({"GET https://example.gov/x": {"file": "r.json", "status": 401},
+                       "GET https://example.gov/y": {"file": "r.json", "status": 400}},
+                      open(os.path.join(t, "index.json"), "w"))
+            open(os.path.join(t, "r.json"), "wb").write(b'{"error": "missing key"}')
+            auth = {"env": "T_KEY", "required": "required", "placement": "query", "param": "key"}
+            with mock.patch.dict(os.environ, {"DATA_ANALYST_FIXTURES": t}), self.proxy("T_KEY"):
+                for path in ("/x", "/y"):
+                    with self.assertRaises(DataError) as e:
+                        Client("https://example.gov", name="t", retries=0, auth=auth).get(path)
+                    self.assertEqual(e.exception.kind, "auth")
+                    self.assertIn("network proxy did not attach", str(e.exception))
+                    self.assertIn(keys.PROXY_VAR, str(e.exception))
+
+    def test_route_check_in_proxy_mode(self):
+        from core import packs, routes
+        with tempfile.TemporaryDirectory() as t, mock.patch.dict(os.environ, {"DATA_ANALYST_FIXTURES": t}), \
+                self.proxy("HUD_USER_TOKEN"):
+            os.environ.pop("HUD_USER_TOKEN", None)
+            hud = packs.load("hud")
+            r = routes.route_check(hud, {"requests": []}, os.path.join(t, "spec.json"), t, "local")
+            self.assertEqual((r["route"], r["key_mode"], r["key_source"]), ("api", "proxy", keys.PROXY_LABEL))
+            r = routes.route_check(hud, {"requests": []}, os.path.join(t, "spec.json"), t, "cloud",
+                                   ping=lambda k: {"auth_ok": False, "kind": "auth", "detail": "HTTP 401"})
+            self.assertIs(r["key_ok"], False)
+            self.assertEqual(r["route"], "cloud_secret")
+            self.assertIn("did not attach a working key", r["message"])
+        with tempfile.TemporaryDirectory() as t, mock.patch.dict(os.environ, {"DATA_ANALYST_FIXTURES": t}):
+            os.environ.pop(keys.PROXY_VAR, None)
+            os.environ.pop("HUD_USER_TOKEN", None)
+            with isolated_home(t):
+                r = routes.route_check(packs.load("hud"), {"requests": []}, os.path.join(t, "spec.json"), t, "cloud")
+            self.assertEqual((r["route"], r["key_mode"]), ("cloud_secret", "env"))
+            self.assertIn("--key-proxy HUD_USER_TOKEN", r["message"])   # both options offered
+            self.assertIn("environment variable", r["message"])
+
+    def test_deep_packs_send_no_key_in_proxy_mode(self):
+        import importlib.util
+
+        def load(pid, mod):
+            spec = importlib.util.spec_from_file_location(f"_proxy_{mod}", os.path.join(SKILL, "sources", pid, f"{mod}.py"))
+            m = importlib.util.module_from_spec(spec)
+            sys.path.insert(0, os.path.join(SKILL, "sources", pid))
+            try:
+                spec.loader.exec_module(m)
+            finally:
+                sys.path.remove(os.path.join(SKILL, "sources", pid))
+            return m
+
+        url = "https://example.gov/x?a=1"
+        with tempfile.TemporaryDirectory() as t, isolated_home(t), self.proxy("all"):
+            bls = load("bls", "bls_api").BlsClient()
+            self.assertEqual(bls.version, "v2")           # keyed API version, key added by the proxy
+            self.assertEqual(bls.http._with_key(url, {}, {"seriesid": ["X"]}), (url, {}, {"seriesid": ["X"]}))
+            for pid, mod, cls in (("fred", "fred_api", "FredClient"), ("bea", "bea_api", "BeaClient"),
+                                  ("ipums", "ipums_api", "IpumsClient")):
+                c = getattr(load(pid, mod), cls)()        # no key_missing: the proxy supplies it
+                self.assertTrue(keys.is_proxy(c.key), pid)
+                http = getattr(c, "http", None) or c.client   # BeaClient keeps its Client as .client
+                self.assertEqual(http._with_key(url, {}, None), (url, {}, None), pid)
+
+    def test_refused_proxy_key_retries_keyless_when_the_pack_allows(self):
+        import http.server
+        import threading
+        seen = []
+
+        class Api(http.server.BaseHTTPRequestHandler):
+            def log_message(self, *a):
+                pass
+
+            def do_GET(self):                             # no network secret here: only DEMO_KEY gets data
+                seen.append(self.path)
+                ok = "api_key=DEMO_KEY" in self.path
+                self.send_response(200 if ok else 403)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(b"[1]" if ok else b'{"error": {"code": "API_KEY_MISSING"}}')
+
+        srv = http.server.HTTPServer(("127.0.0.1", 0), Api)
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        base = f"http://127.0.0.1:{srv.server_port}"
+        try:
+            with mock.patch.dict(os.environ, {"NO_PROXY": "127.0.0.1", "no_proxy": "127.0.0.1"}):
+                os.environ.pop("DATA_ANALYST_FIXTURES", None)
+                os.environ.pop("DATA_ACCESS_FORCE", None)
+                demo = {"env": "T", "required": "optional", "placement": "query", "param": "api_key",
+                        "demo_key": "DEMO_KEY"}
+                c = Client(base, name="t", retries=0, auth=demo, key=keys.PROXY_KEY)
+                self.assertEqual(c.get_json("/x"), [1])   # refused, then keyless with DEMO_KEY
+                self.assertEqual(seen, ["/x", "/x?api_key=DEMO_KEY"])
+                self.assertIsNone(c.key)
+                self.assertIn("keyless", c.key_source)
+                self.assertEqual(c.get_json("/y"), [1])   # the rest of the run goes keyless at once
+                self.assertEqual(seen[-1], "/y?api_key=DEMO_KEY")
+                req = Client(base, name="t", retries=0, key=keys.PROXY_KEY,
+                             auth={**demo, "required": "required", "demo_key": None})
+                with self.assertRaises(DataError) as e:   # a required key: no keyless way to retry
+                    req.get("/z")
+                self.assertEqual(e.exception.kind, "auth")
+                self.assertEqual(seen[-1], "/z")
+        finally:
+            srv.shutdown()
+            srv.server_close()
+
+    def test_bls_falls_back_to_v1_when_the_proxy_key_is_refused(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("_proxy_bls_api", os.path.join(SKILL, "sources", "bls", "bls_api.py"))
+        bls = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(bls)
+        with tempfile.TemporaryDirectory() as t, isolated_home(t), self.proxy("BLS_API_KEY"):
+            c = bls.BlsClient()
+            self.assertEqual(c.version, "v2")
+            sent = []
+
+            def post(body, retries=None):
+                sent.append((c.version, body["startyear"], body["endyear"]))
+                if c.version == "v2":
+                    raise bls.BlsError("BLS refused the request (REQUEST_NOT_PROCESSED): invalid key", kind="auth")
+                return {"status": "REQUEST_SUCCEEDED", "message": [], "Results": {"series": []}}
+
+            c._post = post
+            c.fetch(["LNS14000000"], 2001, 2020, log=lambda m: None)
+            self.assertEqual(c.version, "v1")
+            self.assertIsNone(c.key)
+            self.assertEqual(sent, [("v2", "2001", "2020"), ("v1", "2001", "2010"), ("v1", "2011", "2020")])
+            c2 = bls.BlsClient()                          # ping: the same fallback
+            calls = []
+
+            def ping_post(body, retries=None):
+                calls.append(c2.version)
+                if c2.version == "v2":
+                    raise bls.BlsError("invalid key", kind="auth")
+                return {"status": "REQUEST_SUCCEEDED"}
+
+            c2._post = ping_post
+            self.assertTrue(c2.ping()["auth_ok"])
+            self.assertEqual(calls, ["v2", "v1"])
+
+    def test_command_option_overrides_the_variable(self):
+        fetch = os.path.join(SKILL, "scripts", "fetch.py")
+
+        def modes(*args, env=None):
+            e = {k: v for k, v in os.environ.items() if k != keys.PROXY_VAR}
+            e.update(env or {})
+            out = subprocess.run([sys.executable, "-I", fetch, *args, "--key-proxy-setup", "--json"], env=e,
+                                 capture_output=True, text=True, timeout=120)
+            self.assertEqual(out.returncode, 0, out.stderr)
+            data = json.loads(out.stdout)
+            return data, {(k["env"], k["placement"]): k["mode"] for k in data["keys"]}
+
+        data, m = modes()
+        self.assertEqual(set(m.values()), {"env"})                 # the default
+        data, m = modes("--key-proxy", "HUD_USER_TOKEN,NOPE_KEY")
+        self.assertEqual(m[("HUD_USER_TOKEN", "header")], "proxy")
+        self.assertEqual(m[("FRED_API_KEY", "query")], "env")
+        self.assertEqual(data["unknown_names"], ["NOPE_KEY"])
+        data, m = modes("--key-proxy=all")
+        self.assertEqual(set(m.values()), {"proxy"})
+        data, m = modes("--key-proxy", "env", env={keys.PROXY_VAR: "all"})   # the option wins over the variable
+        self.assertEqual(set(m.values()), {"env"})
+
+
 class TestPolicy(unittest.TestCase):
     def pol(self, **over):
         p = {"id": "t", "title": "T", "agency": "A", "depth": "standard", "domains": ["x"], "homepage": "https://x",

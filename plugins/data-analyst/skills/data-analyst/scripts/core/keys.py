@@ -15,6 +15,14 @@ query parameters, headers and JSON fields.
 
 DATA_ACCESS_FORCE=restricted (the shared data-access kit's test switch) hides every key and makes every
 request fail as a network error, to replay a locked-down sandbox on any machine.
+
+Proxy mode: in a cloud environment whose network proxy attaches the key to outgoing requests itself (a
+"network secret"), the key never exists on the machine. DATA_ANALYST_KEY_PROXY names the key variables the
+proxy supplies: "all" (every pack key) or a comma list such as "HUD_USER_TOKEN,IPUMS_API_KEY". Unset or empty
+(the default) means every key is looked up as above. For a proxied variable find_key() reads no value and
+returns PROXY_KEY, which counts as a key everywhere (routes, keyed limits) but is never sent: core.http.Client
+leaves the credential off the request, so the proxy's copy is the only one. Whether the proxy attached a
+working key shows in the API's answer (401/403 means it did not). The setting is not a secret.
 """
 from __future__ import annotations
 
@@ -29,8 +37,53 @@ KEY_FIELDS = ("api_key", "apikey", "api-key", "key", "registrationkey", "userid"
 EXTRA_PATTERNS: list[re.Pattern] = []
 
 
+PROXY_VAR = "DATA_ANALYST_KEY_PROXY"
+PROXY_LABEL = "network secret (agent proxy)"
+
+
+class _ProxyKey(str):
+    """Stands in for a key the network proxy attaches: truthy, so code that branches on "is there a key"
+    treats the pack as keyed, but recognised by is_proxy() so it is never put on a request."""
+
+    def __repr__(self):
+        return "PROXY_KEY"
+
+
+PROXY_KEY = _ProxyKey("<network-secret>")
+
+
+def is_proxy(key) -> bool:
+    return isinstance(key, _ProxyKey)
+
+
 def restricted() -> bool:
     return (os.environ.get("DATA_ACCESS_FORCE") or "").strip().lower() == "restricted"
+
+
+def proxy_names() -> set[str]:
+    """The key variables DATA_ANALYST_KEY_PROXY hands to the proxy, upper-cased; {"*"} for "all"."""
+    raw = (os.environ.get(PROXY_VAR) or "").strip()
+    if not raw:
+        return set()
+    names = {n.strip().upper() for n in raw.replace(";", ",").split(",") if n.strip()}
+    return {"*"} if names & {"ALL", "*"} else names
+
+
+def proxied(env: str | None) -> bool:
+    names = proxy_names()
+    return bool(env) and ("*" in names or env.upper() in names)
+
+
+def cloud_key_how(env: str) -> str:
+    """The two ways to give a cloud session a key, for cloud_secret messages."""
+    return (f"Either set {env} as an environment variable of the cloud environment, or add a network secret for "
+            f"its API host (fetch.py --key-proxy-setup shows the host and where the key goes) and run with "
+            f"--key-proxy {env} (or set {PROXY_VAR}={env})")
+
+
+def key_mode(env: str | None) -> str:
+    """"proxy" when the network proxy supplies this key, else "env" (looked up on this machine)."""
+    return "proxy" if proxied(env) and not restricted() else "env"
 
 
 def config_path() -> str:
@@ -70,10 +123,14 @@ def key_locations(env: str, home: str | None = None) -> list[str]:
             f"~/.{home}/api_key (a file holding only the key)"]
 
 
-def find_key(env: str | None, home: str | None = None) -> tuple[str | None, str | None]:
-    """Locate the key named env. Returns (key, source); (None, None) when absent or restricted."""
+def find_key(env: str | None, home: str | None = None, proxy: bool = True) -> tuple[str | None, str | None]:
+    """Locate the key named env. Returns (key, source); (None, None) when absent or restricted.
+    (PROXY_KEY, PROXY_LABEL) when DATA_ANALYST_KEY_PROXY hands env to the network proxy; pass proxy=False for
+    values that are not keys (an e-mail address or User-Agent the request itself must carry)."""
     if not env or restricted():
         return None, None
+    if proxy and proxied(env):
+        return PROXY_KEY, PROXY_LABEL
     home = home or env.lower().replace("_api_key", "").replace("_", "-")
     found: tuple[str | None, str | None] = (None, None)
     key = (os.environ.get(env) or "").strip()
@@ -100,7 +157,7 @@ def find_key(env: str | None, home: str | None = None) -> tuple[str | None, str 
 
 def remember(secret: str) -> None:
     """Add a secret to the redaction set (keys passed in as arguments, tokens returned by an API)."""
-    if secret and len(secret) >= 6:
+    if secret and len(secret) >= 6 and not is_proxy(secret):
         _KNOWN.add(secret)
 
 

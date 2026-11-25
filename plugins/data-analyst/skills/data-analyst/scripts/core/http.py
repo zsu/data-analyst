@@ -9,7 +9,8 @@ What it does for every pack (merged from the old
 *-analyst clients):
 - auth: the key goes where policy.json says (query parameter, header with optional prefix, or JSON body
   field); it is read at call time with core.keys.find_key and never appears in a message, a recorded URL
-  or a cache key. A 401/403 without a key says which variable to set.
+  or a cache key. A 401/403 without a key says which variable to set. In proxy mode (core.keys,
+  DATA_ANALYST_KEY_PROXY) the credential is left off and the cloud network proxy attaches it.
 - a token bucket per host (rps, burst), an optional per-minute error budget (BEA locks a key out after
   30 errors a minute) and byte budget (BEA's 100 MB a minute).
 - retries on 429/500/502/503/504 and network errors with jittered exponential backoff; Retry-After is
@@ -223,10 +224,20 @@ class Client:
         with _LOCK:
             self.bucket = _BUCKETS.setdefault(host, TokenBucket(rps or 5, burst or 10))
         if key:
-            keys.remember(key)
-            self.key, self.key_source = key, "argument"
+            keys.remember(key)                        # ignores PROXY_KEY
+            self.key, self.key_source = key, keys.PROXY_LABEL if keys.is_proxy(key) else "argument"
         else:
             self.key, self.key_source = keys.find_auth_key(self.auth)
+
+    def _proxy_error(self, r: "Response", detail: str) -> "DataError":
+        """A request in proxy mode that the API refused: the network proxy did not attach a working key."""
+        host = urllib.parse.urlsplit(r.url).netloc
+        env = self.auth.get("env") or "the key"
+        return DataError(f"{self.name}: HTTP {r.status} from {host} in proxy mode ({keys.PROXY_VAR} names {env}): "
+                         "the network proxy did not attach a working key. Check the cloud environment's network "
+                         f"secret for {host} (host, header or parameter name, value), or remove {env} from "
+                         f"{keys.PROXY_VAR} and set it as an environment variable. {detail}".rstrip(),
+                         kind="auth", status=r.status)
 
     def __repr__(self):                               # never show the key in tracebacks
         return f"Client({self.name!r}, key=[REDACTED])"
@@ -246,11 +257,13 @@ class Client:
         a, k = self.auth, self.key
         # extra credentials some APIs pair with the key, e.g. EPA AQS {"email": "AQS_EMAIL"}
         for param, env in (a.get("extra") or {}).items():
-            v, _ = keys.find_key(env)
+            v, _ = keys.find_key(env, proxy=False)    # an e-mail address the request itself carries
             if v:
                 url += ("&" if "?" in url else "?") + urllib.parse.urlencode({param: v})
         if not k and a.get("demo_key"):               # api.data.gov's DEMO_KEY: keyless, low limits
             k = a["demo_key"]
+        if keys.is_proxy(k):                          # the network proxy attaches the key; never DEMO_KEY too
+            return url, headers, body
         if not k or a.get("placement") in (None, "none"):
             return url, headers, body
         if a["placement"] == "query":
@@ -268,9 +281,34 @@ class Client:
         par = ((a.get("param") or "api_key") if a.get("placement") == "query" else None, *(a.get("extra") or {}))
         return open_url(req, self.timeout, (hdr,) if hdr else (), tuple(p for p in par if p))
 
+    def _go_keyless(self, e: "DataError") -> bool:
+        """Proxy mode, and the API refused the request: when the pack also works without a key (an optional key,
+        or a shared demo_key), drop the proxied key for the rest of this client's life so the call can be
+        retried the keyless way (demo_key included). Returns False when that does not apply."""
+        if not (keys.is_proxy(self.key) and e.kind == "auth" and e.status in (400, 401, 403)):
+            return False
+        if self.auth.get("required") != "optional" and not self.auth.get("demo_key"):
+            return False
+        import sys
+        self.key = None
+        self.key_source = "none: no working network secret, so keyless"
+        print(f"[{self.name}] HTTP {e.status} in proxy mode: no working network secret for this host; "
+              "retrying without a key" + (f" ({self.auth['demo_key']})" if self.auth.get("demo_key") else ""),
+              file=sys.stderr, flush=True)
+        return True
+
     # ------------------------------------------------------------------ the call
     def request(self, method: str, path: str = "", params: dict | None = None, json_body: dict | None = None,
                 headers: dict | None = None, use_key: bool = True, ok_statuses=(200,), allow_404: bool = False) -> Response:
+        try:
+            return self._request(method, path, params, json_body, headers, use_key, ok_statuses, allow_404)
+        except DataError as e:
+            if not (use_key and self._go_keyless(e)):
+                raise
+        return self._request(method, path, params, json_body, headers, use_key, ok_statuses, allow_404)
+
+    def _request(self, method: str, path: str, params, json_body, headers, use_key: bool, ok_statuses,
+                 allow_404: bool) -> Response:
         url = self._url(path, params)
         secret = tuple(p for p in ((self.auth.get("param") if self.auth.get("placement") == "query" else None),
                                    *(self.auth.get("extra") or {})) if p)
@@ -366,6 +404,8 @@ class Client:
             if not self.key and self.auth.get("env"):
                 raise DataError(f"{self.name}: API key required (HTTP {r.status}). Set the {self.auth['env']} "
                                 "environment variable or run the setup script.", kind="key_missing", status=r.status)
+            if keys.is_proxy(self.key):
+                raise self._proxy_error(r, snippet)
             raise DataError(f"{self.name}: HTTP {r.status} (key rejected or access denied): {snippet}", kind="auth",
                             status=r.status)
         if r.status == 404:
@@ -377,6 +417,8 @@ class Client:
                             "server sometimes answers a valid request with such an HTML page (the API's own parameter "
                             "errors are JSON or text): run again in a few minutes; if it persists, check the "
                             "parameters against source.md", kind="bad_request", status=400)
+        if r.status == 400 and keys.is_proxy(self.key) and self.auth.get("required") == "required":
+            raise self._proxy_error(r, snippet)       # an API that answers a missing key with 400
         if r.status == 400 and not self.key and self.auth.get("env") and self.auth.get("required") == "required":
             # some APIs answer a request without credentials with 400 naming the missing parameter, not 401
             envs = [self.auth["env"], *(self.auth.get("extra") or {}).values()]
@@ -395,7 +437,16 @@ class Client:
     def download(self, path: str, dest: str, params: dict | None = None, sha256: str | None = None,
                  chunk: int = 1 << 20) -> dict:
         """Stream a large file to dest (atomic .part rename), with the same auth, throttle, restricted switch,
-        fixtures and SOURCES record as request(). Raises DataError on a checksum mismatch."""
+        fixtures, SOURCES record and proxy-mode keyless retry as request(). Raises DataError on a checksum
+        mismatch."""
+        try:
+            return self._download(path, dest, params, sha256, chunk)
+        except DataError as e:
+            if not self._go_keyless(e):
+                raise
+        return self._download(path, dest, params, sha256, chunk)
+
+    def _download(self, path: str, dest: str, params, sha256, chunk: int) -> dict:
         url = self._url(path, params)
         secret = tuple(p for p in ((self.auth.get("param") if self.auth.get("placement") == "query" else None),
                                    *(self.auth.get("extra") or {})) if p)

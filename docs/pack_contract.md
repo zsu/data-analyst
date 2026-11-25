@@ -88,6 +88,16 @@ Field rules (`core/policy.py: validate` enforces the starred ones):
 - **`auth`**\*: when a key is used, `env` and `signup_url` are required. `required: "optional"` means the API
   works without a key at lower limits. Shared keys: every api.data.gov API uses `DATA_GOV_API_KEY` with
   `home: "data-gov"` and `demo_key: "DEMO_KEY"`.
+  Proxy mode: `DATA_ANALYST_KEY_PROXY` (or `fetch.py --key-proxy all|VAR,...|env`) names keys a cloud network
+  proxy attaches itself (a "network secret"). `core.keys.find_key` then returns the `PROXY_KEY` stand-in
+  (truthy, never sent) and `core.http.Client` leaves the credential and `demo_key` off the request. So a pack
+  puts a key on a request only through `Client` (its `auth` block or `key=`), never in a header or URL it
+  builds itself, and branches on "keyed" with `if key`, never on the key's value. Non-key values the request
+  must carry (an `extra` e-mail, a User-Agent) are looked up with `find_key(..., proxy=False)`. When the API
+  refuses a proxied request (no working network secret for that host) and the pack also works without a key
+  (`required: "optional"` or a `demo_key`), `Client` retries once the keyless way and stays keyless for the
+  run; BLS drops to keyless v1. A required key has no keyless retry: the error says to check the secret.
+  `fetch.py --key-proxy-setup` lists, per key, the hosts and placement a network secret needs.
 - **`routes`**\*: `manual.how` is always required: every source must be obtainable by a user with a browser.
   Each network route needs a cheap `probe` URL that needs no key and returns quickly (any HTTP status means
   reachable). Use `api_keyless` for a different keyless host (FRED graph CSVs), `bulk` for flat files.

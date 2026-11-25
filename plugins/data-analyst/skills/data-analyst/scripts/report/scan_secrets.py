@@ -64,15 +64,16 @@ def all_policies() -> dict[str, dict]:
 
 
 def known_keys(policies: dict | None = None) -> list[bytes]:
-    """Every key the packs can find on this machine (looked up through core.keys, never printed)."""
+    """Every key the packs can find on this machine (looked up through core.keys, never printed). proxy=False:
+    a key handed to the network proxy (DATA_ANALYST_KEY_PROXY) is still scanned for if a copy is stored here."""
     policies = all_policies() if policies is None else policies
     for P in policies.values():
         a = P.get("auth") or {}
         if a.get("env"):
-            K.find_key(a["env"], a.get("home"))
+            K.find_key(a["env"], a.get("home"), proxy=False)
         for var in (a.get("extra") or {}).values():
             if isinstance(var, str) and var.isupper():
-                K.find_key(var, a.get("home"))
+                K.find_key(var, a.get("home"), proxy=False)
     return [s.encode().lower() for s in K.secret_values() if s]
 
 

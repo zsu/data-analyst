@@ -20,6 +20,8 @@ One Agent Skills skill (`plugins/data-analyst/skills/data-analyst/`, shipped as 
   `references/agent_tools.md` maps them per assistant; tests/test_structure.py rejects tool names in SKILL.md.
   User-facing messages say "the assistant", not "Claude". Keys: the setup scripts write `~/.config/data-analyst/keys.json`
   (`$DATA_ANALYST_CONFIG_DIR`); `core.keys` also reads Claude Code's settings.json for keys stored there earlier.
+  Proxy mode (`DATA_ANALYST_KEY_PROXY` or `fetch.py --key-proxy`): keys a cloud network secret attaches are never
+  looked up or sent (`PROXY_KEY` stand-in; docs/pack_contract.md `auth`); default is the lookup above.
 - Upload plugin zip for claude.ai / Cowork (Customize > Plugins > Upload): `python tools/package_skill.py --plugin`.
 - Upload skill zip for claude.ai (also a plain Agent Skills folder any assistant can load): `python tools/package_skill.py` (excludes tests and fixtures; bundles every
   policy.json/endpoints.json and every adapter.py into `sources/packs.json`, so runtime code reads them via

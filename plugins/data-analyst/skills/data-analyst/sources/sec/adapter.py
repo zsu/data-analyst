@@ -32,7 +32,7 @@ CO_EPS = ("submissions", "company_concept", "company_facts", "insider_filings")
 
 
 def user_agent() -> str:
-    ua, _ = keys.find_key(UA_ENV)
+    ua, _ = keys.find_key(UA_ENV, proxy=False)       # a User-Agent the request carries, never a proxy secret
     ua = (ua or "").strip()
     if not ua or "github" in ua.lower():
         return DEFAULT_UA

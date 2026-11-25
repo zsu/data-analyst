@@ -148,6 +148,14 @@ class TestAllows(HookTest):
         self.allow("Bash", {"command": "env | sort"})
         self.allow("PowerShell", {"command": "Get-ChildItem Env:"})
 
+    def test_key_proxy_setting_is_not_a_key(self):
+        # DATA_ANALYST_KEY_PROXY names variables, it holds no secret: setting, reading or dumping it is fine
+        env = {"DATA_ANALYST_KEY_PROXY": "all"}
+        self.allow("Bash", {"command": "env | sort"}, env=env)
+        self.allow("Bash", {"command": "echo $DATA_ANALYST_KEY_PROXY"}, env=env)
+        self.allow("Bash", {"command": "export DATA_ANALYST_KEY_PROXY=HUD_USER_TOKEN && python fetch.py --sources"})
+        self.allow("Bash", {"command": "python fetch.py --key-proxy all --key-proxy-setup"})
+
     def test_settings_without_keys(self):
         self.settings({"SOME_FLAG": "1"})
         self.allow("Read", {"file_path": os.path.join(self.claude, "settings.json")})

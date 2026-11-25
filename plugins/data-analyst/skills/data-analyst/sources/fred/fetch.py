@@ -86,6 +86,7 @@ for _p in (os.path.join(SKILL, "scripts"), PACK, os.path.join(PACK, "lib")):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 from core import env as cenv  # noqa: E402
+from core import keys as ckeys  # noqa: E402
 from core import package as cpkg  # noqa: E402
 from core import policy as cpol  # noqa: E402
 from core import routes as croutes  # noqa: E402
@@ -388,7 +389,7 @@ def route_check(s: dict, out: str, env: str, force: bool = False, spec_path: str
         b = bundle("the request needs a FRED API key")
         if env == "cloud":
             return done("cloud_secret",
-                        lead + need + " Add FRED_API_KEY to the cloud environment's secrets and start the session "
+                        lead + need + f" {ckeys.cloud_key_how('FRED_API_KEY')}, and start the session "
                         f"again, or download on your own computer with the files in {b}.",
                         "Explain both options (and the keyless alternative). If the user downloads by hand: "
                         + SEND, ingest_cmd)
