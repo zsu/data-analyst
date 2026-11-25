@@ -27,7 +27,7 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "scripts"))
 from core import generic_rest as gr  # noqa: E402
-from core import keys, packfiles  # noqa: E402
+from core import packfiles  # noqa: E402
 from core.http import DataError  # noqa: E402
 
 MAX_SKIP = 25000
@@ -123,7 +123,7 @@ def count_limit(req: dict, keyed: bool) -> int:
 
 def fetch(spec, pack, route):
     client = gr.client_for(pack)
-    keyed = bool(client.key) and not keys.is_proxy(client.key)   # a proxied key may not be attached: keyless limits
+    keyed = client.cred.keyed_limits              # a proxied key may not be attached: keyless limits then
     wrapped = _Read404(client)
     tables, notes = {}, []
     for r in spec["requests"]:

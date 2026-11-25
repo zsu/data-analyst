@@ -24,15 +24,18 @@ DATA_ANALYST_KEY_PROXY (or fetch.py --key-proxy) says which keys the proxy suppl
   "auto"         cloud sessions only: a key stored here wins; otherwise, for a pack whose API takes the key in
                  a header (proxy_capable()), find_auth_key() returns AUTO_KEY so the request goes without a key
                  and a network secret is attached if the environment has one. Other packs behave as by default.
-PROXY_KEY and AUTO_KEY are not strings: they count as a key ("if key"), core.http.Client never puts them on a
-request, and formatting one (str(), an f-string, concatenation) raises, so a stand-in can never be sent as
-text. The setting is not a secret.
+PROXY_KEY and AUTO_KEY are Credential objects, not strings: they count as a key ("if key"), Credential.attach
+(which core.http.Client uses for every request) never puts them on a request, and formatting one (str(), an
+f-string, concatenation) raises, so a stand-in can never be sent as text. on_refusal() is the one rule for what
+a refused request means in each mode; the HTTP client, the route checks and the deep packs all follow it.
+The setting is not a secret.
 """
 from __future__ import annotations
 
 import json
 import os
 import re
+import urllib.parse
 
 from core.env import detect_environment
 
@@ -47,40 +50,101 @@ PROXY_VAR = "DATA_ANALYST_KEY_PROXY"
 PROXY_LABEL = "network secret (agent proxy)"
 
 
-class _ProxyKey:
-    """Stands in for a key the network proxy attaches. Truthy, so code that branches on "is there a key" treats
-    the pack as keyed; not a str, and formatting raises, so it can never end up in a URL, header or file."""
-    __slots__ = ("auto",)
+class Credential:
+    """What a request has for its key, and the only code that puts a key on a request (attach).
 
-    def __init__(self, auto: bool):
-        self.auto = auto
+      kind "value"  a key stored on this machine (the value is private to attach)
+           "proxy"  named in DATA_ANALYST_KEY_PROXY: the network proxy adds it (PROXY_KEY)
+           "auto"   auto mode, nothing stored: a network secret is added if the environment has one (AUTO_KEY)
+           "none"   no key: attach adds the pack's demo_key, if any
+
+    Truthy for every kind but "none", so "if key" still means "keyed". Formatting one raises: a credential is
+    never text (the value cannot leak through a message, and a stand-in cannot be sent as a literal)."""
+    __slots__ = ("kind", "source", "_value")
+
+    def __init__(self, kind: str, source: str | None = None, value: str | None = None):
+        self.kind, self.source, self._value = kind, source, value
+
+    @classmethod
+    def of(cls, key, source: str | None = None) -> "Credential":
+        """A Credential for what find_key/find_auth_key returned (a str value, a stand-in or None)."""
+        if isinstance(key, Credential):
+            return key
+        return cls("value", source, key) if key else NO_KEY
 
     def __bool__(self):
-        return True
+        return self.kind != "none"
 
     def __repr__(self):
-        return "AUTO_KEY" if self.auto else "PROXY_KEY"
+        return {"proxy": "PROXY_KEY", "auto": "AUTO_KEY"}.get(self.kind, f"Credential({self.kind})")
 
     def __str__(self):
-        raise TypeError(f"{self!r} stands in for a network secret: never format or send it")
+        raise TypeError(f"{self!r} is a credential: never format or send it as text")
 
     def __format__(self, spec):
         return self.__str__()
 
+    @property
+    def via_proxy(self) -> bool:
+        return self.kind in ("proxy", "auto")
 
-PROXY_KEY = _ProxyKey(auto=False)
-AUTO_KEY = _ProxyKey(auto=True)
-AUTO_LABEL = "network secret if the cloud environment has one (none on this machine; --key-proxy auto)"
+    @property
+    def keyed_limits(self) -> bool:
+        """Use the API's keyed limits: only with a key we send ourselves (a proxied one may not be attached)."""
+        return self.kind == "value"
+
+    def attach(self, auth: dict, url: str, headers: dict, body: dict | None):
+        """The request with this credential where auth (policy.json) says: query parameter, header with prefix
+        or JSON body field. The pack's extra values (e.g. an e-mail) always go in the query; a stand-in adds
+        nothing (the proxy does), and a missing key adds the pack's demo_key."""
+        for param, env in (auth.get("extra") or {}).items():
+            v, _ = find_key(env, proxy=False)
+            if v:
+                url += ("&" if "?" in url else "?") + urllib.parse.urlencode({param: v})
+        if self.via_proxy or auth.get("placement") in (None, "none"):
+            return url, headers, body
+        k = self._value if self.kind == "value" else auth.get("demo_key")
+        if not k:
+            return url, headers, body
+        if auth["placement"] == "query":
+            url += ("&" if "?" in url else "?") + urllib.parse.urlencode({auth.get("param") or "api_key": k})
+        elif auth["placement"] == "header":
+            headers[auth.get("param") or "X-Api-Key"] = (auth.get("prefix") or "") + k
+        elif auth["placement"] == "body" and body is not None:
+            body = {**body, auth.get("param") or "registrationkey": k}
+        return url, headers, body
+
+
+NO_KEY = Credential("none")
+PROXY_KEY = Credential("proxy", "network secret (agent proxy)")
+AUTO_KEY = Credential("auto", "network secret if the cloud environment has one (none on this machine; --key-proxy auto)")
+PROXY_LABEL, AUTO_LABEL = PROXY_KEY.source, AUTO_KEY.source
 PROXY_WORDS = {"AUTO", "ALL", "*", "ENV", "NONE", "OFF"}
 
 
 def is_proxy(key) -> bool:
     """PROXY_KEY or AUTO_KEY: never put on a request."""
-    return isinstance(key, _ProxyKey)
+    return isinstance(key, Credential) and key.via_proxy
 
 
 def is_auto(key) -> bool:
-    return isinstance(key, _ProxyKey) and key.auto
+    return isinstance(key, Credential) and key.kind == "auto"
+
+
+def on_refusal(key, auth: dict) -> str:
+    """The one rule for an API that refuses a request (401/403, or 400 for a required key) made with `key`:
+      "no_key"   auto mode: no network secret answered for the host; from here on the same as having no key,
+                 but never the demo_key (the route check takes the keyless route or says a key is needed)
+      "keyless"  a key named for the proxy, and the pack works without one (optional key or demo_key): retry
+                 once without it, demo_key included, and warn (a secret that exists but is wrong is attached
+                 again, so the retry fails and the error stands)
+      "stop"     a stored key, or a required key named for the proxy: the key (or the secret) is wrong
+    """
+    if is_auto(key):
+        return "no_key"
+    if is_proxy(key) and (auth.get("required") == "optional" or auth.get("demo_key")):
+        return "keyless"
+    return "stop"
 
 
 def mode_of(key) -> str:
@@ -198,7 +262,7 @@ def find_key(env: str | None, home: str | None = None, proxy: bool = True,
 
 def remember(secret: str) -> None:
     """Add a secret to the redaction set (keys passed in as arguments, tokens returned by an API)."""
-    if not is_proxy(secret) and secret and len(secret) >= 6:
+    if not isinstance(secret, Credential) and secret and len(secret) >= 6:
         _KNOWN.add(secret)
 
 

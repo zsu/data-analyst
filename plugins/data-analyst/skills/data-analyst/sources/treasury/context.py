@@ -41,6 +41,7 @@ if _SCRIPTS not in sys.path:
     sys.path.insert(0, _SCRIPTS)
 
 from core import keys  # noqa: E402
+from core import policy as pol  # noqa: E402
 from core.http import Client  # noqa: E402
 from core.package import data_dir  # noqa: E402
 
@@ -56,12 +57,13 @@ SERIES = {
 }
 
 
-BLS_AUTH = {"env": "BLS_API_KEY", "home": "bls", "placement": "body", "param": "registrationkey"}
+BLS_AUTH = pol.pack_auth(os.path.join(os.path.dirname(HERE), "bls"))   # the bls pack's policy.json (auth)
 
 
 def _client(timeout: int, auth: dict | None = None) -> Client:
+    # BLS's keyless way is v1 (another URL), which from_bls picks itself: no keyless retry on a v2 URL
     return Client("", name="treasury-context", auth=auth, rps=2, burst=2, retries=0, timeout=timeout,
-                  deadline=timeout * 2, user_agent=UA)
+                  deadline=timeout * 2, user_agent=UA, keyless_retry=auth is None)
 
 
 def _get(url: str, timeout: int, body: dict | None = None, auth: dict | None = None) -> bytes:
@@ -106,7 +108,7 @@ def from_fred(series: str, start: int, timeout: int) -> tuple[list[tuple[str, fl
 
 
 def from_bls(series: str, start: int, timeout: int) -> tuple[list[tuple[str, float]], str]:
-    key, _ = keys.find_key("BLS_API_KEY", "bls")
+    key, _ = keys.find_auth_key(BLS_AUTH)          # BLS's key goes in the body: auto never applies here
     ver, span = ("v2", 20) if key else ("v1", 10)
     url = f"https://api.bls.gov/publicAPI/{ver}/timeseries/data/"
     end = date.today().year

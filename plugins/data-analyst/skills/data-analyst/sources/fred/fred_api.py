@@ -45,6 +45,7 @@ SCRIPTS = os.path.join(os.path.dirname(os.path.dirname(HERE)), "scripts")
 if SCRIPTS not in sys.path:
     sys.path.insert(0, SCRIPTS)
 from core import keys  # noqa: E402
+from core import policy as pol  # noqa: E402
 from core.http import Client, DataError, reachable as http_reachable  # noqa: E402
 
 API = "https://api.stlouisfed.org/fred/"
@@ -63,9 +64,9 @@ NOTICE = ("This product uses the FRED® API but is not endorsed or certified by 
 UA = "data-analyst/1.0 (fred pack; Python urllib)"
 GRAPH_MAX = 12                 # a FRED graph (and so its CSV/XLSX download) holds at most 12 series; more are
                                # silently dropped (checked live 2026-10-20)
-KEY_ENV, KEY_HOME = "FRED_API_KEY", "fred"
-AUTH_V1 = {"env": KEY_ENV, "home": KEY_HOME, "placement": "query", "param": "api_key"}
-AUTH_V2 = {"env": KEY_ENV, "home": KEY_HOME, "placement": "header", "param": "Authorization", "prefix": "Bearer "}
+AUTH_V1 = pol.pack_auth(HERE)                 # how the key is sent comes from policy.json (auth)
+AUTH_V2 = pol.pack_auth(HERE, "v2")           # FRED v2: the same key in an Authorization: Bearer header
+KEY_ENV, KEY_HOME = AUTH_V1["env"], AUTH_V1["home"]
 RPS, BURST = 1.8, 4            # under FRED's 120 requests a minute
 
 FREQ_NAMES = {"d": "Daily", "w": "Weekly", "bw": "Biweekly", "m": "Monthly", "q": "Quarterly",
@@ -79,7 +80,7 @@ def restricted() -> bool:
 
 
 def find_api_key() -> tuple[str | None, str | None]:
-    return keys.find_key(KEY_ENV, KEY_HOME)
+    return keys.find_auth_key(AUTH_V1)
 
 
 def redact(text) -> str:

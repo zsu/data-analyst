@@ -176,7 +176,7 @@ def route_check(pack, spec: dict, spec_path: str, out: str, env: str, force: boo
             return done("api", f"{found} and {P['title']} answers.", "Run next_command.", run)
         if p.get("kind") not in ("auth", "key_missing"):
             return done("report_error", f"The key check failed: {p.get('detail', '')}", "Tell the user and stop.")
-        if keys.is_auto(key):                       # from here on the same as no key, but never demo_key
+        if keys.on_refusal(key, a) == "no_key":     # from here on the same as no key, but never demo_key
             auto_refused, key = True, None
             r.update(key_ok=None, key_source=None)
     if api_ok and a["required"] == "optional" and not needs and not key and not auto_refused:

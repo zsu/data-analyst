@@ -23,12 +23,13 @@ import urllib.request
 from datetime import datetime, timezone
 
 from core import keys
+from core import policy as pol
 from core.http import SOURCES, UA, Client, DataError, open_url
 
 BASE = "https://api.ipums.org"
 VERSION = "2"
-KEY_ENV, KEY_HOME = "IPUMS_API_KEY", "ipums"
-AUTH = {"env": KEY_ENV, "home": KEY_HOME, "placement": "header", "param": "Authorization", "prefix": ""}
+AUTH = pol.pack_auth(os.path.dirname(os.path.abspath(__file__)))   # how the key is sent: policy.json (auth)
+KEY_ENV, KEY_HOME = AUTH["env"], AUTH["home"]
 
 HINTS = {
     401: ("401 Unauthorized. The key is wrong, or the account is not registered for this collection "
@@ -42,7 +43,7 @@ ALL_STATUSES = tuple(range(100, 600))
 def find_api_key() -> tuple[str | None, str | None]:
     """(key, source label). The label may be printed; the key never is. The key travels in a header, so
     --key-proxy auto applies (AUTO_KEY when nothing is stored in a cloud session)."""
-    return keys.find_key(KEY_ENV, KEY_HOME, auto=True)
+    return keys.find_auth_key(AUTH)               # header key: --key-proxy auto applies (keys.proxy_capable)
 
 
 class IpumsError(RuntimeError):

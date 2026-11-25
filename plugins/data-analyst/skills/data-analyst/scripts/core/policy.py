@@ -8,7 +8,9 @@ policy.json is where a source's rules live so code can enforce them, not just do
   *auth        {env, required: "required"|"optional"|"none", signup_url, placement: "query"|"header"|"body"|
                 "none", param, prefix, home, echoes_key: bool, key_only: [features a keyless route lacks],
                 key_hosts: [hosts that take the key; default the api route's base host],
-                proxy_header: header name the API also accepts the key in (a network secret can add it)}
+                proxy_header: header name the API also accepts the key in (a network secret can add it),
+                variants: {name: {placement, param, prefix}} another way the same key is sent, e.g. FRED v2's
+                Authorization header; pack_auth(dir, name) merges it}
   *limits      {rps, burst, daily_quota, max_series, max_years, errors_per_min, bytes_per_min, max_rows}
   *routes      {api: {base, probe, hosts}, api_keyless: {...}, bulk: {...}, manual: {how}}  (manual required;
                manual.keyless_file: a direct keyless agency file --ingest reads, manual.keyless_citation: the
@@ -80,6 +82,16 @@ def load(pack_dir: str) -> dict:
     return p
 
 
+def pack_auth(pack_dir: str, variant: str | None = None) -> dict:
+    """A pack's auth block from its own policy.json, for the deep packs' clients (the policy is the one source of
+    truth for how a key is sent). variant: an auth.variants entry merged over it (FRED v2's header key)."""
+    a = dict(load(os.path.normpath(pack_dir))["auth"])
+    variants = a.pop("variants", None) or {}
+    if variant:
+        a.update(variants[variant])
+    return a
+
+
 def key_hosts(p: dict) -> list[str]:
     """The hosts that take this pack's key (auth.key_hosts, else the api route's base host): what a network
     secret may list. Never every reachable host: those include link and bulk hosts the key must not reach."""
@@ -115,6 +127,9 @@ def validate(p: dict, pack_dir: str | None = None) -> list[str]:
         bad.append("auth.key_hosts must be a non-empty list of host names")
     if a.get("proxy_header") is not None and not (isinstance(a["proxy_header"], str) and a["proxy_header"].strip()):
         bad.append("auth.proxy_header must be a header name")
+    for name, v in (a.get("variants") or {}).items():
+        if not isinstance(v, dict) or v.get("placement") not in PLACEMENTS or not v.get("param"):
+            bad.append(f"auth.variants.{name} needs placement (one of {PLACEMENTS}) and param")
     r = p.get("routes") or {}
     if "manual" not in r or not (r["manual"] or {}).get("how"):
         bad.append("routes.manual.how is required: every source needs a manual-download route")

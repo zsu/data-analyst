@@ -212,9 +212,10 @@ class Client:
                  rps: float = 5, burst: int = 10, retries: int = 2, timeout: float = 30, deadline: float = 180,
                  check_error=None, headers: dict | None = None, user_agent: str = UA,
                  errors_per_min: float | None = None, bytes_per_min: float | None = None,
-                 retry_html_400: int = 0):
+                 retry_html_400: int = 0, keyless_retry: bool = True):
         self.base = base_url.rstrip("/")
         self.name, self.auth = name, dict(auth or {})
+        self.keyless_retry = keyless_retry              # False: the caller has its own keyless way (BLS v1)
         self.retries, self.timeout, self.deadline = retries, timeout, deadline
         self.retry_html_400 = int(retry_html_400 or 0)
         self.check_error, self.headers, self.ua = check_error, dict(headers or {}), user_agent
@@ -224,17 +225,22 @@ class Client:
         with _LOCK:
             self.bucket = _BUCKETS.setdefault(host, TokenBucket(rps or 5, burst or 10))
         if key:
-            keys.remember(key)                        # ignores PROXY_KEY
-            self.key, self.key_source = key, (keys.AUTO_LABEL if keys.is_auto(key) else
-                                              keys.PROXY_LABEL if keys.is_proxy(key) else "argument")
+            keys.remember(key)                        # ignores credentials and stand-ins
+            self.key = key
+            self.key_source = key.source if isinstance(key, keys.Credential) else "argument"
         else:
             self.key, self.key_source = keys.find_auth_key(self.auth)
+
+    @property
+    def cred(self) -> keys.Credential:
+        """This client's key as a Credential (self.key stays a str or stand-in for the packs that read it)."""
+        return keys.Credential.of(self.key, self.key_source)
 
     def _proxy_error(self, r: "Response", detail: str) -> "DataError":
         """A request in proxy mode that the API refused: the network proxy did not attach a working key."""
         host = urllib.parse.urlsplit(r.url).netloc
         env = self.auth.get("env") or "the key"
-        if keys.is_auto(self.key):                   # auto, nothing attached: the same as no key at all
+        if keys.on_refusal(self.key, self.auth) == "no_key":   # auto, nothing attached: the same as no key
             return DataError(f"{self.name}: API key required (HTTP {r.status} from {host}): no {env} on this "
                              f"machine and no network secret for {host} answered. {detail}".rstrip(),
                              kind="key_missing", status=r.status)
@@ -259,25 +265,9 @@ class Client:
         return url
 
     def _with_key(self, url: str, headers: dict, body: dict | None):
-        a, k = self.auth, self.key
-        # extra credentials some APIs pair with the key, e.g. EPA AQS {"email": "AQS_EMAIL"}
-        for param, env in (a.get("extra") or {}).items():
-            v, _ = keys.find_key(env, proxy=False)    # an e-mail address the request itself carries
-            if v:
-                url += ("&" if "?" in url else "?") + urllib.parse.urlencode({param: v})
-        if not k and a.get("demo_key"):               # api.data.gov's DEMO_KEY: keyless, low limits
-            k = a["demo_key"]
-        if keys.is_proxy(k):                          # the network proxy attaches the key; never DEMO_KEY too
-            return url, headers, body
-        if not k or a.get("placement") in (None, "none"):
-            return url, headers, body
-        if a["placement"] == "query":
-            url += ("&" if "?" in url else "?") + urllib.parse.urlencode({a.get("param") or "api_key": k})
-        elif a["placement"] == "header":
-            headers[a.get("param") or "X-Api-Key"] = (a.get("prefix") or "") + k
-        elif a["placement"] == "body" and body is not None:
-            body = {**body, a.get("param") or "registrationkey": k}
-        return url, headers, body
+        """The request with this client's credential (keys.Credential.attach: placement, prefix, extras such as
+        an e-mail, api.data.gov's DEMO_KEY when there is no key, nothing for a proxied key)."""
+        return self.cred.attach(self.auth, url, headers, body)
 
     def _open(self, req: urllib.request.Request):
         """Open with redirects that drop this client's credentials when they leave the host."""
@@ -287,15 +277,11 @@ class Client:
         return open_url(req, self.timeout, (hdr,) if hdr else (), tuple(p for p in par if p))
 
     def _go_keyless(self, e: "DataError") -> bool:
-        """Named proxy key refused (no network secret for this host): when the pack also works without a key (an
-        optional key, or a shared demo_key), drop the proxied key for the rest of this client's life so the call
-        is retried the keyless way (demo_key included), with a warning. A secret that exists but is wrong is
-        attached again by the proxy, so that retry fails too and the error stands. Never in auto mode: there the
-        request already went without a key, and the route check takes the keyless route."""
-        if not (keys.is_proxy(self.key) and not keys.is_auto(self.key) and e.kind == "auth"
-                and e.status in (400, 401, 403)):
-            return False
-        if self.auth.get("required") != "optional" and not self.auth.get("demo_key"):
+        """keys.on_refusal says "keyless" (a key named for the proxy was refused and the pack works without one):
+        drop it for the rest of this client's life so the call is retried the keyless way (demo_key included),
+        with a warning. Every other refusal stands; the route check handles auto's "no_key"."""
+        if not (self.keyless_retry and e.kind == "auth" and e.status in (400, 401, 403)
+                and keys.on_refusal(self.key, self.auth) == "keyless"):
             return False
         import sys
         self.key = None

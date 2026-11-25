@@ -24,6 +24,8 @@ One Agent Skills skill (`plugins/data-analyst/skills/data-analyst/`, shipped as 
   looked up or sent (`PROXY_KEY`/`AUTO_KEY` stand-ins, which raise if formatted; docs/pack_contract.md "Proxy
   mode"); `auto` uses a stored key, else, for header-capable packs, a network secret if there is one, else no
   key; default is the lookup above. A pack whose API also takes the key in a header declares `auth.proxy_header`.
+  Only `keys.Credential.attach` puts a key on a request, `keys.on_refusal` decides what a refusal means, and deep
+  packs read their auth from policy.json (`policy.pack_auth`), never a copy in code.
 - Upload plugin zip for claude.ai / Cowork (Customize > Plugins > Upload): `python tools/package_skill.py --plugin`.
 - Upload skill zip for claude.ai (also a plain Agent Skills folder any assistant can load): `python tools/package_skill.py` (excludes tests and fixtures; bundles every
   policy.json/endpoints.json and every adapter.py into `sources/packs.json`, so runtime code reads them via

@@ -39,11 +39,9 @@ from core.cache import Cache  # noqa: E402
 from core.http import Client, DataError  # noqa: E402
 
 BASE = "https://apps.bea.gov/api/data"
-KEY_VAR = "BEA_API_KEY"
-KEY_HOME = "bea"
-SIGNUP_URL = "https://apps.bea.gov/API/signup/"
+AUTH = pol.pack_auth(HERE)                    # how the key is sent comes from policy.json (auth)
+KEY_VAR, KEY_HOME, SIGNUP_URL = AUTH["env"], AUTH["home"], AUTH["signup_url"]
 UA = "Mozilla/5.0 (compatible; data-analyst bea pack)"
-AUTH = {"env": KEY_VAR, "home": KEY_HOME, "placement": "query", "param": "UserID"}
 
 MIN_INTERVAL_S = 0.75                 # 80 requests a minute at most (BEA allows 100)
 MAX_ERRORS_PER_RUN = 10
@@ -64,7 +62,7 @@ def policy() -> dict:
 
 
 def find_api_key() -> tuple[str | None, str | None]:
-    return keys.find_key(KEY_VAR, KEY_HOME)
+    return keys.find_auth_key(AUTH)
 
 
 def redact(text) -> str:

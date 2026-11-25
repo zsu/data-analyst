@@ -36,6 +36,7 @@ SCRIPTS = os.path.join(os.path.dirname(os.path.dirname(HERE)), "scripts")
 if SCRIPTS not in sys.path:
     sys.path.insert(0, SCRIPTS)
 from core import keys  # noqa: E402
+from core import policy as pol  # noqa: E402
 from core.http import Client, DataError  # noqa: E402
 
 URLS = {"v1": "https://api.bls.gov/publicAPI/v1/timeseries/data/",
@@ -43,8 +44,8 @@ URLS = {"v1": "https://api.bls.gov/publicAPI/v1/timeseries/data/",
 LIMITS = {"v2": {"series": 50, "years": 20, "daily": 500},
           "v1": {"series": 25, "years": 10, "daily": 25}}
 REGISTER_URL = "https://data.bls.gov/registrationEngine/"
-KEY_ENV, KEY_HOME = "BLS_API_KEY", "bls"
-AUTH = {"env": KEY_ENV, "home": KEY_HOME, "placement": "body", "param": "registrationkey"}
+AUTH = pol.pack_auth(HERE)                    # how the key is sent comes from policy.json (auth)
+KEY_ENV, KEY_HOME = AUTH["env"], AUTH["home"]
 UA = "data-analyst/1.0 (bls pack; Python urllib)"
 SERIES_PROBLEMS = ("does not exist", "no data available", "database is locked", "invalid series")
 
@@ -53,7 +54,7 @@ keys.add_pattern(r"(?i)(?<![0-9a-f])[0-9a-f]{32}(?![0-9a-f])")
 
 
 def find_api_key() -> tuple[str | None, str | None]:
-    return keys.find_key(KEY_ENV, KEY_HOME)
+    return keys.find_auth_key(AUTH)
 
 
 def redact(text) -> str:
@@ -144,14 +145,17 @@ class BlsClient:
             self.key, self.key_source = None, None
         self.version = "v2" if self.key else "v1"
         self.queries_sent = 0
-        # v1 sends no key at all (auth {}); v2 puts it in the JSON body as registrationkey
+        # v1 sends no key at all (auth {}); v2 puts it in the JSON body as registrationkey. BLS's keyless way is
+        # v1 (another URL, other limits), so _proxy_refused switches there instead of the client's keyless retry
         self.http = Client(URLS[self.version], name="bls", auth=AUTH if self.key else {}, key=self.key,
-                           rps=4, burst=5, retries=3, timeout=timeout, user_agent=UA)
+                           rps=4, burst=5, retries=3, timeout=timeout, user_agent=UA, keyless_retry=False)
 
     def _proxy_refused(self, e: BlsError) -> bool:
-        """Proxy mode (core.keys DATA_ANALYST_KEY_PROXY) and v2 refused the request for its key: no working
-        network secret for api.bls.gov. Switch to keyless v1 (smaller limits) and say so; False otherwise."""
-        if not (keys.is_proxy(self.key) and (e.kind == "auth" or (e.kind == "request" and "key" in str(e).lower()))):
+        """v2 refused a proxied key (no working network secret for api.bls.gov) and keys.on_refusal says the
+        request may go keyless: switch to v1, BLS's keyless API (smaller limits), and say so; False otherwise."""
+        if not (e.kind == "auth" or (e.kind == "request" and "key" in str(e).lower())):
+            return False
+        if keys.on_refusal(self.key, AUTH) not in ("keyless", "no_key"):
             return False
         print("[bls] v2 refused the request in proxy mode (no working network secret for api.bls.gov): "
               "retrying keyless on v1", file=sys.stderr, flush=True)

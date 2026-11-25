@@ -146,16 +146,23 @@ header (or a JSON body field); the key never exists in the session. `DATA_ANALYS
 | `VAR,...` / `all` | not used (still redacted) | `PROXY_KEY`: sent without a key; refused → one keyless retry when the pack works without a key, else "check the secret" |
 | `auto` (cloud only) | used | header-capable packs (`placement: "header"` or `proxy_header`): `AUTO_KEY`, sent without a key; refused → as if no key, never `demo_key`. Other packs: as the default |
 
-- `PROXY_KEY` and `AUTO_KEY` are not strings: they count as a key (`if key`), `core.http.Client` never puts
-  them on a request, and formatting one raises. So a pack puts a key on a request only through `Client` (its
-  `auth` block or `key=`), never in a header or URL it builds itself (ipums' raw download checks
-  `keys.is_proxy`), and decides keyed limits with `keys.is_proxy` in mind (fda).
+- `core.keys.Credential` is what a request has for its key: kind `value` (stored here), `proxy` (`PROXY_KEY`),
+  `auto` (`AUTO_KEY`) or `none`. `Credential.attach` is the only code that puts a key (or the `demo_key`, or
+  nothing for a stand-in) on a request; `core.http.Client` uses it for every call (`client.cred`). Credentials
+  count as a key (`if key`) and raise when formatted, so neither a value nor a stand-in can become text. So a
+  pack puts a key on a request only through `Client` (its `auth` block or `key=`), never in a header or URL it
+  builds itself (ipums' raw download checks `keys.is_proxy`), and uses `client.cred.keyed_limits` for keyed
+  limits (fda).
+- `keys.on_refusal(key, auth)` is the one rule for a refused request: `no_key` (auto: same as no key, never
+  `demo_key`), `keyless` (a named proxy key, pack works without one: one retry without it) or `stop`. The HTTP
+  client (`keyless`; `keyless_retry=False` for a caller with its own keyless way), the route checks
+  (`core/routes.py`, ipums) and BLS (v2 → keyless v1 in `fetch()`; its ping reports the refusal so the check
+  plans honestly) all follow it.
 - Non-key values a request must carry (an `extra` e-mail, a User-Agent) are looked up with
-  `find_key(..., proxy=False)`. A deep pack whose API takes the key in a header passes `auto=True` to
-  `find_key` (ipums); find_auth_key decides it from the policy.
-- The route check resolves auto: a refused `AUTO_KEY` becomes "no key" there (standard packs in
-  `core/routes.py`, ipums in its own check). BLS v2 falls back to keyless v1 inside `fetch()` only; its ping
-  reports the refusal so the check plans honestly.
+  `find_key(..., proxy=False)`. Keys are looked up with `find_auth_key(auth)`, which decides auto from the
+  policy (`keys.proxy_capable`).
+- Deep packs take their auth block from their own policy.json (`core.policy.pack_auth(dir)`; FRED v2's header
+  key is `auth.variants.v2`, `pack_auth(dir, "v2")`), never a copy in code, so one edit changes every path.
 - `fetch.py --key-proxy-setup` lists, per key, the Add-secret form (type, header or body name, prefix) and the
   allowed websites (`policy.key_hosts`: never link, bulk or keyless hosts, which must not receive the key), or
   says the key must be an environment variable (URL-only keys).

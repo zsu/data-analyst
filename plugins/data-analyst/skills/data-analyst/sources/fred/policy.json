@@ -108,6 +108,7 @@
     "placement": "query",
     "param": "api_key",
     "prefix": "",
+    "variants": {"v2": {"placement": "header", "param": "Authorization", "prefix": "Bearer "}},
     "home": "fred",
     "signup_url": "https://fredaccount.stlouisfed.org/apikeys",
     "echoes_key": false,

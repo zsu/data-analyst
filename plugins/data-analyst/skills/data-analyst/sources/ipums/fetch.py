@@ -79,7 +79,7 @@ for _p in (os.path.join(SKILL, "scripts"), HERE):
 from core import keys, manual, package as core_package, routes  # noqa: E402
 from core.env import ENVIRONMENTS, detect_environment, setup_command, upload_dirs  # noqa: E402
 from core.http import SOURCES, reachable  # noqa: E402
-from ipums_api import KEY_ENV, KEY_HOME, IpumsClient, IpumsError, find_api_key  # noqa: E402
+from ipums_api import AUTH, KEY_ENV, KEY_HOME, IpumsClient, IpumsError, find_api_key  # noqa: E402
 
 SOURCE = "ipums"
 redact = keys.redact
@@ -796,7 +796,7 @@ def route_check(spec: dict, body: dict, spec_path: str, out: str, env: str, forc
                     "Skip the download and continue with the analysis. Pass --force to resubmit.")
 
     p = IpumsClient(api_key=key).ping(collection) if key else None
-    if p and keys.is_auto(key) and not p["auth_ok"] and p["kind"] in ("auth", "key_missing"):
+    if p and not p["auth_ok"] and p["kind"] in ("auth", "key_missing") and keys.on_refusal(key, AUTH) == "no_key":
         key = None                                   # auto, no network secret for api.ipums.org: no key at all
         r.update(key_source=None, auth_detail="no IPUMS_API_KEY on this machine and no network secret answered")
     if key:

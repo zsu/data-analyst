@@ -342,6 +342,55 @@ class TestKeyProxy(unittest.TestCase):
         self.assertEqual([b for b in ok if "key_hosts" in b or "proxy_header" in b], [])
         bad = policy.validate({**base, "auth": {**auth, "proxy_header": "", "key_hosts": ["https://x.gov/a"]}})
         self.assertEqual(len([b for b in bad if "key_hosts" in b or "proxy_header" in b]), 2, bad)
+        bad = policy.validate({**base, "auth": {**auth, "variants": {"v2": {"placement": "cookie"}}}})
+        self.assertTrue(any("variants.v2" in b for b in bad), bad)
+
+    # ---- the credential object and the one refusal rule
+    def test_credential_attach_is_the_only_way_a_key_goes_on_a_request(self):
+        url = "https://example.gov/x?a=1"
+        q = {"env": "T", "placement": "query", "param": "api_key", "demo_key": "DEMO_KEY"}
+        h = {"env": "T", "placement": "header", "param": "Authorization", "prefix": "Bearer "}
+        b = {"env": "T", "placement": "body", "param": "registrationkey"}
+        cred = keys.Credential.of("abcdef123456", "test")
+        self.assertEqual(cred.attach(q, url, {}, None)[0], url + "&api_key=abcdef123456")
+        self.assertEqual(cred.attach(h, url, {}, None)[1], {"Authorization": "Bearer abcdef123456"})
+        self.assertEqual(cred.attach(b, url, {}, {"s": 1})[2], {"s": 1, "registrationkey": "abcdef123456"})
+        self.assertEqual(keys.Credential.of(None).attach(q, url, {}, None)[0], url + "&api_key=DEMO_KEY")
+        self.assertEqual(keys.Credential.of(None).attach(h, url, {}, None), (url, {}, None))
+        for stand_in in (keys.PROXY_KEY, keys.AUTO_KEY):
+            self.assertEqual(stand_in.attach(q, url, {}, None), (url, {}, None))
+        self.assertEqual([c.keyed_limits for c in (cred, keys.PROXY_KEY, keys.AUTO_KEY, keys.NO_KEY)],
+                         [True, False, False, False])
+        self.assertEqual([bool(c) for c in (cred, keys.PROXY_KEY, keys.AUTO_KEY, keys.NO_KEY)],
+                         [True, True, True, False])
+        with self.assertRaises(TypeError):
+            f"{cred}"                                    # a credential is never text: the value cannot leak
+        self.assertEqual(Client("https://example.gov", name="t", auth=q, key="abcdef123456").cred.kind, "value")
+
+    def test_one_refusal_rule(self):
+        opt = {"env": "T", "required": "optional"}
+        req = {"env": "T", "required": "required"}
+        demo = {"env": "T", "required": "required", "demo_key": "DEMO_KEY"}
+        self.assertEqual(keys.on_refusal(keys.AUTO_KEY, opt), "no_key")
+        self.assertEqual(keys.on_refusal(keys.PROXY_KEY, opt), "keyless")
+        self.assertEqual(keys.on_refusal(keys.PROXY_KEY, demo), "keyless")
+        self.assertEqual(keys.on_refusal(keys.PROXY_KEY, req), "stop")
+        self.assertEqual(keys.on_refusal("abcdef123456", opt), "stop")       # a stored key is just wrong
+        c = Client("https://example.gov", name="t", auth=opt, key=keys.PROXY_KEY, keyless_retry=False)
+        self.assertFalse(c._go_keyless(DataError("x", kind="auth", status=403)))   # BLS: its own v1 way
+
+    def test_deep_packs_take_their_auth_from_policy(self):
+        for pid, mod, attrs in (("bls", "bls_api.py", ("AUTH",)), ("bea", "bea_api.py", ("AUTH",)),
+                                ("ipums", "ipums_api.py", ("AUTH",)), ("fred", "fred_api.py", ("AUTH_V1",))):
+            m = testkit.load_pack_module(pid, mod)
+            want = {k: v for k, v in policy.load(testkit.pack_dir(pid))["auth"].items() if k != "variants"}
+            for attr in attrs:
+                self.assertEqual(getattr(m, attr), want, f"{pid}.{attr}")
+        fred = testkit.load_pack_module("fred", "fred_api.py")
+        self.assertEqual({k: fred.AUTH_V2[k] for k in ("env", "placement", "param", "prefix")},
+                         {"env": "FRED_API_KEY", "placement": "header", "param": "Authorization", "prefix": "Bearer "})
+        ctx = testkit.load_pack_module("treasury", "context.py")
+        self.assertEqual(ctx.BLS_AUTH, testkit.load_pack_module("bls", "bls_api.py").AUTH)
 
 
 class TestPolicy(unittest.TestCase):
