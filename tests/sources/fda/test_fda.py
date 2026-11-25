@@ -36,6 +36,17 @@ class TestFda(PackTest):
         self.assertEqual(r["route"], "api")
         self.assertEqual(r["key_required"], "optional")
 
+    def test_auto_mode_takes_the_key_from_a_network_secret(self):
+        # api.fda.gov also reads the key from X-Api-Key, so in auto mode a cloud network secret supplies it and the
+        # request goes out with no api_key in the URL; the daily pacing stays keyless (the secret may be absent)
+        auto = {"DATA_ANALYST_ENV": "cloud", "DATA_ANALYST_KEY_PROXY": "auto"}
+        code, r = self.check(SPEC, env=auto)
+        self.assertEqual(code, 0, r)
+        self.assertEqual((r["route"], r["key_mode"]), ("api", "auto"), r)
+        code, r, out = self.fetch(SPEC, env=auto)
+        self.assertEqual(code, 0, r)
+        self.assertTrue(self.csv(out, "metformin_reactions_2024"))
+
     def test_fetch(self):
         code, r, out = self.fetch(SPEC)
         self.assertEqual(code, 0, r)

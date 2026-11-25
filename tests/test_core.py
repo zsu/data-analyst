@@ -194,15 +194,15 @@ class TestKeyProxy(unittest.TestCase):
 
     def test_auto_leaves_url_key_packs_alone(self):
         # BLS (body), FRED, BEA, Census (URL), Treasury's BLS context: no network secret can add their key, so
-        # auto keeps the default: BLS v1, DEMO_KEY for EIA, keyless openFDA
+        # auto keeps the default: BLS v1, DEMO_KEY for EIA. openFDA also reads X-Api-Key, so it is auto-capable
         from core import packs
         with tempfile.TemporaryDirectory() as t, isolated_home(t), self.proxy("auto"), self.cloud():
             for v in testkit.KEY_VARS:
                 os.environ.pop(v, None)
-            for pid in ("eia", "fda", "census", "fred", "bea", "bls"):
+            for pid in ("eia", "census", "fred", "bea", "bls"):
                 self.assertEqual(keys.find_auth_key(packs.load(pid).policy["auth"]), (None, None), pid)
             self.assertEqual(keys.find_key("BLS_API_KEY", "bls"), (None, None))   # treasury/context.py
-            for pid in ("congress", "regulations", "hud", "ipums", "usgs"):
+            for pid in ("congress", "regulations", "hud", "ipums", "usgs", "fda"):
                 self.assertTrue(keys.is_auto(keys.find_auth_key(packs.load(pid).policy["auth"])[0]), pid)
 
     def test_auto_refusal_means_no_key(self):

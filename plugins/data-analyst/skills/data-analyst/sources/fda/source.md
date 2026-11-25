@@ -104,7 +104,8 @@ or years in analysis.
 
 ## Access
 Key optional: `DATA_GOV_API_KEY` (an api.data.gov key; sign up at https://open.fda.gov/apis/authentication/),
-sent as `api_key`. That page says a key is required to call the API, but keyless calls work (verified
+sent as `api_key`; api.fda.gov (behind the api.data.gov gateway) also takes it in the `X-Api-Key` header, so a
+cloud network secret can supply it (`--key-proxy auto`; fetch.py --key-proxy-setup). That page says a key is required to call the API, but keyless calls work (verified
 2026-10-22), within the lower limits below and the 999-term count limit. Without a key openFDA allows
 240 requests a minute and 1,000 a day per IP; with one, 120,000 a day (openFDA documentation). Route `api` either way. Manual route: INSTRUCTIONS.md lists the
 query URLs (JSON, no key needed; one per 1,000 records); open, save under the shown name, upload. Whole
