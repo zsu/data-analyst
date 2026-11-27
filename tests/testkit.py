@@ -133,7 +133,7 @@ class PackTest(unittest.TestCase):
 
     @property
     def fixtures(self) -> str:
-        # DATA_ANALYST_FIXTURES_DIR: replay another recording (rsi-data-analyst runs the tests on live responses)
+        # DATA_ANALYST_FIXTURES_DIR: replay another recording (e.g. to run the tests on live responses)
         return os.environ.get("DATA_ANALYST_FIXTURES_DIR") or os.path.join(self.test_dir, "fixtures")
 
     def setUp(self):

@@ -45,9 +45,5 @@ One Agent Skills skill (`plugins/data-analyst/skills/data-analyst/`, shipped as 
   reproduced by `--rerun`) beats evidence the agent types. Rules only judgment can check stay prose and get an
   eval criterion.
 - A behavioral change to SKILL.md or a source.md ships with an eval result: the changed skill vs `main` on the
-  affected cases in `evals/data-analyst/evals.json`, at least 3 runs each (rsi-data-analyst `--test`), with a
+  affected cases in `evals/data-analyst/evals.json`, at least 3 runs each, with a
   deterministic-check pass rate no worse. Each bug fixed adds a case.
-- Maintainer skill `rsi-data-analyst` lives in its own project, `../rsi-data-analyst` (not in this repo or the plugin).
-  Load it with `claude --plugin-dir ../rsi-data-analyst` and run `/rsi-data-analyst:rsi-data-analyst [ids] [--repo <this repo>] [--test]`
-  (it finds this checkout from `--repo`, env `DATA_ANALYST_REPO` or the working directory, else asks). It checks packs live and against
-  agency docs, fixes drift, and optionally runs a random multi-source question end to end. Run artifacts go to `out/rsi/`.
